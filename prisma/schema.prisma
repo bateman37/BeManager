@@ -1,0 +1,15 @@
+// Esquema Prisma de la fase Foundation (FND-001).
+//
+// Deliberadamente no contiene todavía ningún modelo de dominio: esta entrega
+// solo establece la conexión a PostgreSQL y el flujo de generación/migración.
+// Ver docs/architecture/DATA_AND_PERSISTENCE.md para las categorías de datos
+// previstas y ADR-0001 para la elección de stack.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}

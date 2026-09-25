@@ -1,0 +1,31 @@
+# Dependencias
+node_modules/
+
+# Next.js
+.next/
+out/
+
+# Build y cache
+*.tsbuildinfo
+.eslintcache
+
+# Prisma
+prisma/generated/
+
+# Entorno
+.env
+.env.local
+.env.*.local
+
+# Logs
+npm-debug.log*
+*.log
+
+# Sistema operativo / editores
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+
+# Coverage
+coverage/
