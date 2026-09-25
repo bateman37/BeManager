@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  build-and-test:
+    name: Instalación, calidad y build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: ".nvmrc"
+          cache: "npm"
+
+      - name: Instalación reproducible
+        run: npm ci
+
+      - name: Generar cliente Prisma
+        run: npm run prisma:generate
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Comprobación de tipos
+        run: npm run typecheck
+
+      - name: Pruebas unitarias
+        run: npm run test
+
+      - name: Validación documental
+        run: npm run docs:check
+
+      - name: Build
+        run: npm run build
