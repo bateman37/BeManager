@@ -209,14 +209,6 @@ function formatSeconds(seconds: number): string {
   return `${seconds.toFixed(2).replace(".", ",")} s`;
 }
 
-function formatClock(ms: Milliseconds): string {
-  const totalTenths = Math.max(0, Math.floor(ms / 100));
-  const minutes = Math.floor(totalTenths / 600);
-  const seconds = Math.floor((totalTenths % 600) / 10);
-  const tenths = totalTenths % 10;
-  return `${minutes}:${seconds.toString().padStart(2, "0")}.${tenths}`;
-}
-
 class TramoRun {
   private readonly input: TramoInput;
   private readonly limits: TramoLimits;
@@ -1470,4 +1462,3 @@ export function playTramo(input: TramoInput, options: PlayTramoOptions = {}): Tr
   return new TramoRun(input, options).run();
 }
 
-export { formatClock as formatTramoClock };

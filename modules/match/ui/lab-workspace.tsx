@@ -17,6 +17,8 @@ import type { DefensiveCoverage } from "@match/domain/lab/match-input";
 import { PlayerEditor } from "./player-editor";
 import { CourtView } from "./court-view";
 import { NarrativeLog } from "./narrative-log";
+import { TramoSection, toTramoTeam, type PlayTramoAction } from "./tramo-panel";
+import type { ReboundPriority, TramoResult } from "@match/domain/sequence/tramo-model";
 
 const SCENARIO_LABELS: Record<ScenarioId, string> = {
   drop_con_ayuda: "Drop con ayuda",
@@ -163,6 +165,8 @@ interface LabWorkspaceActions {
     offense: readonly PlayerProfile[],
     defense: readonly PlayerProfile[],
   ) => Promise<CoverageComparisonResult>;
+  /** ME-03: tramo de hasta cuatro posesiones enlazadas. */
+  playTramo: PlayTramoAction;
 }
 
 interface LabWorkspaceProps {
@@ -194,16 +198,55 @@ export function LabWorkspace({ initialTeams, initialWarning, actions }: LabWorks
   const [comparing, setComparing] = useState(false);
   const [coverageComparison, setCoverageComparison] = useState<CoverageComparisonResult | null>(null);
   const [comparingCoverage, setComparingCoverage] = useState(false);
+  const [priorities, setPriorities] = useState<Record<string, ReboundPriority>>({});
+  const [tramoResult, setTramoResult] = useState<TramoResult | null>(null);
+  const [tramoError, setTramoError] = useState<string | null>(null);
+  const [playingTramo, setPlayingTramo] = useState(false);
+  const [tramoRunId, setTramoRunId] = useState(0);
 
   // HF-002 §1.7/§4: un resultado calculado con una configuración anterior
   // nunca se atribuye visualmente a la selección actual. Al cambiar
   // escenario, cobertura, semilla, tamaño de lote o el roster guardado, se
-  // limpian los resultados desactualizados (ME-02 §4).
+  // limpian los resultados desactualizados (ME-02 §4). ME-03: también el
+  // tramo enlazado, y además al cambiar la prioridad de cualquier equipo.
   function invalidatePreviousResults() {
     setMatchState(null);
     setSelectedPositions(null);
     setComparison(null);
     setCoverageComparison(null);
+    setTramoResult(null);
+    setTramoError(null);
+  }
+
+  function handlePriorityChange(teamId: string, priority: ReboundPriority) {
+    setPriorities((prev) => ({ ...prev, [teamId]: priority }));
+    invalidatePreviousResults();
+  }
+
+  async function handlePlayTramo() {
+    if (!offenseTeam || !defenseTeam) return;
+    setPlayingTramo(true);
+    setTramoError(null);
+    try {
+      const outcome = await actions.playTramo(
+        seed,
+        coverage,
+        toTramoTeam(offenseTeam, priorities[offenseTeam.id] ?? "proteger_balance"),
+        toTramoTeam(defenseTeam, priorities[defenseTeam.id] ?? "proteger_balance"),
+      );
+      if (outcome.status === "played") {
+        setTramoResult(outcome.result);
+        setTramoRunId((n) => n + 1);
+      } else {
+        setTramoResult(null);
+        setTramoError(outcome.message);
+      }
+    } catch {
+      setTramoResult(null);
+      setTramoError("No se pudo contactar con el servidor para jugar el tramo. Inténtalo de nuevo.");
+    } finally {
+      setPlayingTramo(false);
+    }
   }
 
   function handleScenarioChange(next: ScenarioId) {
@@ -438,6 +481,23 @@ export function LabWorkspace({ initialTeams, initialWarning, actions }: LabWorks
           </div>
         )}
       </section>
+
+      <TramoSection
+        teams={teams}
+        seed={seed}
+        coverage={coverage}
+        coverageLabels={COVERAGE_LABELS}
+        onSeedChange={handleSeedChange}
+        onCoverageChange={handleCoverageChange}
+        priorities={priorities}
+        onPriorityChange={handlePriorityChange}
+        result={tramoResult}
+        resultKey={tramoRunId}
+        error={tramoError}
+        running={playingTramo}
+        usingReferenceProfiles={initialWarning !== undefined}
+        onPlay={() => void handlePlayTramo()}
+      />
 
       <section className="space-y-3 rounded-lg border border-slate-200 p-4 dark:border-slate-800">
         <h2 className="text-lg font-semibold">Tamaño de muestra (para las dos tablas siguientes)</h2>
