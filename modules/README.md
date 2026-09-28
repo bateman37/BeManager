@@ -1,23 +1,22 @@
-# `modules/` — dirección futura
+# `modules/` — módulos de negocio
 
 **Estado:** ACTIVE
-**Es fuente de verdad para:** cómo se organizarán los futuros módulos de negocio.
-**Debe leerse cuando:** se vaya a crear el primer módulo vertical (por ejemplo, `match`, `club`, `competition`).
-**No cubre:** la arquitectura compartida actual (ver `src/shared/`) ni las reglas de cada ecosistema.
-**Documentos relacionados:** `docs/architecture/MODULE_BOUNDARIES.md`.
-**Última actualización:** 2026-09-25.
+**Es fuente de verdad para:** qué módulos existen y la forma interna que comparten.
+**Debe leerse cuando:** vayas a crear un módulo nuevo o a tocar `modules/match/`.
+**No cubre:** el diseño deportivo de `match` (ver `docs/match/README.md`).
+**Documentos relacionados:** `docs/architecture/MODULE_BOUNDARIES.md`, `docs/match/README.md`.
+**Última actualización:** 2026-09-28.
 
-Esta carpeta está intencionadamente casi vacía en la entrega FND-001.
+## Módulos existentes
 
-Ningún módulo de negocio (`match`, `tactics`, `attributes`, `club`,
-`competition`, `career`, etc.) existe todavía: crearlos ahora sin reglas de
-juego aprobadas produciría carpetas vacías que aparentan arquitectura sin
-aportarla. El primer módulo real se creará cuando exista una decisión de
-diseño cerrada que lo justifique (por ejemplo, el núcleo de partido descrito
-en `docs/foundation/MATCH_CORE_PRINCIPLES.md`).
+- **`match/`** — Laboratorio de Partido (ME-01): motor detallado y
+  aproximación rápida de una posesión 5v5, perfiles de jugador y su
+  persistencia. Ver `docs/match/README.md` para el índice completo.
 
-Cuando se cree el primer módulo, seguirá esta forma interna, ya usada por
-`src/shared/`:
+Ningún otro módulo (`club`, `competition`, `career`, etc.) existe todavía:
+se crearán cuando exista una decisión de diseño cerrada que los justifique.
+
+## Forma interna común
 
 ```text
 modules/<module>/
@@ -27,8 +26,8 @@ modules/<module>/
   ui/              # componentes específicos del módulo
 ```
 
-Reglas de dependencia (ver `docs/architecture/MODULE_BOUNDARIES.md` para el
-detalle completo):
+Reglas de dependencia (detalle completo en
+`docs/architecture/MODULE_BOUNDARIES.md`):
 
 - `domain` no importa Next.js, React ni Prisma.
 - `application` depende de `domain` y de sus propios puertos, nunca de

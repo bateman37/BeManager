@@ -1,7 +1,8 @@
 # BeManager
 
-Manager profundo de baloncesto ficticio para navegador. Proyecto en fase
-**Foundation**: todavía no implementa reglas de juego.
+Manager profundo de baloncesto ficticio para navegador. Incluye el
+Laboratorio de Partido (ME-01): una única posesión 5v5 de bloqueo directo,
+con motor detallado y aproximación rápida.
 
 ## Empezar
 
@@ -34,6 +35,7 @@ la aplicación sigue funcionando y lo indica sin exponer credenciales.
 | `npm run prisma:generate` | Genera el cliente Prisma |
 | `npm run prisma:migrate` | Migraciones de desarrollo |
 | `npm run prisma:studio` | Prisma Studio |
+| `npm run prisma:seed` | Siembra los diez jugadores de laboratorio |
 
 ## Documentación
 
@@ -41,6 +43,7 @@ Empieza por [`CLAUDE.md`](./CLAUDE.md) y por
 [`docs/README.md`](./docs/README.md), el índice maestro con rutas de
 lectura mínimas por tipo de tarea.
 
-## Pruebas manuales de esta entrega
+## Pruebas manuales
 
-[`docs/testing/manual/FND-001-manual-test-plan.md`](./docs/testing/manual/FND-001-manual-test-plan.md).
+- [`docs/testing/manual/FND-001-manual-test-plan.md`](./docs/testing/manual/FND-001-manual-test-plan.md)
+- [`docs/testing/manual/ME-01-manual-test-plan.md`](./docs/testing/manual/ME-01-manual-test-plan.md) (entrega vigente)

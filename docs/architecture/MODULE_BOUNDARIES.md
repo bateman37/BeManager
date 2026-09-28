@@ -2,10 +2,10 @@
 
 **Estado:** ACTIVE
 **Es fuente de verdad para:** qué puede depender de qué, tanto entre capas (`domain`/`application`/`infrastructure`/`ui`) como entre futuros módulos.
-**Debe leerse cuando:** crees un archivo nuevo y dudes en qué carpeta debe vivir, o antes de crear el primer módulo en `modules/`.
-**No cubre:** el diseño de ningún módulo concreto (ninguno existe todavía).
+**Debe leerse cuando:** crees un archivo nuevo y dudes en qué carpeta debe vivir, o antes de crear un módulo adicional en `modules/`.
+**No cubre:** el diseño deportivo de `modules/match/` (ver `docs/match/README.md`).
 **Documentos relacionados:** `docs/architecture/TECHNICAL_ARCHITECTURE.md`, `modules/README.md`, `docs/foundation/COMPETITION_ECOSYSTEMS.md`.
-**Última actualización:** 2026-09-25.
+**Última actualización:** 2026-09-28.
 
 ## Dependencias permitidas entre capas
 

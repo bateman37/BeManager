@@ -1,0 +1,52 @@
+# Módulo de partido — índice
+
+**Estado:** ACTIVE
+**Es fuente de verdad para:** qué está implementado en `modules/match/` y por dónde leer según la tarea.
+**Debe leerse cuando:** vayas a tocar cualquier código de `modules/match/` o a planificar la siguiente entrega del motor.
+**No cubre:** el razonamiento completo de diseño (ver `docs/match/reference/`) ni el orden de las diez entregas (ver `docs/match/roadmap.md`).
+**Documentos relacionados:** `docs/foundation/MATCH_CORE_PRINCIPLES.md`, `docs/architecture/MODULE_BOUNDARIES.md`.
+**Última actualización:** 2026-09-28.
+
+## Qué existe hoy (ME-01)
+
+Un Laboratorio de Partido con un único escenario 5×5: bloqueo directo
+central contra drop, con la ayuda de D3 como única instrucción defensiva
+editable. Motor detallado (`modules/match/domain/simulation/`), aproximación
+rápida por lotes del mismo escenario (`modules/match/domain/fast/`), diez
+perfiles de laboratorio fijos y editables, y persistencia de equipos/jugadores
+en PostgreSQL.
+
+**No implementado todavía:** partido completo, temporadas, más de una
+acción táctica, más de una instrucción defensiva, cualquier familia de
+ecosistema (ver `docs/foundation/COMPETITION_ECOSYSTEMS.md`), la mayoría de
+los 76 sucesos P01–P76 y 45 capacidades candidatas del estudio de atributos
+(solo 26 están activas; ver `CAPABILITIES.md`).
+
+## Rutas de lectura por tarea
+
+| Tarea | Documentos |
+|---|---|
+| Entender el estado/hechos del partido | `MODEL.md` |
+| Reglas FIBA 2026 alcanzables | `RULES.md` |
+| La acción de bloqueo directo y su árbol de decisión | `ACTIONS.md` |
+| Capacidades activas y parámetros LAB-0.1 | `CAPABILITIES.md` |
+| Los tres escenarios y cómo se validan | `SCENARIOS.md` |
+| Diseño completo (no solo lo aprobado) | `reference/README.md` |
+| Próximas entregas | `roadmap.md` |
+
+## Estructura de código
+
+```text
+modules/match/
+  domain/
+    geometry/ time/ random/       # primitivas puras
+    players/                      # atributos, perfiles, fixture, validación
+    lab/                          # parámetros LAB-0.1, escenarios, MatchInput
+    simulation/                   # motor detallado, hechos, resolvers
+    fast/                         # aproximación rápida por lotes
+  application/
+    ports/ use-cases/             # casos de uso de laboratorio
+  infrastructure/
+    db/                           # PrismaLabTeamRepository
+  ui/                              # editor de jugadores, cancha, relato
+```

@@ -3,9 +3,9 @@
 **Estado:** ACTIVE
 **Es fuente de verdad para:** la separación conceptual de categorías de datos y qué debe identificar toda futura partida.
 **Debe leerse cuando:** se vaya a diseñar cualquier modelo Prisma.
-**No cubre:** modelos concretos (no existen todavía; ver `prisma/schema.prisma`).
-**Documentos relacionados:** `docs/architecture/TECHNICAL_ARCHITECTURE.md`, ADR relacionados en `docs/decisions/`.
-**Última actualización:** 2026-09-25.
+**No cubre:** el detalle de los modelos de laboratorio (ver `docs/match/MODEL.md` y `prisma/schema.prisma`).
+**Documentos relacionados:** `docs/architecture/TECHNICAL_ARCHITECTURE.md`, `docs/match/MODEL.md`, ADR relacionados en `docs/decisions/`.
+**Última actualización:** 2026-09-28.
 
 ## Categorías de datos previstas
 
@@ -32,9 +32,17 @@ identificar como mínimo:
 - `rulesetVersion` — versión del conjunto de reglas de partido aplicado.
 - Semilla o semillas necesarias para reproducibilidad de la simulación.
 
+## Qué existe desde ME-01
+
+Los primeros modelos reales son `LabTeam` y `LabPlayer`
+(`prisma/schema.prisma`): equipos y jugadores del Laboratorio de Partido,
+categoría 1 ("datos de contenido... cuando se diseñen", aquí perfiles
+ficticios escritos a mano, no generación poblacional). No son la categoría
+2 (partida/carrera): el laboratorio no es una carrera ni una temporada.
+
 ## Qué no existe todavía
 
-FND-001 no crea tablas de partidas, jugadores, equipos ni competiciones.
-El esquema Prisma (`prisma/schema.prisma`) solo contiene el `datasource` y
-el `generator`, sin ningún modelo, para poder ejecutar `prisma generate` y
-validar la conexión sin inventar dominio de juego de ejemplo.
+Ni ME-01 ni FND-001 crean tablas de partidas/carrera, clubes de
+competición, contratos ni competiciones. El motor detallado conserva su
+snapshot y hechos en memoria durante la corrida; no escribe cada
+movimiento en la base (estudio de referencia §13.4).

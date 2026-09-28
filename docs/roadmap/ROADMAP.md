@@ -3,19 +3,20 @@
 **Estado:** ACTIVE
 **Es fuente de verdad para:** el orden comprometido de los grandes bloques de trabajo.
 **Debe leerse cuando:** necesites situar una entrega dentro del plan general.
-**No cubre:** fechas ni alcance detallado de cada bloque futuro (se define en su propio prompt de implementación cuando llegue el momento).
-**Documentos relacionados:** `docs/foundation/CURRENT_SCOPE.md`.
-**Última actualización:** 2026-09-25.
+**No cubre:** el detalle de las diez entregas del motor de partido (ver `docs/match/roadmap.md`).
+**Documentos relacionados:** `docs/foundation/CURRENT_SCOPE.md`, `docs/match/roadmap.md`.
+**Última actualización:** 2026-09-28.
 
 ## Comprometido, en este orden
 
-1. **FND-001** — Foundation general y arquitectura técnica (esta entrega).
-2. Diseño integrado de motor de partido, tácticas y atributos como un
-   único núcleo de juego.
-3. Laboratorio de Partido con una primera rebanada vertical de las tres
-   piezas anteriores.
-4. Profundización y calibración del núcleo de partido.
-5. Uso del núcleo validado por competiciones y carrera.
+1. **FND-001** — Foundation general y arquitectura técnica. Completada.
+2. **ME-01** — Primera posesión integrada y Laboratorio de Partido (motor,
+   tácticas y atributos como un único núcleo, primera rebanada vertical).
+   Esta entrega. Detalle y siguientes nueve bloques del motor en
+   `docs/match/roadmap.md`.
+3. Profundización y calibración del núcleo de partido (ME-02 a ME-06 del
+   roadmap del motor).
+4. Uso del núcleo validado por competiciones y carrera.
 
 ## Horizonte no comprometido
 

@@ -1,9 +1,10 @@
-// Esquema Prisma de la fase Foundation (FND-001).
+// Esquema Prisma. FND-001 dejó aquí solo el datasource y el generator; ME-01
+// añade los primeros modelos reales: equipos y jugadores del Laboratorio de
+// Partido. Ver docs/architecture/DATA_AND_PERSISTENCE.md para las categorías
+// de datos previstas y docs/match/DATA.md para el detalle de estos modelos.
 //
-// Deliberadamente no contiene todavía ningún modelo de dominio: esta entrega
-// solo establece la conexión a PostgreSQL y el flujo de generación/migración.
-// Ver docs/architecture/DATA_AND_PERSISTENCE.md para las categorías de datos
-// previstas y ADR-0001 para la elección de stack.
+// Deliberadamente no incluye todavía Club, Player de carrera, contrato ni
+// liga (prompt ME-01 §4): son modelos de otras entregas.
 
 generator client {
   provider = "prisma-client-js"
@@ -12,4 +13,39 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+}
+
+/// Equipo de laboratorio (no es un club de competición).
+model LabTeam {
+  id        String      @id
+  name      String
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  players   LabPlayer[]
+
+  @@map("lab_teams")
+}
+
+/// Jugador de laboratorio: perfil ficticio escrito a mano o editado desde la
+/// interfaz. `attributes` guarda las 26 capacidades activas (1-15) como JSON
+/// tipado en el dominio; el esquema no impone aquí sus claves concretas.
+model LabPlayer {
+  teamId           String
+  team             LabTeam  @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  id               String
+  name             String
+  age              Int
+  positionLabel    String
+  template         String
+  heightCm         Int
+  weightKg         Int
+  wingspanCm       Int
+  standingReachCm  Int
+  attributes       Json
+  pnrTendency      String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@id([teamId, id])
+  @@map("lab_players")
 }
