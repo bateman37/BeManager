@@ -1180,7 +1180,21 @@ class TramoRun {
         return null;
     }
 
-    // Carrera hacia el aro desde las posiciones reales en t1.
+    // Ventana leída en el instante real en que el balón entra en pista
+    // delantera (ME-03, aclaración opción B): se avanza primero el balón
+    // (botando con el portador, con todos los demás desplazamientos ya en
+    // marcha) hasta ese cruce, y solo entonces se reconstruyen posiciones y
+    // trayectorias para leer la ventaja. Un defensor que a esa altura
+    // todavía no ha cruzado no protege nada todavía, por rápido que sea.
+    // El portador bota hacia el aro: hace falta un tramo de trayectoria real
+    // (no solo el instante t1) para poder interpolar su posición más
+    // adelante, en el cruce real de la mitad de la pista.
+    const originGlobal = this.positionAt(carrierId, t1);
+    const originLocal = toLocal(frame.dir, originGlobal);
+    const fullArriveMs = this.moveGlobal(carrierId, t1, attackedHoopGlobal(frame.dir));
+    const crossOffset = frontcourtEntryOffsetSeconds(originLocal, ATTACKED_HOOP, (fullArriveMs - t1) / 1000);
+    if (crossOffset !== null) t1 += secondsToMs(crossOffset);
+
     const local = this.localPositions(frame, t1);
     const carrierSlot = frame.idToSlot[carrierId]!;
     const attackers = this.participants(frame, local, OFFENSE_SLOTS);
@@ -1205,22 +1219,28 @@ class TramoRun {
     const shooterId = frame.slotToId[shooterSlot]!;
     const shooterArrival =
       read.kind === "penetracion" ? read.carrier.arrivalSeconds : timeToReach(local[shooterSlot]!, ATTACKED_HOOP, this.runSpeed(shooterId));
-    const contesterTimed = read.kind === "superioridad" ? read.secondDefender : read.firstDefender;
+    const contesterTimed =
+      read.kind === "superioridad"
+        ? read.secondDefender
+        : read.kind === "superioridad_3x2"
+          ? (read.thirdDefender ?? read.secondDefender)
+          : read.firstDefender;
     const reason =
       read.kind === "penetracion"
         ? `Ventaja temprana: ${carrierId} ataca el aro y llega en ${formatSeconds(read.carrier.arrivalSeconds)}, antes que el primer defensor (${read.firstDefender.id}, ${formatSeconds(read.firstDefender.arrivalSeconds)}).`
         : read.kind === "pase_adelantado"
           ? `Ventaja temprana: ${carrierId} adelanta el balón a ${shooterId}, que llega al aro en ${formatSeconds(read.receiver.arrivalSeconds)}, antes que el primer defensor (${read.firstDefender.id}, ${formatSeconds(read.firstDefender.arrivalSeconds)}).`
-          : `Ventaja temprana 2×1: ${read.firstDefender.id} para a ${carrierId} en el aro (${formatSeconds(read.carrier.arrivalSeconds)}) y ${shooterId} recibe en ${formatSeconds(read.receiver.arrivalSeconds)}, antes que el segundo defensor (${read.secondDefender.id}, ${formatSeconds(read.secondDefender.arrivalSeconds)}).`;
+          : read.kind === "superioridad"
+            ? `Ventaja temprana 2×1: ${read.firstDefender.id} para a ${carrierId} en el aro (${formatSeconds(read.carrier.arrivalSeconds)}) y ${shooterId} recibe en ${formatSeconds(read.receiver.arrivalSeconds)}, antes que el segundo defensor (${read.secondDefender.id}, ${formatSeconds(read.secondDefender.arrivalSeconds)}).`
+            : `Ventaja temprana 3×2: ${read.firstDefender.id} para a ${carrierId} y ${read.secondDefender.id} cierra a ${read.contained.id} (el corredor); ${shooterId} recibe abierto en ${formatSeconds(read.receiver.arrivalSeconds)}${read.thirdDefender ? `, antes que el tercer defensor (${read.thirdDefender.id}, ${formatSeconds(read.thirdDefender.arrivalSeconds)})` : " sin un tercer defensor todavía situado"}.`;
 
-    // Cuenta de 8 s: el balón debe entrar en pista delantera a tiempo
-    // (penetración y 2×1: el portador bota; pase adelantado: vuela el balón).
+    // Cuenta de 8 s: el cruce ya se fijó en `t1` antes de leer la ventaja.
     if (this.backcourt) {
-      const from = local[carrierSlot]!;
-      const duration = read.kind === "pase_adelantado" ? read.passArrivalSeconds : read.carrier.arrivalSeconds;
-      const offset = frontcourtEntryOffsetSeconds(from, ATTACKED_HOOP, duration);
-      const crossingMs = offset === null ? null : t1 + secondsToMs(offset);
-      const count = evaluateBackcourtCount(this.backcourt.startMs, crossingMs, this.backcourt.elapsedBeforeMs);
+      const count = evaluateBackcourtCount(
+        this.backcourt.startMs,
+        crossOffset === null ? null : t1,
+        this.backcourt.elapsedBeforeMs,
+      );
       if (count.violation) return this.backcourtViolation(frame, count.violationAtMs!, carrierId);
       this.backcourt = null;
     }
@@ -1236,9 +1256,15 @@ class TramoRun {
     const targets = this.dispositionTargets();
     const toRim = new Set<string>([shooterSlot, read.firstDefender.slot, contesterTimed.slot]);
     if (read.kind === "superioridad") toRim.add(carrierSlot);
+    if (read.kind === "superioridad_3x2") {
+      toRim.add(carrierSlot);
+      toRim.add(read.contained.slot);
+      toRim.add(read.secondDefender.slot);
+    }
     const defenderArrival = new Map<string, number>([
       [read.firstDefender.slot, read.firstDefender.arrivalSeconds],
       [contesterTimed.slot, contesterTimed.arrivalSeconds],
+      ...(read.kind === "superioridad_3x2" ? ([[read.secondDefender.slot, read.secondDefender.arrivalSeconds]] as const) : []),
     ]);
     const legs: Record<string, PlannedLeg> = {};
     for (const p of [...attackers, ...defenders]) {

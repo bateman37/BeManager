@@ -138,11 +138,39 @@ export type TransitionRead =
       readonly secondDefender: TimedParticipant;
     }
   | {
+      /**
+       * Superioridad 3×2 (ME-03, aclaración opción B): los dos primeros
+       * defensores ya contienen al portador y al primer receptor (el
+       * "corredor"), pero un segundo receptor ("el exterior") recibe antes
+       * de que llegue un tercer defensor posicionado — o no hay ninguno.
+       * El pase sale directamente del portador, saltando al corredor ya
+       * contenido: no se inventa una segunda asistencia.
+       */
+      readonly kind: "superioridad_3x2";
+      readonly carrier: TimedParticipant;
+      /** El corredor: recibiría a tiempo, pero el segundo defensor lo cierra. */
+      readonly contained: TimedParticipant;
+      /** El exterior: recibe el pase directo del portador y es quien tira. */
+      readonly receiver: TimedParticipant;
+      readonly passReleaseSeconds: number;
+      readonly passArrivalSeconds: number;
+      readonly firstDefender: TimedParticipant;
+      readonly secondDefender: TimedParticipant;
+      readonly thirdDefender: TimedParticipant | null;
+    }
+  | {
       readonly kind: "sin_ventaja";
       readonly firstDefender: TimedParticipant;
       readonly fastestAttacker: TimedParticipant;
       readonly reason: string;
     };
+
+/** Un defensor solo protege si ya está entre el balón y el aro atacado: por
+ * detrás del portador (más cerca de su propio aro) todavía no participa en
+ * la lectura, por rápido que corra después (ME-03, aclaración opción B). */
+function isPositioned(defenderX: number, ballX: number): boolean {
+  return defenderX >= ballX;
+}
 
 /**
  * Ventana de ventaja temprana tras rebote defensivo, robo, recuperación o
@@ -157,9 +185,19 @@ export function readTransition(
   defenders: readonly RaceParticipant[],
   shotClockRemainingSeconds: number,
 ): TransitionRead {
-  const protectors = rimProtectorsRunning(defenders);
-  const firstDefender = protectors[0]!;
-  const secondDefender = protectors[1];
+  // Solo cuentan como protectores los defensores ya situados entre el
+  // balón (posición real del portador en este instante) y el aro atacado;
+  // uno que todavía va por detrás del portador no participa en la lectura
+  // aunque su carrera completa lo llevaría a tiempo (ME-03, opción B).
+  const allRanked = rimProtectorsRunning(defenders);
+  const positioned = rimProtectorsRunning(
+    defenders.filter((d) => isPositioned(d.position.x, carrier.position.x)),
+  );
+  const hasProtector = positioned.length > 0;
+  const firstDefender = positioned[0] ?? allRanked[0]!;
+  const secondDefender = positioned[1];
+  const thirdDefender = positioned[2] ?? null;
+
   const carrierTimed: TimedParticipant = {
     slot: carrier.slot,
     id: carrier.id,
@@ -183,7 +221,7 @@ export function readTransition(
       reason: "reloj de lanzamiento de 2 s o menos: no se habilita una finalización en carrera",
     };
   }
-  if (carrierTimed.arrivalSeconds < firstDefender.arrivalSeconds) {
+  if (!hasProtector || carrierTimed.arrivalSeconds < firstDefender.arrivalSeconds) {
     return { kind: "penetracion", carrier: carrierTimed, firstDefender };
   }
   const laneBlocker = firstInterceptor(carrier.position, ATTACKED_HOOP, PASS_RELEASE_SECONDS, defenders);
@@ -213,6 +251,25 @@ export function readTransition(
       .sort(byArrivalThenId);
     const receiver = options[0];
     if (receiver && receiver.arrivalSeconds < secondDefender.arrivalSeconds) {
+      // 3×2 (opción B): el corredor (`receiver`) también recibe a tiempo,
+      // pero queda contenido por el segundo defensor. Si un segundo
+      // compañero ("el exterior") llega antes que un tercer defensor ya
+      // situado — o no hay ninguno —, el portador le pasa directamente:
+      // no se inventa una asistencia intermedia del corredor ya contenido.
+      const secondReceiver = options.find((o) => o.id !== receiver.id);
+      if (secondReceiver && (!thirdDefender || secondReceiver.arrivalSeconds < thirdDefender.arrivalSeconds)) {
+        return {
+          kind: "superioridad_3x2",
+          carrier: carrierTimed,
+          contained: receiver,
+          receiver: secondReceiver,
+          passReleaseSeconds: releaseSeconds,
+          passArrivalSeconds: secondReceiver.arrivalSeconds,
+          firstDefender,
+          secondDefender,
+          thirdDefender,
+        };
+      }
       return {
         kind: "superioridad",
         carrier: carrierTimed,

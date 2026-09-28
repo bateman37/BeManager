@@ -347,14 +347,121 @@ describe("ME-03 (5): la prioridad de un equipo cambia encargos y desplazamientos
     expect(readTransition(carrier, [], late, 20).kind).toBe("penetracion");
     const back = [at("D1", "O1", 24), at("D2", "O2", 23)];
     expect(readTransition(carrier, [], back, 20).kind).toBe("sin_ventaja");
-    // 2×1: el primer defensor para al portador y el segundo llega tarde al compañero.
-    const oneBack = [at("D1", "O1", 25), at("D2", "O2", 5)];
+    // 2×1: el primer defensor para al portador; el segundo ya está situado
+    // (por delante del portador, x=20) pero llega tarde al compañero.
+    const oneBack = [at("D1", "O1", 25), at("D2", "O2", 20, 0)];
     expect(readTransition(carrier, [at("O2", "D2", 21, 4)], oneBack, 20).kind).toBe("superioridad");
+    // El mismo segundo defensor, pero todavía por detrás del portador
+    // (x=5 < 20): no cuenta como protector todavía, aunque su carrera
+    // completa lo haría llegar (ME-03, opción B) — sin ese defensor de
+    // verdad situado, la ventaja resuelta es la penetración/pase directo,
+    // no un 2×1 con alguien que ni siquiera ha cruzado la mitad de la pista.
+    const oneTrailing = [at("D1", "O1", 25), at("D2", "O2", 5)];
+    expect(readTransition(carrier, [at("O2", "D2", 21, 4)], oneTrailing, 20).kind).not.toBe("superioridad");
     // Con 2 s o menos de reloj no se habilita finalizar en carrera.
     expect(readTransition(carrier, [], late, 2).kind).toBe("sin_ventaja");
     // Segunda oportunidad: criterio de la opción 1 (carril al aro antes que el protector).
     expect(readSecondChance(at("O5", "O5", ATTACKED_HOOP.x - 0.5), [at("D5", "D5", 20)]).putback).toBe(true);
     expect(readSecondChance(at("O5", "O5", 22), [at("D5", "D5", ATTACKED_HOOP.x - 0.2)]).putback).toBe(false);
+  });
+});
+
+// (5b) Aclaración ME-03 opción B: superioridad numérica al cruzar el medio
+// campo, con al menos un tercer atacante ("el exterior") además del
+// corredor. Posiciones y velocidades construidas a mano, no del fixture:
+// el fixture real nunca abre esta ventana (ver informe de barrido en el
+// prompt archivado y en docs/match/ACTIONS.md), así que este mecanismo se
+// demuestra con geometría controlada, igual que el 2×1 de (5).
+describe("ME-03 (5b): 3×2 real — opción B de la ventaja temprana", () => {
+  const at = (slot: string, id: string, x: number, y: number, runSpeedMps: number): RaceParticipant => ({
+    slot,
+    id,
+    position: { x, y },
+    runSpeedMps,
+    lateralSpeedMps: 3,
+    t23: 8,
+  });
+
+  it("3×2 ejecutable: el portador y el corredor quedan contenidos, pero el exterior recibe y tira sin un tercer defensor", () => {
+    const carrier = at("O1", "D1", 10, 7.5, 5); // 3,285 s al aro
+    const firstDefender = at("D1", "O1", 25, 7.5, 4); // 0,356 s: contiene al portador
+    const secondDefender = at("D2", "O2", 15, 7.5, 1); // 11,425 s: muy lento, pero ya situado
+    const corredor = at("O2", "D2", 20, 7.5, 5); // 1,285 s: bate al segundo defensor
+    const exterior = at("O3", "D3", 18, 7.5, 4); // 2,106 s: el receptor abierto
+
+    const read = readTransition(carrier, [corredor, exterior], [firstDefender, secondDefender], 20);
+
+    expect(read.kind).toBe("superioridad_3x2");
+    if (read.kind !== "superioridad_3x2") return;
+    expect(read.contained.id).toBe(corredor.id);
+    expect(read.receiver.id).toBe(exterior.id);
+    expect(read.thirdDefender).toBeNull();
+    // Ejecutable de verdad: el pase llega y el tiro puede prepararse cuando
+    // el receptor ya está esperando, sin que ningún defensor lo impida.
+    expect(read.passArrivalSeconds).toBeGreaterThanOrEqual(read.passReleaseSeconds);
+  });
+
+  it("un tercer defensor ya situado cierra también al exterior: el ataque se organiza, no forcejea un tiro imposible", () => {
+    // El pase corto del 2×1 sale cuando el portador llega al aro (3,285 s)
+    // más la liberación (0,18 s): ningún receptor puede recibir antes de
+    // 3,465 s en este mecanismo. Para que el segundo defensor sea real
+    // (batido por el corredor) tiene que llegar después de esa liberación;
+    // para que el tercero cierre de verdad al exterior, el exterior debe
+    // llegar por su propia carrera (más lento que la liberación), no por el
+    // suelo del pase corto.
+    const carrier = at("O1", "D1", 10, 7.5, 5); // 3,285 s
+    const firstDefender = at("D1", "O1", 25, 7.5, 4); // 0,356 s: contiene al portador
+    const secondDefender = at("D2", "O2", 12.025, 7.5, 4); // 3,60 s: el corredor sí lo bate
+    const thirdDefender = at("D3", "O3", 11.225, 7.5, 4); // 3,80 s: cierra al exterior
+    const corredor = at("O2", "D2", 20, 7.5, 5); // 1,285 s de carrera; recibe a los 3,465 s
+    const exterior = at("O3", "D3", 14, 7.5, 3); // 4,14 s de carrera propia: llega después del tercer defensor
+
+    const read = readTransition(carrier, [corredor, exterior], [firstDefender, secondDefender, thirdDefender], 20);
+
+    // El tercer defensor ya situado cierra al exterior: se resuelve como el
+    // 2×1 ordinario (pase al corredor bajo contención), no como 3×2 libre.
+    expect(read.kind).toBe("superioridad");
+  });
+
+  it("ambos defensores cierran ambas opciones: sin ventaja, ataque organizado", () => {
+    const carrier = at("O1", "D1", 10, 7.5, 5); // 3,285 s
+    const firstDefender = at("D1", "O1", 25, 7.5, 4); // 0,356 s: contiene al portador
+    const secondDefender = at("D2", "O2", 15, 7.5, 3); // 3,808 s: más lento que el portador, pero...
+    const corredor = at("O2", "D2", 16, 7.5, 1); // 10,425 s: mucho más lento que el segundo defensor
+
+    const read = readTransition(carrier, [corredor], [firstDefender, secondDefender], 20);
+
+    expect(read.kind).toBe("sin_ventaja");
+  });
+
+  it("cambiar la prioridad de rebote altera de verdad cuántos defensores ya están situados al cruzar, sin resultados por cuota", () => {
+    // Mismo bloque de defensores; solo cambia qué tan atrás queda el
+    // segundo defensor (equivalente a "Cargar rebote" dejando a alguien
+    // más atrasado en el retorno). No hay ninguna probabilidad ni cuota
+    // involucrada: es geometría real de llegada.
+    const carrier = at("O1", "D1", 14, 7.5, 4);
+    const firstDefender = at("D1", "O1", 25, 7.5, 4);
+    const readWithBothBack = readTransition(
+      carrier,
+      [],
+      [firstDefender, at("D2", "O2", 19, 7.5, 4)], // ya situado (x=19 ≥ 14)
+      20,
+    );
+    const readWithOneTrailing = readTransition(
+      carrier,
+      [],
+      [firstDefender, at("D2", "O2", 12, 7.5, 4)], // todavía por detrás (x=12 < 14)
+      20,
+    );
+    // Misma decisión final en este caso concreto (el primer defensor ya
+    // contiene al portador en ambos), pero el número de protectores
+    // disponibles y sus tiempos de llegada difieren de verdad: no es un
+    // efecto de cuota o probabilidad, es la geometría real del cruce.
+    expect(readWithBothBack.kind).toBe("sin_ventaja");
+    expect(readWithOneTrailing.kind).toBe("sin_ventaja");
+    if (readWithBothBack.kind === "sin_ventaja" && readWithOneTrailing.kind === "sin_ventaja") {
+      expect(readWithBothBack.reason).not.toBe(readWithOneTrailing.reason);
+    }
   });
 });
 
