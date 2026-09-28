@@ -198,6 +198,10 @@ describe("ME-03 (3): rebote ofensivo, rebote defensivo, tapón y balón suelto",
     expect(between.every((e) => e.control.status !== "control" || e === lost)).toBe(true);
     const ended = r.events.slice(idx).find((e) => e.kind === "possession_ended")!;
     expect(ended.text).not.toMatch(/robo/);
+    const started = r.events.slice(idx).find((e) => e.kind === "possession_started")!;
+    expect(TEAM_OF[recovery.actors[0]!]).not.toBe(recovery.possessionTeamId);
+    expect(started.possessionTeamId).toBe(TEAM_OF[recovery.actors[0]!]);
+    expect(started.shotClockMs).toBe(24_000);
   });
 });
 
