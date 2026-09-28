@@ -5,7 +5,7 @@
 **Debe leerse cuando:** vayas a añadir un escenario, una cobertura, o a entender por qué una rama concreta es alcanzable.
 **No cubre:** el modo rápido completo de ME-08 (aquí solo hay una aproximación limitada a este escenario).
 **Documentos relacionados:** `ACTIONS.md`, `RULES.md`.
-**Última actualización:** 2026-09-28 (ME-03).
+**Última actualización:** 2026-09-28 (ME-03, aclaración opción B).
 
 ## Los tres escenarios (`domain/lab/scenario.ts`)
 
@@ -95,6 +95,8 @@ detallada: el modo rápido no resume tramos.
 
 Se comprueba en `domain/sequence/me03.test.ts` (reproducibilidad,
 continuidad al cambiar de lado, fronteras de rebote y balón suelto, saques
-y relojes, carga frente a balance, guardián y regresión de ME-01/ME-02) y
-con el plan manual `docs/testing/manual/ME-03-manual-test-plan.md`. El
-coste se perfila con `npm run profile:tramo` (`scripts/profile-tramo.ts`).
+y relojes, carga frente a balance, guardián y regresión de ME-01/ME-02;
+2×1 y 3×2 de la ventaja temprana con geometría construida a mano, ver
+`ACTIONS.md`) y con el plan manual
+`docs/testing/manual/ME-03-manual-test-plan.md`. El coste se perfila con
+`npm run profile:tramo` (`scripts/profile-tramo.ts`).

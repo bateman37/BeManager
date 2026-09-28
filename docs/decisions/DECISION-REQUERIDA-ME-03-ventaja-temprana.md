@@ -1,9 +1,43 @@
 # DECISIÓN REQUERIDA — ME-03: cuándo existe una ventana de ventaja temprana
 
-**Estado:** DRAFT (pendiente de Dennis)
-**Última actualización:** 2026-09-28.
+**Estado:** RESUELTA — opción B (Dennis, ver
+`docs/prompts/implementation/ME-03-aclaracion-ventaja-temprana.md`).
+**Última actualización:** 2026-09-28 (resolución opción B).
 
-## DECISIÓN REQUERIDA
+## Resolución
+
+Dennis eligió la **opción B**: leer también la superioridad numérica al
+cruzar el medio campo, no solo la carrera directa al aro; conservando el
+destino de balance `x = 14`, las prioridades y los perfiles sin cambios.
+Implementada en `domain/sequence/transition.ts` (`readTransition`) y
+`play-tramo.ts` (`advance`): un defensor solo cuenta como protector si, en
+el instante real en que el balón entra en pista delantera (posición
+reconstruida con una trayectoria real, no una carrera hipotética desde el
+instante de la salida), ya está entre el balón y el aro; se añadió la
+lectura 3×2 (`superioridad_3x2`) cuando el corredor también queda
+contenido pero un segundo receptor exterior recibe antes de que exista un
+tercer defensor ya situado.
+
+**Verificación tras implementarla:** el mecanismo es correcto y se
+demuestra con geometría construida a mano (2×1 y 3×2 reales,
+`me03.test.ts`), pero el fixture real de ME-01/ME-03 **sigue sin
+producir ninguna ejecución** en 8 000 tramos (24 000 lecturas de
+transición: 0 ejecutadas). Motivo distinto del diagnóstico original: ya no
+es que ningún defensor cuente como protegido por posición (en 1 600 de las
+24 000 lecturas solo 1 o 2 de los cinco lo estaban), sino que el defensor
+de `drop` (típicamente D5) permanece siempre cerca del aro que protege por
+su propia cobertura, y esa única presencia real basta para llegar entre
+0,25 y 1 s antes que cualquier atacante en tránsito, incluso cuando los
+demás defensores todavía no han cruzado. Esto ya no es una decisión de
+juego pendiente: es una propiedad geométrica de este fixture concreto
+(mismas velocidades, misma disposición de bloqueo directo en ambos
+extremos), documentada en `docs/match/ACTIONS.md`. No se ha ajustado
+ningún coeficiente de LAB-0.1/LAB-0.2 ni ninguna posición del fixture para
+cambiar esta frecuencia.
+
+---
+
+## Contexto original (antes de la resolución)
 
 ### Contexto exacto
 

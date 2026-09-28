@@ -30,4 +30,12 @@ Bloques `DECISIÓN REQUERIDA` que Claude Code no puede cerrar por ser reglas
 de juego (ver `docs/process/WORKFLOW.md`). No son ADR: cuando Dennis decida,
 se registra en el prompt siguiente y, si procede, en un ADR.
 
-- `DECISION-REQUERIDA-ME-03-ventaja-temprana.md` — criterio para que exista una ventana de ventaja temprana en transición (con el fixture, el balance de dos o tres jugadores nunca la concede).
+Ninguna pendiente actualmente.
+
+## Decisiones requeridas resueltas
+
+- `DECISION-REQUERIDA-ME-03-ventaja-temprana.md` — **resuelta: opción B**
+  (superioridad numérica al cruzar el medio campo). Implementada; el
+  fixture real sigue sin ejecutar ninguna ventaja por una propiedad
+  geométrica del propio fixture (ver `docs/match/ACTIONS.md`), no por una
+  decisión de juego pendiente.

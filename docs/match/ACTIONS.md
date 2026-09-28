@@ -5,7 +5,7 @@
 **Debe leerse cuando:** vayas a modificar `possession-core.ts` o a añadir una segunda acción táctica u otra cobertura.
 **No cubre:** ninguna otra familia táctica (mano a mano, poste, zonas) ni otras coberturas de bloqueo (switch, ICE/veer...): llegan en entregas posteriores (ver `docs/match/roadmap.md`). La transición de ME-03 no es una táctica nueva: solo decide si existe ventana y reutiliza las ejecuciones ya existentes (sección final).
 **Documentos relacionados:** `docs/match/reference/BeManager-capitulo-tacticas-integradas-al-motor-v1.md`, `CAPABILITIES.md`, `RULES.md`.
-**Última actualización:** 2026-09-28 (ME-03).
+**Última actualización:** 2026-09-28 (ME-03, aclaración opción B).
 
 ## Disposición y roles fijos
 
@@ -132,31 +132,57 @@ inmediato solo si llega al aro antes que el primer protector (el criterio de
 la opción 1 de este documento, F04 + T23); si no, la posesión sale y se
 reorganiza con sus 14 s.
 
-**Salida y lectura de transición.** Tras rebote defensivo, robo,
-recuperación viva o saque: si quien tiene el balón no es el base, le da la
-salida solo si ningún rival llega antes al receptor ni puede cortar la
-línea (carrera de intercepción con el radio corporal de LAB-0.2); si no, él
-mismo sube el balón. Después se comparan llegadas reales al aro atacado:
+**Salida y lectura de transición (opción B, aclaración ME-03).** Tras
+rebote defensivo, robo, recuperación viva o saque: si quien tiene el balón
+no es el base, le da la salida solo si ningún rival llega antes al
+receptor ni puede cortar la línea (carrera de intercepción con el radio
+corporal de LAB-0.2); si no, él mismo sube el balón botando. Antes de leer
+la ventaja se avanza esa trayectoria real hasta el **instante en que el
+balón entra de verdad en pista delantera** (no el instante en que se
+decidió la salida): solo entonces se reconstruyen las diez posiciones. Un
+defensor cuenta como protector únicamente si, en ese instante, ya está
+entre el balón y el aro atacado (su posición real, no una carrera
+hipotética completa); uno que todavía va por detrás no protege nada
+todavía, por rápido que sea de ahí en adelante. Comparadas esas llegadas
+reales:
 
-1. **Penetración**: el portador llega antes que el primer defensor.
+1. **Penetración**: el portador llega antes que el primer defensor (o no
+   hay ninguno ya situado).
 2. **Pase adelantado**: un compañero llega antes que el primer defensor y la
    línea de pase está libre.
-3. **2×1**: el primer defensor para al portador en el aro y un compañero
-   recibe antes de que llegue el segundo, que es quien le disputa.
+3. **2×1**: el primer defensor para al portador en el aro y el corredor (el
+   compañero más rápido) recibe antes de que llegue el segundo, que es
+   quien le disputa.
+4. **3×2**: el corredor también queda contenido por el segundo defensor,
+   pero un segundo receptor —el exterior— recibe el pase directo del
+   portador antes de que exista un tercer defensor ya situado que lo cierre
+   (o no lo hay). Si ese tercero sí llega a tiempo, se resuelve como el 2×1
+   ordinario: no se inventa una asistencia intermedia del corredor ya
+   contenido.
 
 La ventaja se ejecuta con pase/recepción (T09/T11) y finalización cercana
 por el mismo `resolveShotAttempt` (oposición por geometría en el instante
-de lanzar, tapón, falta, rebote). Si no hay ventana, el relato registra
-«Sin ventaja: ataque organizado» con los tiempos y los diez se desplazan
-hacia la disposición del bloqueo. La acción organizada empieza cuando los
-**cinco atacantes** están situados; un defensor que aún no ha llegado entra
-en ella desde donde está de verdad (el árbol lee esa posición real), y el
-relato lo nombra. Con 2 s o menos de reloj no se habilita una finalización
-en carrera. No hay multiplicador de «ataque temprano».
+de lanzar, tapón, falta, rebote); no hay un árbol estadístico ni una
+tercera función de tiro distinta para el 3×2. Si no hay ventana, el relato
+registra «Sin ventaja: ataque organizado» con los tiempos y los diez se
+desplazan hacia la disposición del bloqueo. La acción organizada empieza
+cuando los **cinco atacantes** están situados; un defensor que aún no ha
+llegado entra en ella desde donde está de verdad, y el relato lo nombra.
+Con 2 s o menos de reloj no se habilita una finalización en carrera. No
+hay multiplicador de «ataque temprano».
 
-**Limitación observada con el fixture.** Con dos o tres jugadores en
-balance, en 8 000 tramos (semillas 1–1000, las cuatro combinaciones de
-prioridades y ambas coberturas) no apareció ninguna ventaja temprana ni
-ningún defensor tarde al empezar la acción organizada: el coste de cargar
-se ve en encargos, trayectorias y rebotes, no en transición concedida. Ver
-`docs/decisions/DECISION-REQUERIDA-ME-03-ventaja-temprana.md`.
+**Limitación observada con el fixture, tras implementar la opción B.** En
+8 000 tramos (semillas 1–1000 × cuatro combinaciones de prioridades × dos
+coberturas, 24 000 lecturas de transición) sigue sin ejecutarse ninguna
+ventaja: 0 de 24 000. La causa ya no es un defecto de elegibilidad (el
+filtro de "ya situado" se comprueba con geometría construida a mano en
+`me03.test.ts`, incluidos un 2×1 y un 3×2 reales): en 1 600 de esas 24 000
+lecturas solo 1 o 2 de los cinco defensores ya estaban situados al cruzar
+la mitad de la pista, pero el defensor de `drop` (típicamente D5, que por
+su cobertura permanece siempre cerca del aro que protege) llega solo, por
+sí mismo, entre 0,25 y 1 s antes que cualquier atacante en tránsito, en
+prácticamente todas las lecturas. El coste de cargar rebote sigue viéndose
+en encargos, trayectorias y rebotes (ver la prueba (5) de `me03.test.ts`),
+no en transición concedida con este fixture concreto. Ver
+`docs/decisions/DECISION-REQUERIDA-ME-03-ventaja-temprana.md` (resuelta:
+opción B).

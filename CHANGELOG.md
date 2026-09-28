@@ -3,6 +3,51 @@
 Formato libre en español, orden cronológico inverso. Los motivos de
 decisiones duraderas viven en `docs/decisions/`, no aquí.
 
+## ME-03 — Aclaración: ventaja temprana, opción B (sin fusionar)
+
+- Guardado el prompt en
+  `docs/prompts/implementation/ME-03-aclaracion-ventaja-temprana.md`.
+  Dennis resuelve `DECISION-REQUERIDA-ME-03-ventaja-temprana.md` con la
+  **opción B**: leer también la superioridad numérica en el instante real
+  en que el balón entra en pista delantera, no solo la carrera directa al
+  aro.
+- **`readTransition`** (`domain/sequence/transition.ts`): un defensor solo
+  cuenta como protector si, en ese instante (posición real, no una carrera
+  hipotética desde la salida), ya está entre el balón y el aro atacado.
+  Nueva lectura **3×2** (`superioridad_3x2`): cuando el corredor también
+  queda contenido pero un segundo receptor exterior recibe el pase directo
+  del portador antes de que exista un tercer defensor ya situado.
+- **`play-tramo.ts`**: la trayectoria de subida de balón se programa de
+  verdad (`moveGlobal`) antes de leer el cruce de media pista, para que las
+  diez posiciones en ese instante sean reales, no congeladas. La ventaja se
+  resuelve con `resolvePass`/`resolveShotAttempt`, sin árbol estadístico
+  aparte.
+- 4 pruebas discriminantes nuevas en `me03.test.ts` (3×2 ejecutable, ambas
+  opciones cerradas → ataque organizado, prioridad de rebote que cambia
+  tiempos sin cambiar resultados por cuota) más una prueba que documenta
+  que un defensor todavía no situado ya no cuenta como protector. 120/120
+  pruebas del módulo en verde.
+- **Barrido del fixture real** (semillas 1–1000 × cuatro combinaciones de
+  prioridad × drop/trampa, 8 000 tramos, 24 000 lecturas de transición):
+  **0 ejecutadas, 24 000 neutralizadas**. El mecanismo en sí es correcto
+  (probado con geometría construida a mano); la causa de que este fixture
+  concreto nunca abra una ventana es que el defensor de `drop` permanece
+  siempre cerca del aro que protege y llega solo, por sí mismo, entre 0,25
+  y 1 s antes que cualquier atacante en tránsito, incluso en el ~6,7% de
+  lecturas donde 1 o 2 de los otros cuatro defensores quedan legítimamente
+  excluidos por no estar aún situados. No se ha ajustado ningún
+  coeficiente ni posición del fixture para cambiar esta frecuencia. Detalle
+  en `docs/match/ACTIONS.md` y en la resolución de la decisión.
+- Documentación actualizada: `docs/match/{ACTIONS,SCENARIOS}.md`,
+  `docs/decisions/DECISION-REQUERIDA-ME-03-ventaja-temprana.md` (resuelta)
+  y `docs/decisions/README.md`.
+- Pendiente: el recorrido real de navegador y PostgreSQL no se ha
+  ejecutado en este contenedor (sin navegador ni base de datos
+  disponibles aquí). Verificar desde un entorno con ambos, en `main` tras
+  la fusión que decida Dennis, con el plan
+  `docs/testing/manual/ME-03-manual-test-plan.md` (semillas 1, 3, 27 y las
+  cuatro combinaciones de prioridad).
+
 ## ME-03 — Posesiones enlazadas y transición (sin fusionar)
 
 - Guardado el prompt de implementación en
