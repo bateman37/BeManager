@@ -3,6 +3,66 @@
 Formato libre en español, orden cronológico inverso. Los motivos de
 decisiones duraderas viven en `docs/decisions/`, no aquí.
 
+## ME-02 — Trampa, salidas reales y tres correcciones de ME-01 (sin fusionar)
+
+- Guardado el prompt de implementación en
+  `docs/prompts/implementation/ME-02-trampa-y-salidas-con-correcciones-me01.md`.
+- **C1 (contacto/falta de tiro):** la legalidad del cierre ya no compara
+  solo dos marcas de reloj. Se reconstruye la posición real del defensor
+  en el instante de liberación (`positionAtInstant`) y solo hay contacto u
+  oposición si su espacio corporal (radio LAB-0.2 de 0,35 m por jugador)
+  se solapa de verdad con el del tirador. O5 recorre de verdad su
+  continuación desde la pantalla hasta el short roll real `(23,0; 7,5)` en
+  vez de finalizar desde la posición del bloqueo. Rechaza el falso
+  contacto geométrico que producía ~982-983 faltas/1500 corridas con ayuda
+  frente a 0 sin ayuda.
+- **C2 (esquina débil alcanzable):** O5, tras recibir el pase, activa una
+  segunda lectura real (misma geometría de contacto que C1): si D3
+  realmente contiene el roll, O5 puede invertir hacia O3 en la esquina
+  débil sin reiniciar el reloj. Con ayuda, un lote de 1500 corridas
+  demuestra al menos un pase a la esquina; sin ayuda, nunca se regala O3.
+- **C3 (estadística conciliada):** nuevo hecho `field_goal_attempt`,
+  separado de la oportunidad de tiro (`shot_prepared`): no cuenta FGA en
+  una falta de tiro fallada; cuenta 1 FGA/1 FGM en canasta con falta
+  (and-one); cuenta FGA en tapón legal. El resolvedor rápido agrega
+  2FGA/2FGM, 3FGA/3FGM, FTA/FTM y puntos (2×2FGM+3×3FGM+FTM) desde la
+  misma taxonomía de hechos que el motor detallado, versionados como
+  `LAB-0.2`.
+- **Cobertura de trampa:** nuevo campo `coverage` en `MatchInput`
+  (`"drop" | "trampa"`), independiente del escenario. D1 sigue a O1 por la
+  pantalla; D5 sale a comprometerlo junto a D1 (`trap_committed`, solo si
+  llega); D3 pasa a low man sobre el short roll; D4 rota hacia la amenaza
+  que deja D3 (O3), exponiendo a O4; D2 mantiene el lado fuerte. La trampa
+  se juzga cerrada en el instante en que el pase a O5 llegaría, no en el
+  instante de decidir; una trampa cerrada aplica presión real de dos
+  defensores (T07 vs T15, sin robo garantizado); una trampa rota abre un
+  carril directo o una salida a O4 sin canasta garantizada.
+- **M09 (Comunicación):** nueva capacidad activa (27 en total). Añade una
+  latencia de coordinación entre un aviso defensivo reconocido (D5→D3,
+  D3→D4) y la respuesta del receptor. Perfiles nuevos del fixture reciben
+  valores por plantilla/rol; perfiles ya persistidos sin M09 reciben el
+  valor neutro 8 hasta que el usuario lo edite y guarde.
+- Interfaz `/lab`: selector de cobertura (drop/trampa) para la misma
+  posesión; tabla nueva «Misma posesión: drop/trampa (con ayuda)»,
+  separada visualmente de «Drop: ayuda sí/no»; ambas muestran categorías
+  en español (sin claves internas), sus propias entradas/versiones, y se
+  desactualizan al cambiar perfiles, cobertura, semilla o tamaño de lote.
+- Seed de laboratorio (`prisma/seed.ts`) ahora no destructivo por defecto:
+  crea equipos/jugadores que falten sin sobrescribir ediciones ya
+  guardadas; `LAB_SEED_FORCE_RESET=1` restablece el fixture de forma
+  deliberada.
+- Añadidas 15 pruebas discriminantes nuevas en
+  `domain/simulation/me02.test.ts` (reproducibilidad con trampa, C1 sin
+  falta por mera llegada, closeout tardío alcanzable, rechazo del
+  experimento de ~982 faltas, C2 esquina alcanzable/no regalada, trampa
+  cambia responsabilidades y puede abrir salida sin garantizar
+  robo/canasta, M09 solo desplaza el instante del aviso, C3 conciliación
+  FGA/FGM/FTA/FTM/puntos incluido and-one, y misma taxonomía de hechos en
+  rápido/detallado).
+- Actualizados `docs/match/{README,MODEL,ACTIONS,CAPABILITIES,SCENARIOS,RULES}.md`
+  y estado de ME-02 en `docs/match/roadmap.md`.
+- Plan de prueba manual: `docs/testing/manual/ME-02-manual-test-plan.md`.
+
 ## HF-002 — Integridad de la posesión ME-01 y comparación rápida real (sin fusionar)
 
 - Guardado el prompt del hotfix en `docs/prompts/hotfix/HF-002-me01-integridad-y-rapido.md`.

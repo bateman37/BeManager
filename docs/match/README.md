@@ -7,20 +7,23 @@
 **Documentos relacionados:** `docs/foundation/MATCH_CORE_PRINCIPLES.md`, `docs/architecture/MODULE_BOUNDARIES.md`.
 **Última actualización:** 2026-09-28.
 
-## Qué existe hoy (ME-01)
+## Qué existe hoy (ME-01 + ME-02)
 
-Un Laboratorio de Partido con un único escenario 5×5: bloqueo directo
-central contra drop, con la ayuda de D3 como única instrucción defensiva
-editable. Motor detallado (`modules/match/domain/simulation/`), aproximación
-rápida por lotes del mismo escenario (`modules/match/domain/fast/`), diez
-perfiles de laboratorio fijos y editables, y persistencia de equipos/jugadores
-en PostgreSQL.
+Un Laboratorio de Partido con un único bloqueo directo central 5×5, ante el
+que la defensa puede responder con **drop** (con o sin ayuda de D3) o con
+**trampa** (D1+D5 comprometen a O1, D3 pasa a low man, D4 rota exponiendo a
+O4). Motor detallado (`modules/match/domain/simulation/`), aproximación
+rápida por lotes del mismo escenario (`modules/match/domain/fast/`), 27
+capacidades activas por jugador (incluida M09 Comunicación desde ME-02),
+diez perfiles de laboratorio fijos y editables, y persistencia de
+equipos/jugadores en PostgreSQL.
 
 **No implementado todavía:** partido completo, temporadas, más de una
-acción táctica, más de una instrucción defensiva, cualquier familia de
-ecosistema (ver `docs/foundation/COMPETITION_ECOSYSTEMS.md`), la mayoría de
-los 76 sucesos P01–P76 y 45 capacidades candidatas del estudio de atributos
-(solo 26 están activas; ver `CAPABILITIES.md`).
+acción táctica ofensiva, coberturas de bloqueo distintas de drop/trampa,
+zonas, cualquier familia de ecosistema (ver
+`docs/foundation/COMPETITION_ECOSYSTEMS.md`), la mayoría de los 76 sucesos
+P01–P76 y 45 capacidades candidatas del estudio de atributos (27 de 45
+están activas; ver `CAPABILITIES.md`).
 
 ## Rutas de lectura por tarea
 

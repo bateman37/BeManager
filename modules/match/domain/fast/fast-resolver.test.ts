@@ -6,7 +6,7 @@ import { LAB_ROSTER_FIXTURE } from "../players/lab-roster-fixture";
 import { LAB_PARAMETERS_VERSION } from "../lab/lab-0-1-parameters";
 import type { MatchInput } from "../lab/match-input";
 
-function baseInput(): Omit<MatchInput, "scenarioId"> {
+function baseInput(): Omit<MatchInput, "scenarioId" | "coverage"> {
   return {
     seed: 1000,
     rulesetVersion: "FIBA-2026",
@@ -18,18 +18,18 @@ function baseInput(): Omit<MatchInput, "scenarioId"> {
 
 describe("runScenarioBatch", () => {
   it("agrega categorías reales sobre el tamaño de muestra declarado", () => {
-    const result = runScenarioBatch({ ...baseInput(), scenarioId: "drop_con_ayuda" }, 30);
+    const result = runScenarioBatch({ ...baseInput(), scenarioId: "drop_con_ayuda", coverage: "drop" }, 30);
 
     expect(result.sampleSize).toBe(30);
-    expect(result.categories.shotsAttempted).toBeGreaterThan(0);
-    const total =
-      result.categories.shotsMade +
-      (result.categories.shotsAttempted - result.categories.shotsMade);
-    expect(total).toBeGreaterThanOrEqual(0);
+    expect(result.categories.shotOpportunities).toBeGreaterThan(0);
+    // C3: FGA oficial (2+3) nunca puede superar la oportunidad de tiro
+    // preparada, porque una falta de tiro fallada no cuenta como FGA.
+    const officialFga = result.categories.fieldGoalAttempts2 + result.categories.fieldGoalAttempts3;
+    expect(officialFga).toBeLessThanOrEqual(result.categories.shotOpportunities);
   });
 
   it("no acepta un tamaño de muestra menor que 1", () => {
-    expect(() => runScenarioBatch({ ...baseInput(), scenarioId: "drop_con_ayuda" }, 0)).toThrow();
+    expect(() => runScenarioBatch({ ...baseInput(), scenarioId: "drop_con_ayuda", coverage: "drop" }, 0)).toThrow();
   });
 });
 
@@ -65,10 +65,14 @@ describe("runScenarioBatch: HF-002 bug 1 (la ruta rápida no es el motor detalla
 
 describe("runScenarioBatch: HF-002 bug 4 (rebote ofensivo agregado correctamente)", () => {
   it("cuenta un rebote ofensivo real incluso cuando la posesión sigue con un segundo tiro", () => {
-    // Semilla 145 (drop_con_ayuda) produce un rebote ofensivo seguido de un
-    // segundo tiro anotado (ver possession-engine.test.ts, bug 4).
-    const result = runScenarioBatch({ ...baseInput(), scenarioId: "drop_con_ayuda", seed: 145 }, 1);
+    // Un lote suficientemente grande debe contener, con las mismas semillas
+    // por índice, al menos una corrida con rebote ofensivo real seguido de
+    // un segundo intento (ver possession-engine.test.ts, bug 4).
+    const result = runScenarioBatch(
+      { ...baseInput(), scenarioId: "drop_con_ayuda", coverage: "drop", seed: 1 },
+      400,
+    );
     expect(result.categories.offensiveRebounds).toBeGreaterThan(0);
-    expect(result.categories.shotsAttempted).toBeGreaterThanOrEqual(2);
+    expect(result.categories.shotOpportunities).toBeGreaterThan(result.sampleSize);
   });
 });

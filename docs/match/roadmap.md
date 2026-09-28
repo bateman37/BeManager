@@ -66,6 +66,11 @@ El camino crítico es `ME-01 → ME-03 → ME-04 → ME-08 → ME-09 → ME-10`.
 
 ### ME-02 — Trampa y salida ofensiva
 
+**Estado: implementado** (PR ME-02, incluye tres correcciones pendientes de
+ME-01: contacto/falta de tiro por geometría real, esquina débil alcanzable
+con ayuda, y estadística FGA/FGM/FTA/FTM/puntos conciliada con los hechos).
+Ver `docs/match/{ACTIONS,CAPABILITIES,SCENARIOS,RULES}.md`.
+
 **Alcance:** ante el bloqueo, elegir drop o trampa. Dos defensores comprometen el balón, otros cubren roll y lado débil; el ataque puede pasar temprano, encontrar short roll, invertir o perder la oportunidad. Los defensores sin balón dejan y reparan responsabilidades. Las capacidades de lectura, pase, recepción, defensa perimetral/interior y comunicación actúan en sus etapas.
 
 **Interfaz y cierre:** repetir el escenario con una sola cobertura cambiada. Mostrar pérdidas, recepciones, tiros concedidos y costes de cada defensa. La trampa no garantiza robo; un pase de salida no garantiza canasta. Preparar una comparación por lotes pequeños del **mismo escenario** para comprobar el signo de los efectos que más tarde debe conservar el rápido.

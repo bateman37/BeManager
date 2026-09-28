@@ -27,7 +27,15 @@ export const DEFENSIVE_ATTRIBUTE_IDS = [
   "T23",
 ] as const;
 
-export const MENTAL_ATTRIBUTE_IDS = ["M01", "M03", "M04", "M05"] as const;
+/**
+ * M09 (Comunicación) se añade en ME-02 §3: latencia de coordinación entre
+ * un aviso defensivo reconocido y la respuesta de otro defensor (trampa,
+ * rotaciones). Perfiles ya persistidos que carezcan de M09 reciben el
+ * valor neutro 8 de forma explícita hasta que el usuario lo edite y
+ * guarde (ver `buildAttributeRatings`); no se borran ni se restauran las
+ * otras 26 capacidades por su ausencia.
+ */
+export const MENTAL_ATTRIBUTE_IDS = ["M01", "M03", "M04", "M05", "M09"] as const;
 
 export const PHYSICAL_ATTRIBUTE_IDS = ["F01", "F03", "F04", "F05", "F06"] as const;
 
@@ -62,6 +70,7 @@ export const ATTRIBUTE_LABELS: Record<ActiveAttributeId, string> = {
   M03: "Decisiones",
   M04: "Temporización",
   M05: "Espacios",
+  M09: "Comunicación",
   F01: "Aceleración",
   F03: "Frenada",
   F04: "Agilidad lateral",

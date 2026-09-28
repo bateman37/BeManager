@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { ACTIVE_ATTRIBUTE_IDS, d, ratingToLetterGrade, isValidRating } from "./attribute";
 
 describe("escala 1-15 y 15 letras exactas", () => {
-  it("tiene exactamente 26 capacidades activas", () => {
-    expect(ACTIVE_ATTRIBUTE_IDS.length).toBe(26);
-    expect(new Set(ACTIVE_ATTRIBUTE_IDS).size).toBe(26);
+  it("tiene exactamente 27 capacidades activas (M09 añadida en ME-02)", () => {
+    expect(ACTIVE_ATTRIBUTE_IDS.length).toBe(27);
+    expect(new Set(ACTIVE_ATTRIBUTE_IDS).size).toBe(27);
   });
 
   it("convierte cada entero 1-15 a una letra distinta", () => {
