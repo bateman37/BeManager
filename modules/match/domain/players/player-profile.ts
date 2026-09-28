@@ -66,6 +66,7 @@ export const TEMPLATE_BASE_RATINGS: Record<PlayerTemplate, Partial<AttributeRati
     F04: 10,
     F05: 6,
     F06: 6,
+    M09: 10,
   },
   W: {
     T01: 9,
@@ -94,6 +95,7 @@ export const TEMPLATE_BASE_RATINGS: Record<PlayerTemplate, Partial<AttributeRati
     F04: 8,
     F05: 8,
     F06: 9,
+    M09: 9,
   },
   B: {
     T01: 11,
@@ -122,25 +124,45 @@ export const TEMPLATE_BASE_RATINGS: Record<PlayerTemplate, Partial<AttributeRati
     F04: 6,
     F05: 12,
     F06: 10,
+    M09: 9,
   },
 };
 
 /**
+ * Valor neutro de M09 (Comunicación) para un perfil ya persistido antes de
+ * ME-02 que todavía no lo tiene guardado (ME-02 §3). Es explícito y
+ * visible en ficha; no borra ni recalcula las otras 26 capacidades, y deja
+ * de aplicarse en cuanto el usuario edita y guarda el perfil con su propio
+ * valor de M09.
+ */
+export const M09_BACKFILL_NEUTRAL_RATING = 8;
+
+/**
  * Construye las capacidades de un perfil aplicando la plantilla base y los
  * overrides explícitos del prompt (§2). Falla si falta alguna de las 26
- * capacidades activas tras aplicar la plantilla y los overrides: no se
- * permite rellenar con un valor oculto por defecto.
+ * capacidades activas originales tras aplicar la plantilla y los
+ * overrides: no se permite rellenar con un valor oculto por defecto.
+ *
+ * Excepción explícita y documentada (ME-02 §3): M09 (Comunicación) es la
+ * única capacidad activa que, si falta tras plantilla + overrides, se
+ * rellena con el valor neutro `M09_BACKFILL_NEUTRAL_RATING` (8) en vez de
+ * fallar, para no romper perfiles ya persistidos guardados antes de ME-02.
+ * El resto de capacidades sigue exigiendo un valor explícito.
  */
 export function buildAttributeRatings(
   template: PlayerTemplate,
   overrides: Partial<AttributeRatings>,
 ): AttributeRatings {
   const base = TEMPLATE_BASE_RATINGS[template];
-  const result: Partial<AttributeRatings> = { ...base, ...overrides };
+  const result: { -readonly [K in ActiveAttributeId]?: Rating } = { ...base, ...overrides };
 
   for (const id of ACTIVE_ATTRIBUTE_IDS) {
     const value = result[id];
     if (value === undefined || !isValidRating(value)) {
+      if (id === "M09") {
+        result[id] = M09_BACKFILL_NEUTRAL_RATING;
+        continue;
+      }
       throw new RangeError(
         `Falta o es inválida la capacidad activa ${id} (plantilla ${template})`,
       );
