@@ -993,6 +993,13 @@ class TramoRun {
   }
 
   private organize(frame: Frame, t0: Milliseconds, holderId: string): Step | null {
+    const phase = this.currentPossession().phases[this.currentPossession().phases.length - 1]!;
+    if (phase.entry === "pendiente") {
+      this.setPhaseEntry(
+        "ataque_organizado",
+        `La posesión continúa y se reorganiza con ${(this.shotRemainingAt(t0) / 1000).toFixed(1)} s de lanzamiento, desde las posiciones que ya ocupaban.`,
+      );
+    }
     const arrivals = this.planOrganizeLegs(frame, t0, []);
     const holderSlot = frame.idToSlot[holderId]!;
     // La acción organizada empieza cuando los cinco atacantes están
