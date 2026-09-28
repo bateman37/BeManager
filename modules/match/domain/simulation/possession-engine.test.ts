@@ -88,6 +88,32 @@ describe("runPossession: invariante 4 (ayuda de D3 deja a O3)", () => {
     const helpFact = state.facts.find((f) => f.kind === "help_left_assignment");
     expect(helpFact).toBeUndefined();
   });
+
+  it("la posible reparación de D4 deja a O4 sin cobertura", () => {
+    const state = runPossession(buildInput("drop_con_ayuda", 42));
+    const repairFact = state.facts.find((f) => f.kind === "help_repair_attempt");
+    expect(repairFact).toBeDefined();
+    expect(repairFact!.actors).toEqual(["D4", "O4"]);
+  });
+});
+
+describe("runPossession: invariante 8 (aislamiento de snapshot)", () => {
+  it("una corrida ya calculada no cambia si se muta el array de entrada después", () => {
+    const players = LAB_ROSTER_FIXTURE[0]!.players.map((p) => ({
+      ...p,
+      attributes: { ...p.attributes } as { T09: number } & typeof p.attributes,
+    }));
+    const input = buildInput("drop_con_ayuda", 321);
+    const inputWithCopy: MatchInput = { ...input, offensePlayers: players };
+
+    const before = runPossession(inputWithCopy);
+    const beforeFacts = JSON.stringify(before.facts);
+
+    // Mutar el snapshot original después de calcular no debe alterar el resultado ya obtenido.
+    players[0]!.attributes.T09 = 1;
+
+    expect(JSON.stringify(before.facts)).toBe(beforeFacts);
+  });
 });
 
 describe("runPossession: comparación reproducible entre ayuda sí/no (invariante 7)", () => {
