@@ -3,6 +3,52 @@
 Formato libre en español, orden cronológico inverso. Los motivos de
 decisiones duraderas viven en `docs/decisions/`, no aquí.
 
+## ME-03 — Posesiones enlazadas y transición (sin fusionar)
+
+- Guardado el prompt de implementación en
+  `docs/prompts/implementation/ME-03-posesiones-enlazadas-y-transicion.md`.
+- **Tramo enlazado** (`modules/match/domain/sequence/`): hasta cuatro
+  posesiones estadísticas desde `drop_con_ayuda` (7:12 C1, 18 s) con los
+  mismos diez jugadores, balón y cancha global. Separa evento, fase,
+  posesión estadística, equipo con control, derecho a saque y balón suelto.
+  Termina por cuatro posesiones cerradas, tiempo reglamentario agotado o
+  guardián, y lo muestra. Snapshot único (`TramoInput`) con semilla,
+  perfiles copiados, planes, cobertura y versiones (`ME-03-TRAMO-1`).
+- **Fronteras y relojes FIBA 2026 alcanzables** (`fiba-clock-rules.ts`):
+  rebote ofensivo = fase nueva con 14 s; rebote defensivo, robo o balón
+  suelto rival = posesión nueva con 24 s (sin robo inventado); tapón sin
+  aro recuperado por el mismo equipo sin reinicio; saques tras canasta,
+  último libre, balón fuera y violación con 24/14 s según pista; reloj de
+  partido que no se detiene por canasta en C1, parado en libres, fuera y
+  violaciones, y que vuelve con el toque legal; cuentas de 8 y 5 s y
+  liberación antes de 24 s con fronteras exactas.
+- **Carga frente a balance** por equipo: encargos antes de conocer el tiro,
+  por llegada real al aro (F01) y desempate por ID; desplazamientos reales
+  hacia el aro o la línea central; quien retorna no disputa el rebote.
+- **Transición**: salida al base con carrera de intercepción, lecturas de
+  penetración, pase adelantado y 2×1 por llegadas reales, o «Sin ventaja:
+  ataque organizado» con recorridos y reloj consumido; segunda oportunidad
+  con el criterio de la opción 1 o reorganización con 14 s. Sin
+  multiplicador de ataque temprano.
+- **Núcleo compartido en modo enlazado** (ADR-0006): marco local por giro
+  de 180°, roles canónicos asignados a jugadores reales, generador
+  reanudable. Sin la opción, ME-01/ME-02 producen exactamente la misma
+  huella que antes (prueba de regresión con hash).
+- **Interfaz `/lab`**: sección «Jugar tramo» separada, prioridades por
+  equipo, visor por eventos y por posesiones con cancha completa, relojes,
+  control, marcador, encargos y motivo de la entrada de cada fase.
+- 20 pruebas nuevas en `domain/sequence/me03.test.ts`.
+- Perfil de coste (`npm run profile:tramo`, semillas 1–100, sin BD, mismo
+  proceso, Node 22, 4 núcleos): media 1,35–1,98 ms por tramo y
+  0,34–0,50 ms por posesión según configuración; peor tramo 5,78 ms
+  (semilla 21, drop, ambos «Proteger balance»); máximo 184 hechos en un
+  tramo (semilla 99, trampa). Sin bucles: los 8 000 tramos de semillas
+  1–1000 terminan por cuatro posesiones cerradas.
+- `DECISIÓN REQUERIDA` sobre el criterio de ventaja temprana
+  (`docs/decisions/DECISION-REQUERIDA-ME-03-ventaja-temprana.md`): con el
+  fixture, el balance de dos o tres jugadores nunca concede transición.
+- Plan manual en `docs/testing/manual/ME-03-manual-test-plan.md`.
+
 ## ME-02 — Trampa, salidas reales y tres correcciones de ME-01 (sin fusionar)
 
 - Guardado el prompt de implementación en

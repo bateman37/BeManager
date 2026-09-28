@@ -3,9 +3,9 @@
 **Estado:** ACTIVE
 **Es fuente de verdad para:** el árbol de decisión de O1/O5 y las responsabilidades de los diez jugadores ante esta única acción, en las dos coberturas implementadas.
 **Debe leerse cuando:** vayas a modificar `possession-core.ts` o a añadir una segunda acción táctica u otra cobertura.
-**No cubre:** ninguna otra familia táctica (mano a mano, poste, zonas, transición) ni otras coberturas de bloqueo (switch, ICE/veer...): llegan en entregas posteriores (ver `docs/match/roadmap.md`).
+**No cubre:** ninguna otra familia táctica (mano a mano, poste, zonas) ni otras coberturas de bloqueo (switch, ICE/veer...): llegan en entregas posteriores (ver `docs/match/roadmap.md`). La transición de ME-03 no es una táctica nueva: solo decide si existe ventana y reutiliza las ejecuciones ya existentes (sección final).
 **Documentos relacionados:** `docs/match/reference/BeManager-capitulo-tacticas-integradas-al-motor-v1.md`, `CAPABILITIES.md`, `RULES.md`.
-**Última actualización:** 2026-09-28 (ME-02).
+**Última actualización:** 2026-09-28 (ME-03).
 
 ## Disposición y roles fijos
 
@@ -111,3 +111,52 @@ canasta y después se ejecuta cada libre concedido con `T05` y la semilla
 de la posesión (ver `RULES.md`). Si el último libre falla, el balón queda
 vivo y se resuelve con la misma disputa de rebote que un tiro de campo,
 incluida la continuación ofensiva si el ataque lo recupera (HF-002 §1.6).
+
+## Tramo enlazado (ME-03): carga/balance, transición y segunda oportunidad
+
+Plan fijo por equipo durante el tramo (la dirección en vivo es ME-05).
+
+**Carga y balance.** Al empezar el gesto de cada tiro de campo (y al soltar
+el último libre), antes de conocer el resultado y de sembrar el rebote, los
+cuatro atacantes que no tiran se ordenan por tiempo de llegada al aro
+atacado desde su posición real (F01), con desempate por ID real.
+«Proteger balance»: el primero carga y tres retornan; «Cargar rebote»: los
+dos primeros cargan y dos retornan. Quien carga se desplaza hacia el aro;
+quien retorna, hacia la línea central en su mismo carril (`x = 14`), ambos
+a su velocidad real y solo durante el tiempo disponible. Quien retorna no
+disputa el rebote; la disputa usa las posiciones alcanzadas y la lógica
+T19/T20/F05 existente, sin bonus por cargar. El tirador completa su gesto.
+
+**Segunda oportunidad.** Tras un rebote ofensivo, el reboteador finaliza de
+inmediato solo si llega al aro antes que el primer protector (el criterio de
+la opción 1 de este documento, F04 + T23); si no, la posesión sale y se
+reorganiza con sus 14 s.
+
+**Salida y lectura de transición.** Tras rebote defensivo, robo,
+recuperación viva o saque: si quien tiene el balón no es el base, le da la
+salida solo si ningún rival llega antes al receptor ni puede cortar la
+línea (carrera de intercepción con el radio corporal de LAB-0.2); si no, él
+mismo sube el balón. Después se comparan llegadas reales al aro atacado:
+
+1. **Penetración**: el portador llega antes que el primer defensor.
+2. **Pase adelantado**: un compañero llega antes que el primer defensor y la
+   línea de pase está libre.
+3. **2×1**: el primer defensor para al portador en el aro y un compañero
+   recibe antes de que llegue el segundo, que es quien le disputa.
+
+La ventaja se ejecuta con pase/recepción (T09/T11) y finalización cercana
+por el mismo `resolveShotAttempt` (oposición por geometría en el instante
+de lanzar, tapón, falta, rebote). Si no hay ventana, el relato registra
+«Sin ventaja: ataque organizado» con los tiempos y los diez se desplazan
+hacia la disposición del bloqueo. La acción organizada empieza cuando los
+**cinco atacantes** están situados; un defensor que aún no ha llegado entra
+en ella desde donde está de verdad (el árbol lee esa posición real), y el
+relato lo nombra. Con 2 s o menos de reloj no se habilita una finalización
+en carrera. No hay multiplicador de «ataque temprano».
+
+**Limitación observada con el fixture.** Con dos o tres jugadores en
+balance, en 8 000 tramos (semillas 1–1000, las cuatro combinaciones de
+prioridades y ambas coberturas) no apareció ninguna ventaja temprana ni
+ningún defensor tarde al empezar la acción organizada: el coste de cargar
+se ve en encargos, trayectorias y rebotes, no en transición concedida. Ver
+`docs/decisions/DECISION-REQUERIDA-ME-03-ventaja-temprana.md`.

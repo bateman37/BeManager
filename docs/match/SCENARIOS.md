@@ -1,11 +1,11 @@
 # Escenarios, cobertura y validación (ME-01/ME-02)
 
 **Estado:** ACTIVE
-**Es fuente de verdad para:** los tres escenarios cargables, la cobertura defensiva (`drop`/`trampa`) y cómo se comprueban.
+**Es fuente de verdad para:** los tres escenarios cargables, la cobertura defensiva (`drop`/`trampa`), el modo «Jugar tramo» y cómo se comprueban.
 **Debe leerse cuando:** vayas a añadir un escenario, una cobertura, o a entender por qué una rama concreta es alcanzable.
 **No cubre:** el modo rápido completo de ME-08 (aquí solo hay una aproximación limitada a este escenario).
 **Documentos relacionados:** `ACTIONS.md`, `RULES.md`.
-**Última actualización:** 2026-09-28 (ME-02).
+**Última actualización:** 2026-09-28 (ME-03).
 
 ## Los tres escenarios (`domain/lab/scenario.ts`)
 
@@ -82,3 +82,19 @@ rebotes), el tiro de campo oficial FIBA por separado de la oportunidad de
 tiro preparada: 2FGA/2FGM, 3FGA/3FGM, FTA/FTM y puntos
 (2×2FGM+3×3FGM+FTM). Ver `RULES.md` para la regla exacta de cuándo un
 intento cuenta como FGA.
+
+## Modo «Jugar tramo» (ME-03)
+
+Separado de los tres escenarios y de las dos tablas de lotes: parte siempre
+de `drop_con_ayuda` y encadena hasta cuatro posesiones (ver `MODEL.md` y
+`RULES.md`). Entradas: semilla y cobertura (las mismas del resto del
+laboratorio; la cobertura rige para el equipo que defienda en cada
+posesión) y la prioridad tras tiro de cada equipo. Cambiar cualquiera de
+ellas, o guardar un perfil, limpia el tramo anterior. Solo hay versión
+detallada: el modo rápido no resume tramos.
+
+Se comprueba en `domain/sequence/me03.test.ts` (reproducibilidad,
+continuidad al cambiar de lado, fronteras de rebote y balón suelto, saques
+y relojes, carga frente a balance, guardián y regresión de ME-01/ME-02) y
+con el plan manual `docs/testing/manual/ME-03-manual-test-plan.md`. El
+coste se perfila con `npm run profile:tramo` (`scripts/profile-tramo.ts`).

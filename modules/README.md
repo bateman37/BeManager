@@ -9,9 +9,9 @@
 
 ## Módulos existentes
 
-- **`match/`** — Laboratorio de Partido (ME-01): motor detallado y
-  aproximación rápida de una posesión 5v5, perfiles de jugador y su
-  persistencia. Ver `docs/match/README.md` para el índice completo.
+- **`match/`** — Laboratorio de Partido (ME-01 a ME-03): motor detallado y
+  aproximación rápida de una posesión 5v5, tramo de hasta cuatro
+  posesiones enlazadas, perfiles de jugador y su persistencia. Ver `docs/match/README.md` para el índice completo.
 
 Ningún otro módulo (`club`, `competition`, `career`, etc.) existe todavía:
 se crearán cuando exista una decisión de diseño cerrada que los justifique.
