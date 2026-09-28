@@ -58,16 +58,46 @@ solo el terminal de la corrida completa.
   (`missed_shot_defensive_rebound`, una continuación ofensiva, etc.); el
   hecho `shooting_foul` en el relato deja constancia de que hubo falta.
 
-## Legalidad del cierre (`evaluateCloseoutLegality`)
+## Legalidad del cierre (`evaluateCloseoutLegality`), corregida en ME-02 (C1)
 
 La adjudicación de una falta de tiro se decide **una vez, por hecho de
 contacto y posición/legalidad** (estudio §5.6, §9.6), no como una
-probabilidad repartida en cada actualización temporal:
+probabilidad repartida en cada actualización temporal, y **ya no se decide
+comparando solo dos marcas de reloj**:
 
-- El defensor llega con margen suficiente para frenar → contestación legal.
-- El defensor llega después de la liberación del tiro → sin contestación.
-- El defensor llega en el margen intermedio (sin tiempo de frenar) →
-  contacto tardío ilegal → falta ordinaria de tiro.
+1. Se reconstruye la posición real del defensor en el instante exacto de
+   liberación del tiro (`positionAtInstant`, en `possession-core.ts`), a
+   partir de su origen, destino y velocidad reales — no de un punto de
+   referencia ("llegar a la ayuda") que puede estar lejos del tirador real.
+2. Solo si el espacio corporal del defensor y el del tirador se solapan
+   (radio LAB-0.2 de 0,35 m por jugador, 0,7 m combinados) puede haber
+   contacto u oposición atribuible a ese defensor. Si no se solapan, es
+   `no_contest`, con independencia de cuán "tarde" llegue por el reloj.
+3. Solo cuando sí hay solape se aplica la regla de frenada existente:
+   - Llega con margen suficiente para frenar (`F03`) → contestación legal.
+   - Llega en el margen intermedio, sin tiempo de frenar, invadiendo la
+     posición de lanzamiento → contacto tardío ilegal → falta ordinaria de
+     tiro.
 
 El escenario `closeout_tardio_con_contacto` está construido para que esta
-última rama sea alcanzable de verdad (ver `SCENARIOS.md`).
+última rama siga siendo alcanzable de verdad (ver `SCENARIOS.md` y
+`domain/simulation/me02.test.ts`, prueba (2)). Frenar tarde por sí solo,
+sin invadir el espacio corporal del tirador, no es una falta.
+
+## Estadística oficial FIBA: FGA/FGM/FTA/FTM/puntos (C3, ME-02)
+
+Un tiro preparado (`shot_prepared`) es la oportunidad de tiro que se lee
+para analizar decisiones; **no** es por sí mismo un tiro de campo oficial.
+El hecho `field_goal_attempt` marca cuándo un intento cuenta de verdad
+como FGA/FGM, según el Manual de Estadísticos FIBA:
+
+- Falta de tiro con intento **fallado** → **no** FGA (ni FGM).
+- Canasta válida con falta (and-one) → **1 FGA y 1 FGM**, más el libre
+  adicional.
+- Tapón legal sin falta → FGA (aunque no haya canasta).
+- Tiro de campo limpio (sin falta) → FGA, y FGM si entra.
+
+Los libres (`FTA`/`FTM`) se cuentan por cada libre realmente ejecutado
+(`free_throws_result`). Los puntos de la muestra son
+`2×2FGM + 3×3FGM + FTM` en el ámbito implementado (una posesión de
+laboratorio, no un partido completo).

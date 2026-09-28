@@ -58,6 +58,15 @@ y un generador reproducible (`domain/random/seeded-random.ts`, mulberry32).
 Misma entrada (perfiles + escenario + semilla) produce siempre la misma
 secuencia de hechos.
 
+## Estadística oficial y cobertura (ME-02)
+
+El hecho `field_goal_attempt` distingue el tiro de campo oficial FIBA de la
+oportunidad de tiro preparada (`shot_prepared`); ver `RULES.md` para la
+regla exacta. `MatchInput` incorpora además `coverage: "drop" | "trampa"`,
+independiente del escenario: la misma media pista, quintetos y bloqueo
+central se resuelven con cualquiera de las dos coberturas (ver
+`ACTIONS.md`).
+
 ## Qué no modela todavía
 
 Posesión estadística, fase ofensiva y evento están fusionados en un único

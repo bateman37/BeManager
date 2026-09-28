@@ -1,11 +1,11 @@
-# Escenarios y validación (ME-01)
+# Escenarios, cobertura y validación (ME-01/ME-02)
 
 **Estado:** ACTIVE
-**Es fuente de verdad para:** los tres escenarios cargables y cómo se comprueban.
-**Debe leerse cuando:** vayas a añadir un escenario o a entender por qué uno concreto es alcanzable.
+**Es fuente de verdad para:** los tres escenarios cargables, la cobertura defensiva (`drop`/`trampa`) y cómo se comprueban.
+**Debe leerse cuando:** vayas a añadir un escenario, una cobertura, o a entender por qué una rama concreta es alcanzable.
 **No cubre:** el modo rápido completo de ME-08 (aquí solo hay una aproximación limitada a este escenario).
 **Documentos relacionados:** `ACTIONS.md`, `RULES.md`.
-**Última actualización:** 2026-09-28.
+**Última actualización:** 2026-09-28 (ME-02).
 
 ## Los tres escenarios (`domain/lab/scenario.ts`)
 
@@ -14,6 +14,17 @@
 | `drop_con_ayuda` | Sí | D3 deja a O3; posible pase a la esquina liberada |
 | `drop_sin_ayuda` | No | D3 conserva la marca; sin esa liberación |
 | `closeout_tardio_con_contacto` | Sí, ya comprometida al cargar el estado | Alcanza la rama de falta ordinaria de tiro por cierre tardío |
+
+## Cobertura defensiva (`coverage`, ME-02)
+
+Independiente del escenario: un campo de `MatchInput` (`coverage: "drop" |
+"trampa"`) escoge la respuesta defensiva al mismo bloqueo central, mismos
+quintetos y misma media pista. La comparación principal de ME-02 siempre
+enfrenta `drop_con_ayuda` con cobertura `drop` frente a `drop_con_ayuda`
+con cobertura `trampa` (en ambas, D3 tiene encomendada la ayuda al
+continuador y D4 la reparación): ver `compareCoverageBatch` en
+`domain/fast/fast-resolver.ts`. Es una comparación distinta de la de ayuda
+sí/no y no sustituye el caso individual de closeout tardío.
 
 `closeout_tardio_con_contacto` no fuerza un pitido por su identificador: se
 limita a cargar el estado más allá del punto en que D3 ya ayudó y O3 está
@@ -47,10 +58,27 @@ oportunidad (verificado en `fast-resolver.test.ts`): sin ayuda,
 interfaz de laboratorio permite repetir el mismo escenario, cambiar solo la
 ayuda o una capacidad, y comparar un lote pequeño desde la misma pantalla.
 
-**El lote siempre compara ayuda sí/no, no el escenario seleccionado**
-(HF-002 §1.7): la comparación por lotes ejecuta siempre exactamente
-`drop_con_ayuda` frente a `drop_sin_ayuda`, con independencia de qué
-escenario esté elegido en la ejecución individual. `closeout_tardio_con_contacto`
-no es una variante de ayuda sí/no y no participa en esa tabla; se prueba
-en la ejecución individual, y la interfaz lo indica explícitamente para no
+**El lote «Drop: ayuda sí/no» siempre compara ayuda sí/no, no el escenario
+seleccionado** (HF-002 §1.7): ejecuta siempre exactamente `drop_con_ayuda`
+frente a `drop_sin_ayuda`, con independencia de qué escenario esté elegido
+en la ejecución individual. `closeout_tardio_con_contacto` no es una
+variante de ayuda sí/no y no participa en esa tabla; se prueba en la
+ejecución individual, y la interfaz lo indica explícitamente para no
 atribuir esa tabla a un escenario distinto del que realmente mide.
+
+**El lote «Misma posesión: drop/trampa (con ayuda)» (ME-02) es una tabla
+aparte**, separada visualmente en `/lab`: compara exactamente `drop` frente
+a `trampa` sobre `drop_con_ayuda`, con las mismas plantillas y semillas.
+Ambas tablas muestran sus propias entradas, versiones y tamaño de muestra,
+y se limpian o marcan desactualizadas al cambiar perfiles, cobertura,
+semilla o tamaño de lote (`invalidatePreviousResults` en
+`lab-workspace.tsx`).
+
+## C3: estadística conciliada (FGA/FGM/FTA/FTM/puntos)
+
+Tanto el lote de ayuda sí/no como el de drop/trampa muestran, además de las
+categorías de lectura (pases al roll/esquina/salida, pérdidas, robos,
+rebotes), el tiro de campo oficial FIBA por separado de la oportunidad de
+tiro preparada: 2FGA/2FGM, 3FGA/3FGM, FTA/FTM y puntos
+(2×2FGM+3×3FGM+FTM). Ver `RULES.md` para la regla exacta de cuándo un
+intento cuenta como FGA.
