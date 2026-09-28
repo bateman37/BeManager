@@ -22,6 +22,7 @@
 - `implementation/FND-001-foundation-general-and-technical-architecture.md`
 - `implementation/ME-01-primera-posesion-integrada.md`
 - `implementation/ME-02-trampa-y-salidas-con-correcciones-me01.md`
+- `implementation/ME-03-posesiones-enlazadas-y-transicion.md`
 
 ## Hotfixes existentes
 
