@@ -1,12 +1,14 @@
 /**
- * Aproximación rápida limitada al escenario de ME-01 (prompt §4). Reutiliza
- * exactamente los mismos snapshots, roles, reglas y funciones de
- * tiro/rebote/falta que el motor detallado: no introduce coeficientes
- * nuevos ni una probabilidad sustitutiva de "táctica exitosa". Cuenta
- * únicamente las categorías que representa; no produce relato por jugada,
- * boxscore de partido ni posiciones inventadas.
+ * Resolución rápida real del escenario de ME-01 (HF-002 §3). Llama
+ * directamente a `computePossessionCore` (el mismo núcleo de decisión y
+ * fórmulas LAB-0.1 que usa el motor detallado) con el historial de
+ * posiciones desactivado: no llama a `runPossession`, no construye relato
+ * por jugada ni snapshots de diez jugadores, y solo cuenta las categorías
+ * que realmente representa la línea de tiempo ligera devuelta por el
+ * núcleo.
  */
-import { runPossession } from "../simulation/possession-engine";
+import { computePossessionCore } from "../simulation/possession-core";
+import { LAB_PARAMETERS_VERSION } from "../lab/lab-0-1-parameters";
 import type { MatchInput } from "../lab/match-input";
 import type { ScenarioId } from "../lab/scenario";
 
@@ -31,6 +33,10 @@ export interface ScenarioBatchCategories {
 export interface ScenarioBatchResult {
   readonly scenarioId: ScenarioId;
   readonly sampleSize: number;
+  readonly seedStart: number;
+  readonly seedEnd: number;
+  readonly rulesetVersion: MatchInput["rulesetVersion"];
+  readonly labParametersVersion: typeof LAB_PARAMETERS_VERSION;
   readonly categories: ScenarioBatchCategories;
 }
 
@@ -56,8 +62,9 @@ function emptyCategories(): { -readonly [K in keyof ScenarioBatchCategories]: nu
 
 /**
  * Ejecuta el mismo escenario `sampleSize` veces, variando solo la semilla de
- * forma determinista (`baseSeed + i`), y agrega categorías reales sin
- * conservar el relato de cada corrida.
+ * forma determinista (`baseSeed + i`), calculando cada corrida por etapas
+ * (sin relato ni snapshots) y agregando categorías reales derivadas de la
+ * línea de tiempo de hechos de cada corrida.
  */
 export function runScenarioBatch(input: MatchInput, sampleSize: number): ScenarioBatchResult {
   if (sampleSize < 1) {
@@ -68,10 +75,10 @@ export function runScenarioBatch(input: MatchInput, sampleSize: number): Scenari
 
   for (let i = 0; i < sampleSize; i++) {
     const runInput: MatchInput = { ...input, seed: input.seed + i };
-    const state = runPossession(runInput);
+    const result = computePossessionCore(runInput, { trackPositionHistory: false });
 
-    for (const fact of state.facts) {
-      switch (fact.kind) {
+    for (const raw of result.timeline) {
+      switch (raw.kind) {
         case "screen_navigated":
           totals.screensNavigated++;
           break;
@@ -79,8 +86,8 @@ export function runScenarioBatch(input: MatchInput, sampleSize: number): Scenari
           totals.helpLeftAssignment++;
           break;
         case "pass_received":
-          if (fact.actors.includes("O5")) totals.passesToRoll++;
-          if (fact.actors.includes("O3")) totals.passesToCorner++;
+          if (raw.actors.includes("O5")) totals.passesToRoll++;
+          if (raw.actors.includes("O3")) totals.passesToCorner++;
           break;
         case "possession_continues":
           totals.safeOutlets++;
@@ -104,24 +111,29 @@ export function runScenarioBatch(input: MatchInput, sampleSize: number): Scenari
         case "shooting_foul":
           totals.shootingFouls++;
           break;
+        case "rebound_secured":
+        case "rebound_contested":
+          if (raw.actors[0]?.startsWith("O")) totals.offensiveRebounds++;
+          else totals.defensiveRebounds++;
+          break;
         default:
           break;
       }
     }
 
-    if (state.terminal?.kind === "missed_shot_defensive_rebound") totals.defensiveRebounds++;
-    if (
-      state.terminal?.kind === "missed_shot_offensive_rebound_continues" ||
-      (state.terminal?.kind !== "missed_shot_defensive_rebound" &&
-        state.facts.some((f) => f.kind === "rebound_secured" && f.actors[0]?.startsWith("O")))
-    ) {
-      totals.offensiveRebounds++;
-    }
-    if (state.terminal?.kind === "shot_clock_violation") totals.shotClockViolations++;
-    if (state.terminal?.kind === "out_of_bounds") totals.outOfBounds++;
+    if (result.terminal.kind === "shot_clock_violation") totals.shotClockViolations++;
+    if (result.terminal.kind === "out_of_bounds") totals.outOfBounds++;
   }
 
-  return { scenarioId: input.scenarioId, sampleSize, categories: totals };
+  return {
+    scenarioId: input.scenarioId,
+    sampleSize,
+    seedStart: input.seed,
+    seedEnd: input.seed + sampleSize - 1,
+    rulesetVersion: input.rulesetVersion,
+    labParametersVersion: input.labParametersVersion,
+    categories: totals,
+  };
 }
 
 export interface HelpComparisonResult {
@@ -132,7 +144,10 @@ export interface HelpComparisonResult {
 /**
  * Compara, con las mismas semillas por índice, el escenario con ayuda de D3
  * frente al mismo escenario sin ayuda (prompt §4: "un cambio en ayuda debe
- * alterar dónde aparece la oportunidad en ambos modos").
+ * alterar dónde aparece la oportunidad en ambos modos"). Siempre compara
+ * exactamente estas dos variantes, con independencia del escenario que esté
+ * seleccionado en la vista individual (HF-002 §1.7): el escenario de
+ * closeout tardío no es un cambio de ayuda sí/no y no se compara aquí.
  */
 export function compareHelpToggle(
   baseInput: Omit<MatchInput, "scenarioId">,

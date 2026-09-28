@@ -56,13 +56,16 @@ export interface ReboundCandidate {
 
 export type ReboundOutcome =
   | { readonly kind: "secured"; readonly playerId: string }
-  | { readonly kind: "loose_ball_tip"; readonly nearestPlayerId: string }
+  | { readonly kind: "loose_ball_tip"; readonly nearestPlayerId: string; readonly contestPoolPlayerIds: readonly string[] }
   | { readonly kind: "out_of_bounds" };
 
 /**
  * Resuelve la disputa del rebote: el cierre puede retrasar el acceso rival
- * aunque quien cierra no capture (estudio §9.5). Solo participan candidatos
- * que realmente llegan dentro del tiempo de vuelo.
+ * aunque quien cierra no capture (estudio §9.5). Solo participan como
+ * primer optante los candidatos que realmente llegan dentro de la ventana de
+ * vuelo; si nadie llega en esa ventana pero el balón sigue dentro de la
+ * cancha, no se declara "fuera" solo por eso (prompt HF-002 §1.4): el balón
+ * sigue vivo y lo recupera quien de verdad llegue, aunque sea más tarde.
  */
 export function resolveRebound(
   seed: ReboundSeed,
@@ -73,25 +76,37 @@ export function resolveRebound(
     return { kind: "out_of_bounds" };
   }
 
-  const eligible = candidates
+  const withEffectiveArrival = candidates
     .map((c) => {
       const delay = c.closedOut ? closeoutReboundDelaySeconds(c.t19, c.f05) : 0;
       return { ...c, effectiveArrival: c.arrivalTimeSeconds + (c.closedOut ? 0 : delay) };
     })
-    .filter((c) => c.arrivalTimeSeconds <= seed.flightTimeSeconds + 0.5)
     .sort((a, b) => a.effectiveArrival - b.effectiveArrival);
 
-  if (eligible.length === 0) {
+  const withinFlightWindow = withEffectiveArrival.filter(
+    (c) => c.arrivalTimeSeconds <= seed.flightTimeSeconds + 0.5,
+  );
+
+  // Si nadie llega dentro de la ventana de vuelo, el balón sigue en la
+  // cancha y lo recupera quien realmente llegue antes, aunque sea después
+  // de esa ventana: no hay "eligibilidad" artificial, solo llegada real.
+  const pool = withinFlightWindow.length > 0 ? withinFlightWindow : withEffectiveArrival;
+
+  if (pool.length === 0) {
     return { kind: "out_of_bounds" };
   }
 
-  const first = eligible[0]!;
-  const disputa: 0 | 1 = eligible.length > 1 ? 1 : 0;
+  const first = pool[0]!;
+  const disputa: 0 | 1 = pool.length > 1 ? 1 : 0;
   const captureProbability = reboundCaptureProbability(first.t20, disputa);
 
   if (rng.next() < captureProbability) {
     return { kind: "secured", playerId: first.playerId };
   }
 
-  return { kind: "loose_ball_tip", nearestPlayerId: first.playerId };
+  return {
+    kind: "loose_ball_tip",
+    nearestPlayerId: first.playerId,
+    contestPoolPlayerIds: pool.map((c) => c.playerId),
+  };
 }

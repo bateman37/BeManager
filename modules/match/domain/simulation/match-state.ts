@@ -33,6 +33,11 @@ export type TerminalOutcome =
       readonly kind: "shooting_foul";
       readonly basketCounted: boolean;
       readonly freeThrowsAwarded: number;
+      /** Libres realmente ejecutados y anotados con T05 y semilla (HF-002 §2). */
+      readonly freeThrowsMade: number;
+      readonly pointsFromFreeThrows: number;
+      /** Puntos totales de la jugada: canasta contada (si aplica) + libres anotados. */
+      readonly totalPoints: number;
     }
   | { readonly kind: "out_of_bounds"; readonly lastTouchPlayerId: string }
   | { readonly kind: "shot_clock_violation" }

@@ -25,3 +25,8 @@ reabrir su alcance completo.
   ME-01: sincroniza la rama de trabajo con `main` para poder leer las
   referencias de diseño de `docs/match/` ya subidas por Dennis. No amplía
   el alcance funcional de ME-01.
+- `HF-002-me01-integridad-y-rapido.md` — corrige la fidelidad funcional de
+  la posesión ME-01 (balón vivo real, orden de hechos, rebote ofensivo,
+  T22/T23, libres ejecutados) y sustituye la aproximación rápida por una
+  resolución por etapas que no invoca el motor detallado. No amplía el
+  alcance a un partido completo ni a ME-02.

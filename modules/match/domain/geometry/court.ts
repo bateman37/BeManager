@@ -17,6 +17,14 @@ export const ATTACKED_HOOP: Point2D = { x: 26.425, y: 7.5 };
  */
 export const FIBA_THREE_POINT_RADIUS_METERS = 6.75;
 
+/**
+ * Punto del tiro libre, centrado en la línea de fondo atacada. FIBA fija la
+ * línea de tiro libre a 5,80 m de la cara interior del tablero; se usa solo
+ * como origen geométrico para sembrar el rebote del último libre fallado
+ * (HF-002 §2), no como una fórmula deportiva nueva.
+ */
+export const FREE_THROW_LINE_SPOT: Point2D = { x: ATTACKED_HOOP.x - 5.8, y: ATTACKED_HOOP.y };
+
 export function isBehindThreePointLine(position: Point2D): boolean {
   return distanceToHoop(position) > FIBA_THREE_POINT_RADIUS_METERS;
 }

@@ -12,11 +12,15 @@ import { PlayerEditor } from "./player-editor";
 import { CourtView } from "./court-view";
 import { NarrativeLog } from "./narrative-log";
 
-const SCENARIOS: { id: ScenarioId; label: string }[] = [
-  { id: "drop_con_ayuda", label: "Drop con ayuda" },
-  { id: "drop_sin_ayuda", label: "Drop sin ayuda" },
-  { id: "closeout_tardio_con_contacto", label: "Closeout tardío con contacto" },
-];
+const SCENARIO_LABELS: Record<ScenarioId, string> = {
+  drop_con_ayuda: "Drop con ayuda",
+  drop_sin_ayuda: "Drop sin ayuda",
+  closeout_tardio_con_contacto: "Closeout tardío con contacto",
+};
+
+const SCENARIOS: { id: ScenarioId; label: string }[] = (
+  Object.keys(SCENARIO_LABELS) as ScenarioId[]
+).map((id) => ({ id, label: SCENARIO_LABELS[id] }));
 
 interface LabWorkspaceActions {
   savePlayer: (teamId: string, player: PlayerProfile) => Promise<SaveLabPlayerResult>;
@@ -67,6 +71,25 @@ export function LabWorkspace({ initialTeams, initialWarning, actions }: LabWorks
   const [comparison, setComparison] = useState<HelpComparisonResult | null>(null);
   const [comparing, setComparing] = useState(false);
 
+  // HF-002 §1.7/§4: un resultado calculado con una configuración anterior
+  // nunca se atribuye visualmente a la selección actual. Al cambiar
+  // escenario, semilla o el roster guardado, se limpian los resultados.
+  function invalidatePreviousResults() {
+    setMatchState(null);
+    setSelectedPositions(null);
+    setComparison(null);
+  }
+
+  function handleScenarioChange(next: ScenarioId) {
+    setScenarioId(next);
+    invalidatePreviousResults();
+  }
+
+  function handleSeedChange(next: number) {
+    setSeed(next);
+    invalidatePreviousResults();
+  }
+
   const selectedPlayer = useMemo(() => {
     for (const team of teams) {
       const player = team.players.find((p) => p.id === selectedPlayerId);
@@ -90,6 +113,7 @@ export function LabWorkspace({ initialTeams, initialWarning, actions }: LabWorks
             : t,
         ),
       );
+      invalidatePreviousResults();
       setSaveMessage(
         result.warnings.length > 0
           ? `Guardado con avisos: ${result.warnings.map((w) => w.message).join(" ")}`
@@ -113,6 +137,7 @@ export function LabWorkspace({ initialTeams, initialWarning, actions }: LabWorks
         prev.map((t) => (t.id === team.id ? { ...t, players: [...t.players, duplicated] } : t)),
       );
       setSelectedPlayerId(newId);
+      invalidatePreviousResults();
       setSaveMessage("Jugador duplicado y guardado.");
     } else {
       setSaveMessage(result.message);
@@ -199,7 +224,7 @@ export function LabWorkspace({ initialTeams, initialWarning, actions }: LabWorks
           <select
             className="rounded border border-slate-300 bg-transparent px-2 py-1 text-sm dark:border-slate-700"
             value={scenarioId}
-            onChange={(e) => setScenarioId(e.target.value as ScenarioId)}
+            onChange={(e) => handleScenarioChange(e.target.value as ScenarioId)}
           >
             {SCENARIOS.map((s) => (
               <option key={s.id} value={s.id}>
@@ -213,7 +238,7 @@ export function LabWorkspace({ initialTeams, initialWarning, actions }: LabWorks
               type="number"
               className="w-24 rounded border border-slate-300 bg-transparent px-2 py-1 dark:border-slate-700"
               value={seed}
-              onChange={(e) => setSeed(Number(e.target.value))}
+              onChange={(e) => handleSeedChange(Number(e.target.value))}
             />
           </label>
           <button
@@ -241,6 +266,15 @@ export function LabWorkspace({ initialTeams, initialWarning, actions }: LabWorks
               <p className="text-sm text-slate-600 dark:text-slate-300">
                 Estado terminal: <span className="font-mono">{matchState.terminal?.kind}</span>
               </p>
+              <p className="text-sm text-slate-600 dark:text-slate-300">
+                Balón: <span className="font-mono">{matchState.ball.status}</span>
+                {matchState.ball.holderId ? ` · en poder de ${matchState.ball.holderId}` : ""}
+              </p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Escenario ejecutado: {SCENARIO_LABELS[matchState.input.scenarioId]} · Semilla:{" "}
+                {matchState.input.seed} · Reglas: {matchState.input.rulesetVersion} · Parámetros:{" "}
+                {matchState.input.labParametersVersion}
+              </p>
             </div>
             <NarrativeLog facts={matchState.facts} onSelectPositions={setSelectedPositions} />
           </div>
@@ -248,7 +282,12 @@ export function LabWorkspace({ initialTeams, initialWarning, actions }: LabWorks
       </section>
 
       <section className="space-y-3 rounded-lg border border-slate-200 p-4 dark:border-slate-800">
-        <h2 className="text-lg font-semibold">Comparar ayuda sí/no (aproximación rápida)</h2>
+        <h2 className="text-lg font-semibold">Comparar ayuda sí/no (resolución rápida)</h2>
+        <p className="text-xs text-slate-500 dark:text-slate-400">
+          Esta comparación siempre ejecuta «Drop con ayuda» frente a «Drop sin ayuda», con
+          independencia del escenario seleccionado arriba. El escenario de closeout tardío no es
+          una variante de ayuda sí/no: pruébalo en la ejecución individual, no en esta tabla.
+        </p>
         <div className="flex flex-wrap items-center gap-3">
           <label className="flex items-center gap-2 text-sm">
             Tamaño de muestra
@@ -293,7 +332,9 @@ export function LabWorkspace({ initialTeams, initialWarning, actions }: LabWorks
               </tbody>
             </table>
             <p className="mt-1 text-xs text-slate-500">
-              Tamaño de muestra: {comparison.withHelp.sampleSize} corridas por variante.
+              Tamaño de muestra: {comparison.withHelp.sampleSize} corridas por variante · Semillas:{" "}
+              {comparison.withHelp.seedStart}–{comparison.withHelp.seedEnd} · Reglas:{" "}
+              {comparison.withHelp.rulesetVersion} · Parámetros: {comparison.withHelp.labParametersVersion}
             </p>
           </div>
         )}

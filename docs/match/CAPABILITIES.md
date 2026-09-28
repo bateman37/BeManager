@@ -38,6 +38,29 @@ por el código.
 - T22 (exterior), T23 (interior) y T15 (contención ya iniciada) ajustan
   tareas distintas y nunca se suman sobre la misma intervención.
 
+## T22/T23 y la elegibilidad real de T18 (HF-002)
+
+ME-01 declaraba T22/T23 como capacidades activas, pero `runPossession` no
+las consultaba: cambiar esos ratings no tenía ningún efecto observable.
+HF-002 los conecta a las llegadas ya calculadas por `perimeterArrivalAdjustmentSeconds`
+y `interiorArrivalAdjustmentSeconds` (ambas ya existían en LAB-0.1, sin
+llamador):
+
+- **T22 (perimetral):** ajusta la llegada de un cierre exterior real —
+  D4 rotando a la esquina débil, D5 recuperando sobre el triple de O1.
+- **T23 (interior):** ajusta la llegada de una protección/recepción
+  cercana al aro — D3 ayudando al continuador, D5 protegiendo el carril,
+  el defensor de un rebote ofensivo en su segunda oportunidad.
+
+Cada intervención usa solo uno de los dos ajustes, nunca ambos, según sea
+exterior o interior (regla ya vigente, ahora aplicada de verdad).
+
+Además, un tapón (T18) solo es elegible cuando el defensor puede tocar
+físicamente el punto de liberación del tiro: `maxTouchHeightMeters` del
+defensor debe alcanzar `shotReleaseHeightMeters` del tirador (ambas
+fórmulas ya existían, sin usarse en el motor). Subir T18 no garantiza más
+tapones brutos si cambian los tiros y ventanas que realmente se alcanzan.
+
 ## Editor de equilibrio
 
 Los coeficientes son datos versionados por el desarrollo, no un panel de

@@ -20,7 +20,7 @@ sanciones que no pueda adjudicar.
 |---|---|
 | `made_basket` | Canasta válida (2 o 3 puntos) |
 | `missed_shot_defensive_rebound` | Fallo con rebote defensivo |
-| `missed_shot_offensive_rebound_continues` | Fallo con rebote ofensivo; la misma posesión estadística continúa |
+| `missed_shot_offensive_rebound_continues` | Fallo con rebote ofensivo; la misma posesión estadística continúa (ver nota) |
 | `live_turnover` | Pérdida con balón vivo |
 | `steal_by_defense` | Robo/desvío que da el control a la defensa |
 | `blocked_shot_live_ball` | Tapón legal con balón vivo |
@@ -33,14 +33,30 @@ sanciones que no pueda adjudicar.
 No se activan sanciones fuera de este ámbito (prompt §2): solo contacto
 defensivo ordinario sancionable en acto de tiro.
 
+**Nota sobre `missed_shot_offensive_rebound_continues`:** como ME-01
+continúa la misma posesión estadística con otro intento en vez de
+detenerse ahí (ver `ACTIONS.md`), este `kind` nunca es el terminal final
+que produce `runPossession` — el terminal final es el que decida el
+siguiente intento. El rebote ofensivo queda igualmente auditable en el
+relato: cada vez que un atacante recupera el control tras un fallo se
+registra un hecho `rebound_secured` o `rebound_contested` con ese actor
+(HF-002 §1.4), y el resolvedor rápido cuenta cada uno de esos hechos, no
+solo el terminal de la corrida completa.
+
 ## Libres por falta de tiro
 
 - Canasta válida con falta → 1 libre adicional.
 - Tiro de dos fallado con falta → 2 libres.
 - Triple fallado con falta → 3 libres.
-- El último libre fallado queda vivo y se resolvería como disputa (fuera
-  del alcance de ME-01: el laboratorio termina en el estado de reanudación
-  legal, no simula la tanda de libres en sí).
+- HF-002 ejecuta de verdad cada libre (`freeThrowProbability(T05)`, con la
+  semilla de la posesión): el terminal `shooting_foul` incluye
+  `freeThrowsMade`, `pointsFromFreeThrows` y `totalPoints` además del
+  conteo concedido. El último libre fallado queda vivo y se resuelve como
+  cualquier rebote disputado (misma disputa que un tiro de campo, incluida
+  la continuación ofensiva si corresponde): en ese caso el terminal final
+  de la posesión ya no es `shooting_foul`, sino el que decida esa disputa
+  (`missed_shot_defensive_rebound`, una continuación ofensiva, etc.); el
+  hecho `shooting_foul` en el relato deja constancia de que hubo falta.
 
 ## Legalidad del cierre (`evaluateCloseoutLegality`)
 

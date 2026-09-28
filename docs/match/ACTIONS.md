@@ -52,3 +52,16 @@ estadística continúa con un intento de finalización o palmeo, heredando
 posiciones y sin reiniciar la pantalla original. Un guardián de progreso
 (`MAX_PROGRESS_ITERATIONS`) detiene una cadena anómala de rebotes ofensivos
 y lo marca como `simulation_guard_stopped` en vez de forzar un desenlace.
+Solo participan en la disputa del rebote quienes realmente llegan (dentro
+de la ventana de vuelo, o los más próximos si nadie llega dentro de ella:
+un balón que sigue en la cancha nunca se declara "fuera" solo porque nadie
+llegó a tiempo); el palmeo se decide por T20 únicamente entre esos
+candidatos reales, no entre los diez jugadores sin filtrar (HF-002 §1.4).
+
+## Falta ordinaria de tiro y libres
+
+Alcanzada la rama `shooting_foul`, se adjudica primero la validez de la
+canasta y después se ejecuta cada libre concedido con `T05` y la semilla
+de la posesión (ver `RULES.md`). Si el último libre falla, el balón queda
+vivo y se resuelve con la misma disputa de rebote que un tiro de campo,
+incluida la continuación ofensiva si el ataque lo recupera (HF-002 §1.6).

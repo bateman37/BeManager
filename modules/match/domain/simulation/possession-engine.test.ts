@@ -136,3 +136,121 @@ describe("runPossession: escenario closeout tardío", () => {
     expect(foundFoul).toBe(true);
   });
 });
+
+describe("runPossession: HF-002 bug 2 (balón vivo hasta control real)", () => {
+  it("un tapón deja el balón suelto, no muerto en el aro", () => {
+    const state = runPossession(buildInput("drop_con_ayuda", 232));
+    expect(state.terminal!.kind).toBe("blocked_shot_live_ball");
+    expect(state.ball.status).toBe("loose");
+    expect(state.ball.holderId).toBeNull();
+  });
+
+  it("una pérdida en balón vivo deja el balón suelto sin dueño", () => {
+    const state = runPossession(buildInput("drop_con_ayuda", 1));
+    expect(state.terminal!.kind).toBe("live_turnover");
+    expect(state.ball.status).toBe("loose");
+    expect(state.ball.holderId).toBeNull();
+  });
+
+  it("un robo da el control real al defensor, no un balón muerto", () => {
+    const state = runPossession(buildInput("drop_con_ayuda", 27));
+    expect(state.terminal!.kind).toBe("steal_by_defense");
+    expect(state.ball.status).toBe("held");
+    expect(state.ball.holderId).toBe("D1");
+  });
+
+  it("una canasta anotada sí deja el balón muerto en el aro", () => {
+    const state = runPossession(buildInput("drop_con_ayuda", 4));
+    expect(state.terminal!.kind).toBe("made_basket");
+    expect(state.ball).toEqual({ status: "dead", holderId: null, position: state.ball.position });
+    expect(state.ball.position.x).toBeCloseTo(26.425);
+  });
+});
+
+describe("runPossession: HF-002 bug 3 (instantánea fiel al instante del hecho)", () => {
+  it("el hecho de inicio de reparación de D4 no muestra a D4 ya en la esquina que todavía no alcanzó", () => {
+    const state = runPossession(buildInput("drop_con_ayuda", 42));
+    const repairFact = state.facts.find((f) => f.kind === "help_repair_attempt");
+    expect(repairFact).toBeDefined();
+    const d4AtRepairStart = repairFact!.positions.find((p) => p.playerId === "D4");
+    // D4 empieza a reparar antes de llegar: su instantánea en ese hecho no
+    // puede coincidir con la esquina débil (destino), que llega más tarde.
+    expect(d4AtRepairStart!.position).not.toEqual({ x: 24.0, y: 13.9 });
+    expect(repairFact!.detail.arrivesAt).toBeGreaterThan(repairFact!.atMs / 1000);
+
+    // Ningún hecho anterior a la llegada real de D4 puede mostrarlo ya en la esquina.
+    const arrivesAtMs = (repairFact!.detail.arrivesAt as number) * 1000;
+    for (const fact of state.facts) {
+      if (fact.atMs < arrivesAtMs) {
+        const d4Position = fact.positions.find((p) => p.playerId === "D4");
+        expect(d4Position!.position).not.toEqual({ x: 24.0, y: 13.9 });
+      }
+    }
+  });
+});
+
+describe("runPossession: HF-002 bug 4 (rebote ofensivo con segundo tiro reconciliado)", () => {
+  it("un rebote ofensivo capturado por el ataque continúa la misma posesión estadística hasta un segundo tiro", () => {
+    const state = runPossession(buildInput("drop_con_ayuda", 145));
+    const shotAttempts = state.facts.filter((f) => f.kind === "shot_prepared");
+    const reboundEvents = state.facts.filter((f) => f.kind === "rebound_secured" || f.kind === "rebound_contested");
+    expect(shotAttempts.length).toBeGreaterThanOrEqual(2);
+    expect(reboundEvents.some((f) => f.actors[0]?.startsWith("O"))).toBe(true);
+    expect(state.terminal!.kind).toBe("made_basket");
+  });
+});
+
+describe("runPossession: HF-002 bug 5 (T22/T23 afectan mecanismos reales)", () => {
+  it("subir T23 del ayudador D3 cambia el desenlace del roll manteniendo todo lo demás fijo", () => {
+    const withLowT23 = buildInput("drop_con_ayuda", 250);
+    const withHighT23: MatchInput = {
+      ...withLowT23,
+      defensePlayers: withLowT23.defensePlayers.map((p) =>
+        p.id === "D3" ? { ...p, attributes: { ...p.attributes, T23: 15 } } : p,
+      ),
+    };
+    const lowResult = runPossession({
+      ...withLowT23,
+      defensePlayers: withLowT23.defensePlayers.map((p) =>
+        p.id === "D3" ? { ...p, attributes: { ...p.attributes, T23: 1 } } : p,
+      ),
+    });
+    const highResult = runPossession(withHighT23);
+    expect(lowResult.terminal!.kind).not.toEqual(highResult.terminal!.kind);
+  });
+
+  it("subir T22 del cierre exterior D4 cambia el desenlace del cierre manteniendo todo lo demás fijo", () => {
+    const base = buildInput("closeout_tardio_con_contacto", 484);
+    const lowResult = runPossession({
+      ...base,
+      defensePlayers: base.defensePlayers.map((p) => (p.id === "D4" ? { ...p, attributes: { ...p.attributes, T22: 1 } } : p)),
+    });
+    const highResult = runPossession({
+      ...base,
+      defensePlayers: base.defensePlayers.map((p) => (p.id === "D4" ? { ...p, attributes: { ...p.attributes, T22: 15 } } : p)),
+    });
+    expect(lowResult.terminal!.kind).not.toEqual(highResult.terminal!.kind);
+  });
+});
+
+describe("runPossession: HF-002 bug 6 (libres ejecutados de verdad)", () => {
+  it("una falta con canasta válida ejecuta el libre adicional y suma los puntos totales", () => {
+    const state = runPossession(buildInput("closeout_tardio_con_contacto", 4));
+    expect(state.terminal!.kind).toBe("shooting_foul");
+    const terminal = state.terminal as Extract<typeof state.terminal, { kind: "shooting_foul" }>;
+    expect(terminal.basketCounted).toBe(true);
+    expect(terminal.freeThrowsAwarded).toBe(1);
+    expect(terminal.totalPoints).toBe(terminal.pointsFromFreeThrows + 3);
+    expect(state.facts.some((f) => f.kind === "free_throws_result")).toBe(true);
+  });
+
+  it("el último libre fallado queda vivo y se resuelve como un rebote real, no como un final sin más", () => {
+    const state = runPossession(buildInput("closeout_tardio_con_contacto", 9));
+    const foulFact = state.facts.find((f) => f.kind === "shooting_foul");
+    expect(foulFact).toBeDefined();
+    // El desenlace final ya no es "shooting_foul" a secas: el último libre
+    // falló y el rebote posterior decidió el desenlace real.
+    expect(state.terminal!.kind).toBe("missed_shot_defensive_rebound");
+    expect(state.facts.some((f) => f.kind === "free_throws_result")).toBe(true);
+  });
+});
