@@ -110,3 +110,25 @@ export function resolveRebound(
     contestPoolPlayerIds: pool.map((c) => c.playerId),
   };
 }
+
+/**
+ * Palmeo o balón dividido sin captura limpia: lo controla, entre quienes
+ * realmente llegaron, el de mayor T20 (empate: el primero en llegar). Misma
+ * regla que HF-002 §1.4; compartida por el rebote y, en ME-03, por la
+ * disputa de un balón suelto tras tapón o desvío.
+ */
+export function pickTipWinnerByT20(
+  tip: Extract<ReboundOutcome, { kind: "loose_ball_tip" }>,
+  t20Of: (playerId: string) => Rating,
+): string {
+  let best = tip.nearestPlayerId;
+  let bestT20 = t20Of(best);
+  for (const id of tip.contestPoolPlayerIds) {
+    const t20 = t20Of(id);
+    if (t20 > bestT20) {
+      best = id;
+      bestT20 = t20;
+    }
+  }
+  return best;
+}
