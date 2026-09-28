@@ -3,6 +3,26 @@
 Formato libre en español, orden cronológico inverso. Los motivos de
 decisiones duraderas viven en `docs/decisions/`, no aquí.
 
+## ME-01 — Primera posesión integrada y Laboratorio de Partido (sin fusionar)
+
+- Guardados el prompt de implementación y el hotfix HF-001 (sincronización
+  de rama) en `docs/prompts/`.
+- Creado el módulo `modules/match/` (domain/application/infrastructure/ui):
+  atributos y perfiles de jugador (26 capacidades activas, escala 1–15,
+  `E−`…`A+`), parámetros LAB-0.1 tipados y acotados, tres escenarios de
+  bloqueo directo central, motor detallado con árbol de decisión y relato
+  por pasos, y aproximación rápida por lotes reutilizando el mismo motor.
+- Añadidos los modelos Prisma `LabTeam`/`LabPlayer` con migración real y
+  script de siembra idempotente de los diez perfiles del fixture.
+- Añadida la interfaz `/lab`: editor de jugadores agrupado, cancha
+  esquemática, relato paso a paso con detalle seleccionable, y comparación
+  rápida de la ayuda de D3.
+- Añadido ADR-0004 (llegada analítica en vez de interpolación cada 100 ms)
+  y la documentación activa del módulo (`docs/match/`).
+- Actualizados `docs/foundation/CURRENT_SCOPE.md`, `docs/roadmap/ROADMAP.md`,
+  `docs/architecture/TECHNICAL_ARCHITECTURE.md` y `modules/README.md` para
+  reflejar que ME-01 es la entrega vigente.
+
 ## FND-001 — Foundation general y arquitectura técnica (sin fusionar)
 
 - Base de bootstrap en `main` (README provisional) como excepción

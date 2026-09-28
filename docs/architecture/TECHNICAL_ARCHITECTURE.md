@@ -5,7 +5,7 @@
 **Debe leerse cuando:** empieces a trabajar en el código de la aplicación web.
 **No cubre:** los límites de dependencia detallados (ver `MODULE_BOUNDARIES.md`) ni la persistencia (ver `DATA_AND_PERSISTENCE.md`).
 **Documentos relacionados:** `docs/decisions/ADR-0001-technical-stack.md`, `docs/decisions/ADR-0002-modular-monolith.md`.
-**Última actualización:** 2026-09-25.
+**Última actualización:** 2026-09-28.
 
 ## Stack
 
@@ -28,19 +28,22 @@ src/
   app/                       # rutas, layouts y composición web (Next.js App Router)
     api/health/route.ts      # endpoint de salud
     page.tsx                 # página Foundation
+    lab/                     # ruta y server actions del Laboratorio de Partido
   shared/
     domain/                  # reglas puras realmente compartidas
     application/             # casos de uso y puertos compartidos
     infrastructure/           # Prisma y adaptadores comunes
     ui/                      # componentes visuales reutilizables
-modules/                     # (vacío en FND-001) dirección futura de módulos de negocio
+modules/
+  match/                     # Laboratorio de Partido (ME-01); ver docs/match/README.md
 prisma/
-  schema.prisma              # datasource + generator, sin modelos todavía
+  schema.prisma              # datasource + generator + LabTeam/LabPlayer
 ```
 
-`modules/` no contiene módulos todavía porque ninguno tiene reglas de
-diseño aprobadas. Ver `modules/README.md` para la forma que tendrán
-cuando se creen.
+`modules/match/` es el primer módulo de negocio real; sigue la forma
+`domain/application/infrastructure/ui` descrita en `modules/README.md`.
+Ningún otro módulo existe todavía porque no tiene reglas de diseño
+aprobadas.
 
 ## Flujo de una petición (ejemplo: salud de la aplicación)
 

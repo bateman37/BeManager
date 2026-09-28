@@ -5,7 +5,7 @@
 **Debe leerse cuando:** empieces cualquier tarea sobre este repositorio, justo después de `CLAUDE.md` y del prompt activo.
 **No cubre:** el contenido de cada documento (solo indica dónde está).
 **Documentos relacionados:** todos los listados abajo.
-**Última actualización:** 2026-09-25.
+**Última actualización:** 2026-09-28.
 
 Ninguna instrucción de este repositorio obliga a leer toda la
 documentación en cada sesión. Carga solo lo que tu tarea necesite.
@@ -23,7 +23,7 @@ documentación en cada sesión. Carga solo lo que tu tarea necesite.
 |---|---|
 | Cualquier entrega nueva | `docs/process/WORKFLOW.md`, `docs/process/DEFINITION_OF_DONE.md` |
 | Arquitectura técnica / módulos | `docs/architecture/README.md` y los documentos que enlaza |
-| Motor de partido, tácticas o atributos | `docs/foundation/MATCH_CORE_PRINCIPLES.md`, `docs/architecture/MODULE_BOUNDARIES.md` |
+| Motor de partido, tácticas o atributos | `docs/foundation/MATCH_CORE_PRINCIPLES.md`, `docs/architecture/MODULE_BOUNDARIES.md`, `docs/match/README.md` |
 | Competiciones y ecosistemas (europeo, NBA-like, NCAA-like) | `docs/foundation/COMPETITION_ECOSYSTEMS.md` |
 | Interfaz web | `docs/architecture/TECHNICAL_ARCHITECTURE.md` (sección de `app/`/`ui/`) |
 | Persistencia y Prisma | `docs/architecture/DATA_AND_PERSISTENCE.md` |
@@ -36,6 +36,7 @@ documentación en cada sesión. Carga solo lo que tu tarea necesite.
 - `docs/decisions/README.md` — decisiones arquitectónicas (ADR).
 - `docs/process/README.md` — metodología, pruebas y definición de "hecho".
 - `docs/roadmap/ROADMAP.md` — horizonte comprometido y no comprometido.
+- `docs/match/README.md` — índice del módulo de partido (motor, tácticas, atributos).
 - `docs/prompts/README.md` — convención de prompts de implementación y hotfix.
 - `docs/testing/manual/` — planes de prueba manual por entrega.
 

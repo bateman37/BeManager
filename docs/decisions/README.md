@@ -5,7 +5,7 @@
 **Debe leerse cuando:** vayas a tomar una decisión técnica significativa o difícil de revertir.
 **No cubre:** el contenido de cada ADR (ver el archivo correspondiente).
 **Documentos relacionados:** `docs/README.md`.
-**Última actualización:** 2026-09-25.
+**Última actualización:** 2026-09-28.
 
 ## Convención
 
@@ -20,3 +20,4 @@
 - `ADR-0001-technical-stack.md` — elección de stack técnico y versiones principales.
 - `ADR-0002-modular-monolith.md` — monolito modular frente a microservicios/monorepo.
 - `ADR-0003-fictional-world-and-ecosystems.md` — universo ficticio y separación de familias de ecosistemas.
+- `ADR-0004-detailed-engine-analytic-timing.md` — el motor detallado calcula llegadas de forma analítica en vez de interpolar posiciones cada 100 ms.
