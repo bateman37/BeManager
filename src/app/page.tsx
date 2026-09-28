@@ -53,12 +53,17 @@ export default async function HomePage() {
       </section>
 
       <section className="space-y-2 rounded-xl border border-dashed border-slate-300 p-6 dark:border-slate-700">
-        <h2 className="text-lg font-semibold">Próximo bloque</h2>
+        <h2 className="text-lg font-semibold">Laboratorio de Partido</h2>
         <p className="text-sm text-slate-600 dark:text-slate-400">
-          El siguiente gran bloque de trabajo será el diseño integrado del
-          motor de partido, las tácticas y los atributos como un único
-          núcleo de juego.
+          ME-01 integra por primera vez motor, tácticas y atributos en una
+          única posesión 5v5 de bloqueo directo.
         </p>
+        <a
+          href="/lab"
+          className="inline-block rounded bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white"
+        >
+          Abrir el laboratorio
+        </a>
       </section>
     </main>
   );
