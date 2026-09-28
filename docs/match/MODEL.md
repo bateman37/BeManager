@@ -24,6 +24,24 @@
 - **Estado terminal** (`TerminalOutcome`): el único conjunto de desenlaces
   legales de una posesión de laboratorio (ver `RULES.md`).
 
+## Núcleo compartido y foto fiel al instante del hecho (HF-002)
+
+El árbol de decisión, las fórmulas LAB-0.1 y los estados terminales viven
+en `domain/simulation/possession-core.ts`, compartido por el motor
+detallado y por el resolvedor rápido (ver `docs/match/SCENARIOS.md`). El
+núcleo no construye snapshots de posición durante el cálculo: registra un
+historial de llegadas reales por jugador (solo cuando el motor detallado
+lo activa) y `possession-engine.ts` reconstruye, para cada hecho, la
+posición de cada jugador *tal y como era conocida hasta ese instante*, no
+la posición final ya mutada para los cálculos posteriores. Así un hecho
+nunca muestra una posición futura como si ya hubiese ocurrido.
+
+El balón (`BallState`) se deriva de la mecánica real de cada desenlace, no
+de un valor por defecto: un tapón o una pérdida en balón vivo dejan el
+balón `loose` (suelto, sin dueño) en el punto donde ocurrió, un robo lo
+deja `held` por quien lo recuperó, y solo una canasta anotada lo deja
+`dead` en el aro.
+
 ## Snapshots e independencia de partidas en curso
 
 `MatchInput` es una copia estable de perfiles, escenario, semilla y

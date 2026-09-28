@@ -45,7 +45,13 @@ implementarla sin aprobación.
 5. Cada entrega incluye pruebas funcionales manuales concretas para que
    Dennis las ejecute personalmente.
 6. Nada se fusiona hasta completar desde la interfaz el recorrido
-   funcional afectado.
+   funcional afectado. La secuencia habitual (salvo instrucción distinta
+   de Dennis en el prompt activo) es: Claude Code completa el recorrido
+   básico real desde la interfaz afectada (por ejemplo `/lab`) y deja la
+   PR sin fusionar; Dennis fusiona la PR y hace después, ya desde `main`,
+   su propia prueba funcional profunda. "Recorrido básico" no sustituye la
+   prueba profunda de Dennis: es la condición mínima para dejar la PR
+   lista, no el cierre funcional de la entrega.
 7. Los prompts son delimitados y no mezclan sistemas independientes.
 8. Cada entrega actualiza la documentación de diseño afectada, las
    decisiones arquitectónicas necesarias y `CHANGELOG.md`.

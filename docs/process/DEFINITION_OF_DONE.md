@@ -16,8 +16,11 @@ Una entrega no está terminada hasta que:
 - La aplicación se instala de forma reproducible con `npm ci`.
 - `npm run check` (lint + typecheck + tests + validación documental +
   build) termina correctamente sin necesitar una base de datos activa.
-- Si la entrega tiene interfaz, se ha recorrido manualmente desde el
-  navegador, no solo verificado por compilación.
+- Si la entrega tiene interfaz, Claude Code ha recorrido manualmente desde
+  el navegador el camino básico real (no solo verificado por compilación)
+  antes de dejar la PR sin fusionar; la prueba funcional profunda desde
+  `main`, tras la fusión, es responsabilidad de Dennis (ver `WORKFLOW.md`
+  regla 6), no una condición para abrir la PR.
 - La documentación de diseño afectada, las decisiones arquitectónicas
   necesarias y `CHANGELOG.md` están actualizados.
 - Existe un plan de prueba manual ejecutable por Dennis cuando la entrega

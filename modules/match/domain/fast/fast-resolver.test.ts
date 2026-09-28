@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { runScenarioBatch, compareHelpToggle } from "./fast-resolver";
 import { LAB_ROSTER_FIXTURE } from "../players/lab-roster-fixture";
@@ -41,5 +43,32 @@ describe("compareHelpToggle: invariante 7 (variar ayuda cambia la oportunidad)",
 
     // Con ayuda, sí se registra la marca dejada en al menos parte de la muestra.
     expect(comparison.withHelp.categories.helpLeftAssignment).toBeGreaterThan(0);
+  });
+
+  it("identifica sin ambigüedad qué se comparó (escenarios, semillas y versiones)", () => {
+    const comparison = compareHelpToggle(baseInput(), 10);
+    expect(comparison.withHelp.scenarioId).toBe("drop_con_ayuda");
+    expect(comparison.withoutHelp.scenarioId).toBe("drop_sin_ayuda");
+    expect(comparison.withHelp.seedStart).toBe(baseInput().seed);
+    expect(comparison.withHelp.seedEnd).toBe(baseInput().seed + 9);
+    expect(comparison.withHelp.labParametersVersion).toBe(LAB_PARAMETERS_VERSION);
+  });
+});
+
+describe("runScenarioBatch: HF-002 bug 1 (la ruta rápida no es el motor detallado)", () => {
+  it("fast-resolver.ts no importa el motor detallado (possession-engine)", () => {
+    const source = readFileSync(fileURLToPath(new URL("./fast-resolver.ts", import.meta.url)), "utf-8");
+    const importLines = source.split("\n").filter((line) => line.trim().startsWith("import "));
+    expect(importLines.some((line) => line.includes("possession-engine"))).toBe(false);
+  });
+});
+
+describe("runScenarioBatch: HF-002 bug 4 (rebote ofensivo agregado correctamente)", () => {
+  it("cuenta un rebote ofensivo real incluso cuando la posesión sigue con un segundo tiro", () => {
+    // Semilla 145 (drop_con_ayuda) produce un rebote ofensivo seguido de un
+    // segundo tiro anotado (ver possession-engine.test.ts, bug 4).
+    const result = runScenarioBatch({ ...baseInput(), scenarioId: "drop_con_ayuda", seed: 145 }, 1);
+    expect(result.categories.offensiveRebounds).toBeGreaterThan(0);
+    expect(result.categories.shotsAttempted).toBeGreaterThanOrEqual(2);
   });
 });

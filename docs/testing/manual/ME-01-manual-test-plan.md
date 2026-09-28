@@ -5,8 +5,8 @@
 **Es fuente de verdad para:** los pasos que Dennis debe seguir para validar el Laboratorio de Partido desde la interfaz.
 **Debe leerse cuando:** vayas a aceptar o rechazar la entrega ME-01.
 **No cubre:** pruebas automáticas (ver `docs/process/TESTING_STRATEGY.md`) ni el hotfix HF-001 (operativo, sin interfaz propia).
-**Documentos relacionados:** `docs/process/DEFINITION_OF_DONE.md`, `docs/match/README.md`.
-**Última actualización:** 2026-09-28.
+**Documentos relacionados:** `docs/process/DEFINITION_OF_DONE.md`, `docs/match/README.md`, `docs/prompts/hotfix/HF-002-me01-integridad-y-rapido.md`.
+**Última actualización:** 2026-09-28 (pasos 13bis y 16bis–16quinquies añadidos por HF-002).
 
 Instrucciones para **Windows PowerShell**, sin dar por hecho conocimientos
 avanzados de programación. Para cada paso: qué comando ejecutar o qué
@@ -148,6 +148,18 @@ Cambia el escenario a "Drop sin ayuda" (misma semilla `1`) y pulsa
 la secuencia es distinta.
 **Resultado real:** _______________
 
+## 13bis. HF-002 — Un cambio de selección limpia el resultado anterior
+
+Con el resultado del paso 13 todavía visible, cambia la semilla a `2` (sin
+pulsar "Ejecutar").
+
+**Esperado:** el relato y la cancha del resultado anterior desaparecen de
+inmediato; no queda un relato de la semilla `1` mostrado como si fuera de
+la `2`.
+**Resultado real:** _______________
+**Señal de rechazo:** el resultado anterior sigue visible tras cambiar la
+semilla o el escenario, sin ejecutar de nuevo.
+
 ## 14. Cambiar una capacidad y observar la primera diferencia
 
 Vuelve a "Drop con ayuda", edita la capacidad T04 (Triple) de O1 a 15,
@@ -174,7 +186,62 @@ En "Comparar ayuda sí/no", deja tamaño de muestra en `30` y pulsa
 
 **Esperado:** aparece una tabla con columnas "Con ayuda" / "Sin ayuda"; la
 fila `helpLeftAssignment` es 0 en "Sin ayuda" y mayor que 0 en "Con ayuda".
+Debajo de la tabla se leen las semillas y versiones usadas, y un texto
+recuerda que esta tabla siempre compara ayuda sí/no, no el escenario
+seleccionado arriba.
 **Resultado real:** _______________
+
+## 16bis. HF-002 — Balón vivo tras un tapón o una pérdida
+
+Ejecuta "Drop con ayuda", semilla `232`.
+
+**Esperado:** el "Estado terminal" es `blocked_shot_live_ball` y la línea
+"Balón" muestra `loose` (suelto), no `dead` en el aro.
+**Resultado real:** _______________
+**Señal de rechazo:** el balón aparece `dead` tras un tapón o una pérdida
+en balón vivo.
+
+## 16ter. HF-002 — Libres ejecutados y último libre fallado
+
+Ejecuta "Closeout tardío con contacto", semilla `9`.
+
+**Esperado:** el relato incluye un hecho de "Falta ordinaria de tiro" y,
+después, varios hechos "anota/falla el libre X de N"; el "Estado
+terminal" final ya no es `shooting_foul` a secas (el último libre falló y
+el rebote posterior decidió el desenlace, por ejemplo
+`missed_shot_defensive_rebound`).
+**Resultado real:** _______________
+
+Repite con semilla `4`: el "Estado terminal" debe quedar en
+`shooting_foul` con el libre adicional anotado (canasta válida + falta).
+**Resultado real:** _______________
+
+## 16quater. HF-002 — Rebote ofensivo con segundo tiro
+
+Ejecuta "Drop con ayuda", semilla `145`.
+
+**Esperado:** el relato muestra un fallo, un rebote (`rebound_contested` o
+`rebound_secured`) capturado por un atacante, y un segundo "prepara un
+lanzamiento" antes del "Estado terminal" final (`made_basket`). Hay más de
+un hecho de tipo tiro preparado en el mismo relato.
+**Resultado real:** _______________
+
+## 16quinquies. HF-002 — Prueba conjunta de defensa a 15 (T15–T23)
+
+Edita cada jugador de Puerto Ámbar (D1–D5) y sube a `15` sus ocho
+capacidades defensivas/rebote (T15, T16, T17, T18, T19, T20, T22, T23),
+sin tocar los perfiles ofensivos. Ejecuta "Drop con ayuda", semilla `1`, y
+compara el relato con el mismo escenario y semilla usando los perfiles
+originales (puedes anotar el resultado del paso 10 como referencia).
+
+**Esperado:** al menos un eslabón de la cadena cambia de forma explicable
+(llegada, navegación de pantalla, recepción, oposición, tapón, cierre o
+captura de rebote, falta o tiro) respecto al perfil original. No se exige
+que cada conteo bruto (por ejemplo, tapones) suba de forma monótona: lo
+que cambian primero son los tiros y ventanas que realmente se alcanzan.
+**Resultado real:** _______________
+
+Restaura los perfiles originales de Puerto Ámbar antes de continuar.
 
 ## 17. Probar el fallo de guardado sin base de datos
 

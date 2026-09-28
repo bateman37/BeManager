@@ -27,11 +27,17 @@ semillas en `possession-engine.test.ts` que la rama de falta es alcanzable.
 
 - **Detallado** (`domain/simulation/possession-engine.ts`): relato completo
   por pasos, cancha esquemática, un resultado por corrida.
-- **Rápido** (`domain/fast/fast-resolver.ts`): reutiliza el motor detallado
-  con semillas derivadas del lote y agrega solo las categorías que
-  realmente representa (pantallas navegadas, ayuda dejada, pases al roll o
-  a la esquina, tiros, pérdidas, robos, tapones, rebotes, faltas de tiro,
-  balón fuera). No genera relato por jugada ni boxscore de partido.
+- **Rápido** (`domain/fast/fast-resolver.ts`, HF-002): resuelve por etapas
+  usando el mismo núcleo de decisión y las mismas fórmulas LAB-0.1 que el
+  motor detallado (`domain/simulation/possession-core.ts`), pero **no
+  llama a `runPossession`** ni construye relato por jugada ni snapshots de
+  diez jugadores por paso: solo agrega las categorías que realmente
+  representa (pantallas navegadas, ayuda dejada, pases al roll o a la
+  esquina, tiros, pérdidas, robos, tapones, rebotes, faltas de tiro, balón
+  fuera). Al saltarse la construcción de relato y el historial de
+  posiciones, es medible y explicablemente más rápido que ejecutar el
+  detallado en lote (≈1,5–1,75× en las mediciones de la PR de HF-002,
+  mismo equipo, mismas semillas).
 
 ## Qué demuestra la comparación
 
@@ -40,3 +46,11 @@ oportunidad (verificado en `fast-resolver.test.ts`): sin ayuda,
 `helpLeftAssignment` y `passesToCorner` son siempre 0; con ayuda, no. La
 interfaz de laboratorio permite repetir el mismo escenario, cambiar solo la
 ayuda o una capacidad, y comparar un lote pequeño desde la misma pantalla.
+
+**El lote siempre compara ayuda sí/no, no el escenario seleccionado**
+(HF-002 §1.7): la comparación por lotes ejecuta siempre exactamente
+`drop_con_ayuda` frente a `drop_sin_ayuda`, con independencia de qué
+escenario esté elegido en la ejecución individual. `closeout_tardio_con_contacto`
+no es una variante de ayuda sí/no y no participa en esa tabla; se prueba
+en la ejecución individual, y la interfaz lo indica explícitamente para no
+atribuir esa tabla a un escenario distinto del que realmente mide.
