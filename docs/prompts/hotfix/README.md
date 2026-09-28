@@ -3,9 +3,9 @@
 **Estado:** ACTIVE
 **Es fuente de verdad para:** cómo se registran los hotfixes futuros.
 **Debe leerse cuando:** se necesite corregir una entrega ya fusionada.
-**No cubre:** ningún hotfix concreto (todavía no existe ninguno).
+**No cubre:** el contenido de cada hotfix (ver el archivo correspondiente).
 **Documentos relacionados:** `docs/prompts/README.md`.
-**Última actualización:** 2026-09-25.
+**Última actualización:** 2026-09-28.
 
 Un hotfix corrige un problema concreto de una entrega ya aceptada, sin
 reabrir su alcance completo.
@@ -19,4 +19,9 @@ reabrir su alcance completo.
   investigar aparece la necesidad de ampliar alcance, se detiene y se
   señala como `DECISIÓN REQUERIDA`.
 
-Todavía no existe ningún hotfix en este proyecto.
+## Hotfixes existentes
+
+- `HF-001-me-01-sincronizar-rama.md` — corrección operativa de arranque de
+  ME-01: sincroniza la rama de trabajo con `main` para poder leer las
+  referencias de diseño de `docs/match/` ya subidas por Dennis. No amplía
+  el alcance funcional de ME-01.

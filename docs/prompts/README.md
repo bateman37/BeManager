@@ -5,7 +5,7 @@
 **Debe leerse cuando:** vayas a guardar un nuevo prompt de implementación o hotfix.
 **No cubre:** el contenido de cada prompt (son registros inmutables, no se resumen aquí).
 **Documentos relacionados:** `docs/prompts/hotfix/README.md`, `docs/process/DOCUMENTATION_STANDARD.md`.
-**Última actualización:** 2026-09-25.
+**Última actualización:** 2026-09-28.
 
 ## Convención
 
@@ -20,3 +20,8 @@
 ## Prompts de implementación existentes
 
 - `implementation/FND-001-foundation-general-and-technical-architecture.md`
+- `implementation/ME-01-primera-posesion-integrada.md`
+
+## Hotfixes existentes
+
+Ver `docs/prompts/hotfix/README.md`.
