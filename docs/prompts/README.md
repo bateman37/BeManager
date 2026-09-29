@@ -5,7 +5,7 @@
 **Debe leerse cuando:** vayas a guardar un nuevo prompt de implementación o hotfix.
 **No cubre:** el contenido de cada prompt (son registros inmutables, no se resumen aquí).
 **Documentos relacionados:** `docs/prompts/hotfix/README.md`, `docs/process/DOCUMENTATION_STANDARD.md`.
-**Última actualización:** 2026-09-28 (ME-03 opción B).
+**Última actualización:** 2026-09-29 (ME-04).
 
 ## Convención
 
@@ -24,6 +24,7 @@
 - `implementation/ME-02-trampa-y-salidas-con-correcciones-me01.md`
 - `implementation/ME-03-posesiones-enlazadas-y-transicion.md`
 - `implementation/ME-03-aclaracion-ventaja-temprana.md` — decisión de Dennis (opción B) sobre cuándo existe ventana de ventaja temprana.
+- `implementation/ME-04-primer-partido-fiba.md`
 
 ## Hotfixes existentes
 

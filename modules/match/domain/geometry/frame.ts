@@ -102,3 +102,31 @@ export function sidelineThrowInSpot(ballGlobal: Point2D): Point2D {
   const y = ballGlobal.y > COURT_WIDTH_METERS / 2 ? COURT_WIDTH_METERS + OUTSIDE_OFFSET : -OUTSIDE_OFFSET;
   return { x: clampX(ballGlobal.x), y };
 }
+
+/**
+ * Saque desde el lugar legal más cercano a un punto **dentro** de la
+ * cancha (FIBA art. 17), por ejemplo donde se cometió una falta sin
+ * libres (ME-04): la línea (de fondo o de banda) más próxima, nunca
+ * directamente detrás del tablero. Empates de distancia: línea de fondo.
+ */
+export function nearestLineThrowInSpot(insideGlobal: Point2D): Point2D {
+  const toLeft = insideGlobal.x;
+  const toRight = COURT_LENGTH_METERS - insideGlobal.x;
+  const toBottom = insideGlobal.y;
+  const toTop = COURT_WIDTH_METERS - insideGlobal.y;
+  const toEnd = Math.min(toLeft, toRight);
+  const toSide = Math.min(toBottom, toTop);
+  if (toEnd <= toSide) {
+    const x = toRight <= toLeft ? COURT_LENGTH_METERS + OUTSIDE_OFFSET : -OUTSIDE_OFFSET;
+    return { x, y: avoidBehindBackboard(clampY(insideGlobal.y)) };
+  }
+  const y = toTop < toBottom ? COURT_WIDTH_METERS + OUTSIDE_OFFSET : -OUTSIDE_OFFSET;
+  return { x: clampX(insideGlobal.x), y };
+}
+
+/**
+ * Saque de alternancia al empezar C2–C4 y cada prórroga (art. 12.5/17):
+ * desde la prolongación de la línea central, en la banda opuesta a la mesa
+ * de anotadores (banda inferior de la cancha global del laboratorio).
+ */
+export const CENTER_LINE_THROW_IN_SPOT: Point2D = { x: MIDCOURT_LINE_X, y: -OUTSIDE_OFFSET };

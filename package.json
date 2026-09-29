@@ -16,6 +16,7 @@
     "test:watch": "vitest",
     "docs:check": "node scripts/check-docs-links.mjs",
     "profile:tramo": "tsx scripts/profile-tramo.ts",
+    "profile:game": "tsx scripts/profile-game.ts",
     "check": "npm run lint && npm run typecheck && npm run test && npm run docs:check && npm run build",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",

@@ -62,7 +62,13 @@ import {
   type ReboundOutcome,
 } from "./resolvers/rebound-resolver";
 import { resolvesTurnoverUnderPressure } from "./resolvers/turnover-resolver";
-import { evaluateCloseoutLegality, awardFreeThrowsForShootingFoul } from "./resolvers/foul-resolver";
+import { planSecondEntry, type SecondEntryPlan } from "./second-entry-read";
+import type { RaceParticipant } from "../sequence/transition";
+import {
+  evaluateCloseoutLegality,
+  awardFreeThrowsForShootingFoul,
+  evaluateContainmentContact,
+} from "./resolvers/foul-resolver";
 
 const WEAK_CORNER_SPOT: Point2D = { x: 24.0, y: 13.9 };
 /**
@@ -162,7 +168,33 @@ export type LinkedEntry =
       readonly contesterSlot: string;
       readonly contesterArrivalSeconds: number;
       readonly contesterGeometry: ContestGeometry;
+    }
+  | {
+      /**
+       * ME-04: serie de libres ya concedida (falta de tiro o bonus), que
+       * el partido ejecuta después de abrir la oportunidad de sustitución.
+       * Mismo bucle T05 + rebote del último libre fallado que ME-01; si el
+       * período ya terminó, el último fallo no genera rebote.
+       */
+      readonly kind: "free_throws";
+      readonly shooterSlot: string;
+      readonly count: number;
+      readonly liveReboundOnLastMiss: boolean;
     };
+
+/**
+ * Reglas de partido activas en el núcleo enlazado (ME-04). Ausentes en la
+ * posesión individual y en el tramo de ME-03, que conservan exactamente su
+ * comportamiento.
+ */
+export interface LinkedGameRules {
+  /** La falta de tiro devuelve sus libres pendientes en vez de ejecutarlos. */
+  readonly deferFreeThrows: boolean;
+  /** Adjudica la vía ordinaria sin tiro (contención ilegal del continuador). */
+  readonly ordinaryFouls: boolean;
+  /** Permite la segunda entrada del bloqueo si la primera lectura queda negada (una por acción). */
+  readonly secondEntryAllowed: boolean;
+}
 
 export interface LinkedSegmentOptions {
   /** Rol canónico de la acción (O1..O5 ataca, D1..D5 defiende) → ID real del jugador. */
@@ -176,11 +208,33 @@ export interface LinkedSegmentOptions {
   readonly rng: SeededRandom;
   readonly attackingPriority: ReboundPriority;
   readonly entry: LinkedEntry;
+  readonly rules?: LinkedGameRules;
+}
+
+/**
+ * Contención del continuador por el defensor que ayuda (ME-04 §3): se
+ * guarda al programar ambos desplazamientos y se adjudica al cerrar el
+ * tramo de cálculo, con las trayectorias reales ya conocidas.
+ */
+interface PendingContainment {
+  readonly defenderSlot: string;
+  readonly attackerSlot: string;
+  /** Inicio del desplazamiento del atacante (s). */
+  readonly attackerDepartSeconds: number;
+  /** Llegada del atacante a su punto (s): a partir de ahí ya no se desplaza. */
+  readonly attackerArrivalSeconds: number;
+  readonly defenderDepartSeconds: number;
+  readonly defenderArrivalSeconds: number;
+  readonly brakingExtraSeconds: number;
 }
 
 interface LinkedState {
   readonly binding: Readonly<Record<string, string>>;
   readonly priority: ReboundPriority;
+  readonly rules: LinkedGameRules | null;
+  containment: PendingContainment | null;
+  /** Primer instante en que empieza un gesto de tiro en este tramo de cálculo. */
+  firstGestureSeconds: number;
   /** Atacantes con encargo de balance en el tiro vigente: no disputan el rebote. */
   balancers: ReadonlySet<string>;
 }
@@ -285,6 +339,8 @@ function isOffensivePlayer(playerId: string): boolean {
 }
 
 function finalize(ctx: CoreContext, outcome: TerminalOutcome, ball: BallState): PossessionCoreResult {
+  const foul = ctx.linked?.rules?.ordinaryFouls ? adjudicatePendingContainment(ctx) : null;
+  if (foul) return foul;
   const orderedTimeline = [...ctx.timeline]
     .sort((a, b) => a.atMs - b.atMs || a.sequence - b.sequence)
     .map((raw, index) => ({ ...raw, sequence: index }));
@@ -344,7 +400,16 @@ export function computePossessionCore(
     gameClockMs: linked ? linked.gameClockMs : scenario.initialGameClockMs,
     shotClockMs: linked ? linked.shotClockMs : scenario.initialShotClockMs,
     possessionPhase: 0,
-    linked: linked ? { binding: linked.binding, priority: linked.attackingPriority, balancers: new Set() } : null,
+    linked: linked
+      ? {
+          binding: linked.binding,
+          priority: linked.attackingPriority,
+          balancers: new Set(),
+          rules: linked.rules ?? null,
+          containment: null,
+          firstGestureSeconds: Infinity,
+        }
+      : null,
   };
 
   if (linked) {
@@ -353,6 +418,16 @@ export function computePossessionCore(
     }
     if (linked.entry.kind === "direct_finish") {
       return runDirectFinish(ctx, linked.entry);
+    }
+    if (linked.entry.kind === "free_throws") {
+      return runFreeThrowSeries(ctx, {
+        shooterId: linked.entry.shooterSlot,
+        count: linked.entry.count,
+        atSeconds: 0,
+        basketCounted: false,
+        basketPoints: 0,
+        liveReboundOnLastMiss: linked.entry.liveReboundOnLastMiss,
+      });
     }
   }
 
@@ -533,6 +608,7 @@ function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition): Possessio
     // continuador; ajusta su llegada real a la ayuda (HF-002 §1.5).
     tD3ArriveHelp = Math.max(0, rawD3Arrival - interiorArrivalAdjustmentSeconds(d3.attributes.T23));
     setArrival(ctx, "D3", tD3ArriveHelp, SHORT_ROLL_SPOT, tHelpDecision);
+    registerContainment(ctx, "D3", tHelpDecision, tD3ArriveHelp, d3BrakingExtra, tRollReady - rollTravelSeconds, tRollReady);
     event(
       ctx,
       tD3ArriveHelp,
@@ -685,6 +761,12 @@ function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition): Possessio
           contesterGeometry: d4CornerGeometry,
         });
       }
+    }
+
+    if (d3TrulyContaining) {
+      // Primera lectura negada: O5 contenido y la inversión cerrada (ME-04 §5).
+      const kickOut = tryLinkedKickOut(ctx, tO5Ready, "D3");
+      if (kickOut) return kickOut;
     }
 
     return resolveShotAttempt(ctx, {
@@ -870,6 +952,7 @@ function runTrapPhase(ctx: CoreContext): PossessionCoreResult {
   const tD3LowManArrival = Math.max(0, rawD3LowManArrival - interiorArrivalAdjustmentSeconds(d3.attributes.T23));
   const d3BrakingExtra = closeoutBrakingExtraSeconds(d3.attributes.F03);
   setArrival(ctx, "D3", tD3LowManArrival, SHORT_ROLL_SPOT, tLowManDecision);
+  registerContainment(ctx, "D3", tLowManDecision, tD3LowManArrival, d3BrakingExtra, tRollReady - rollTravelSeconds, tRollReady);
   event(
     ctx,
     tLowManDecision,
@@ -1033,6 +1116,10 @@ function runTrapPhase(ctx: CoreContext): PossessionCoreResult {
         contesterGeometry: d4CornerGeometry,
       });
     }
+
+    // Primera lectura negada: D3 contiene el short roll y la inversión está cerrada (ME-04 §5).
+    const kickOut = tryLinkedKickOut(ctx, tO5Ready, "D3");
+    if (kickOut) return kickOut;
 
     return resolveShotAttempt(ctx, {
       shooterId: "O5",
@@ -1261,6 +1348,7 @@ function resolveShotAttempt(ctx: CoreContext, args: ShotAttemptArgs): Possession
     }
     return resolveShootingFoulSequence(ctx, {
       shooterId: args.shooterId,
+      foulerId: args.contesterId,
       shotType: args.shotType,
       madeShot,
       atSeconds: args.tReady + 0.05,
@@ -1310,6 +1398,7 @@ function prepareLinkedShot(ctx: CoreContext, args: ShotAttemptArgs): PossessionC
     return linkedShotClockViolation(ctx, args.shooterId);
   }
   const tGesture = Math.max(0, args.tReady - args.prepSeconds);
+  ctx.linked!.firstGestureSeconds = Math.min(ctx.linked!.firstGestureSeconds, tGesture);
   const shooterAtGesture = historyPositionAt(ctx, args.shooterId, tGesture);
   if (distance(shooterAtGesture, args.shooterPos) > 1e-6) {
     const travel = timeToReach(shooterAtGesture, args.shooterPos, runSpeed(ctx, args.shooterId));
@@ -1608,6 +1697,8 @@ function resolveLooseBallAfterPass(
 
 interface ShootingFoulArgs {
   readonly shooterId: string;
+  /** Defensor cuyo contacto tardío se sancionó (rol canónico). */
+  readonly foulerId: string;
   readonly shotType: ShotType;
   readonly madeShot: boolean;
   readonly atSeconds: number;
@@ -1618,10 +1709,15 @@ interface ShootingFoulArgs {
  * primero la validez de la canasta, ejecuta cada libre con T05 y la misma
  * semilla de la posesión, y resuelve el balón vivo si el último libre falla
  * reutilizando la misma disputa de rebote que un tiro de campo.
+ *
+ * ME-04: con reglas de partido, el hecho identifica también al infractor y
+ * la serie de libres se devuelve pendiente (`deferFreeThrows`) para que el
+ * partido abra antes la oportunidad de sustitución; la serie se ejecuta
+ * después con la entrada `free_throws`, que llama a la misma función.
  */
 function resolveShootingFoulSequence(ctx: CoreContext, args: ShootingFoulArgs): PossessionCoreResult {
   const award = awardFreeThrowsForShootingFoul(args.shotType, args.madeShot);
-  const shooter = player(ctx, args.shooterId);
+  const rules = ctx.linked?.rules ?? null;
 
   const basketPoints: 0 | 2 | 3 = args.madeShot ? (args.shotType === "three_point" ? 3 : 2) : 0;
   event(
@@ -1631,9 +1727,49 @@ function resolveShootingFoulSequence(ctx: CoreContext, args: ShootingFoulArgs): 
     "shooting_foul",
     [args.shooterId],
     `Falta ordinaria de tiro sobre ${args.shooterId}; se conceden ${award.count} libre(s).`,
-    { madeShot: args.madeShot, freeThrows: award.count },
+    rules
+      ? { madeShot: args.madeShot, freeThrows: award.count, foulerId: args.foulerId, shotType: args.shotType }
+      : { madeShot: args.madeShot, freeThrows: award.count },
   );
 
+  if (rules?.deferFreeThrows) {
+    const shooterPos = historyPositionAt(ctx, args.shooterId, args.atSeconds);
+    return finalize(
+      ctx,
+      {
+        kind: "shooting_foul_free_throws_pending",
+        shooterId: args.shooterId,
+        foulerId: args.foulerId,
+        shotType: args.shotType,
+        basketCounted: award.basketCounted,
+        freeThrowsAwarded: award.count,
+      },
+      { status: "dead", holderId: null, position: shooterPos },
+    );
+  }
+
+  return runFreeThrowSeries(ctx, {
+    shooterId: args.shooterId,
+    count: award.count,
+    atSeconds: args.atSeconds,
+    basketCounted: award.basketCounted,
+    basketPoints,
+    liveReboundOnLastMiss: true,
+  });
+}
+
+interface FreeThrowSeriesArgs {
+  readonly shooterId: string;
+  readonly count: number;
+  readonly atSeconds: number;
+  readonly basketCounted: boolean;
+  readonly basketPoints: 0 | 2 | 3;
+  readonly liveReboundOnLastMiss: boolean;
+}
+
+/** Serie de libres (HF-002 §1.6): tirador real, T05 y la semilla del tramo; mismo bucle en ME-01, ME-03 y ME-04. */
+function runFreeThrowSeries(ctx: CoreContext, args: FreeThrowSeriesArgs): PossessionCoreResult {
+  const shooter = player(ctx, args.shooterId);
   let t = args.atSeconds;
   let freeThrowsMade = 0;
   let lastMissed = false;
@@ -1647,10 +1783,10 @@ function resolveShootingFoulSequence(ctx: CoreContext, args: ShootingFoulArgs): 
     setArrival(ctx, args.shooterId, tShooterAtLine, FREE_THROW_LINE_SPOT, args.atSeconds);
   }
 
-  for (let i = 0; i < award.count; i++) {
+  for (let i = 0; i < args.count; i++) {
     t += FREE_THROW_PREP_SECONDS;
     if (ctx.linked && i === 0) t = Math.max(t, tShooterAtLine);
-    if (ctx.linked && i === award.count - 1) {
+    if (ctx.linked && i === args.count - 1 && args.liveReboundOnLastMiss) {
       // Último libre: los encargos se asumen al soltarlo, antes de conocer
       // su resultado; nadie invade antes de la liberación.
       assignReboundDuties(ctx, args.shooterId, t);
@@ -1664,21 +1800,21 @@ function resolveShootingFoulSequence(ctx: CoreContext, args: ShootingFoulArgs): 
       "concedido",
       "free_throws_result",
       [args.shooterId],
-      `${args.shooterId} ${made ? "anota" : "falla"} el libre ${i + 1} de ${award.count}.`,
-      { made, index: i + 1, of: award.count },
+      `${args.shooterId} ${made ? "anota" : "falla"} el libre ${i + 1} de ${args.count}.`,
+      { made, index: i + 1, of: args.count },
     );
   }
 
   const pointsFromFreeThrows = freeThrowsMade;
-  const totalPoints = basketPoints + pointsFromFreeThrows;
+  const totalPoints = args.basketPoints + pointsFromFreeThrows;
 
-  if (award.count === 0 || !lastMissed) {
+  if (args.count === 0 || !lastMissed || !args.liveReboundOnLastMiss) {
     return finalize(
       ctx,
       {
         kind: "shooting_foul",
-        basketCounted: award.basketCounted,
-        freeThrowsAwarded: award.count,
+        basketCounted: args.basketCounted,
+        freeThrowsAwarded: args.count,
         freeThrowsMade,
         pointsFromFreeThrows,
         totalPoints,
@@ -1696,4 +1832,243 @@ function resolveShootingFoulSequence(ctx: CoreContext, args: ShootingFoulArgs): 
     shotOrigin: FREE_THROW_LINE_SPOT,
     atSeconds: t,
   });
+}
+
+// --- ME-04: vía ordinaria sin tiro ------------------------------------------
+
+/**
+ * Registra la contención del continuador por el defensor que ayuda (drop
+ * con ayuda) o que pasa a low man (trampa). Solo con reglas de partido.
+ */
+function registerContainment(
+  ctx: CoreContext,
+  defenderSlot: string,
+  defenderDepartSeconds: number,
+  defenderArrivalSeconds: number,
+  brakingExtraSeconds: number,
+  attackerDepartSeconds: number,
+  attackerArrivalSeconds: number,
+): void {
+  if (!ctx.linked?.rules?.ordinaryFouls) return;
+  ctx.linked.containment = {
+    defenderSlot,
+    attackerSlot: "O5",
+    attackerDepartSeconds,
+    attackerArrivalSeconds,
+    defenderDepartSeconds,
+    defenderArrivalSeconds,
+    brakingExtraSeconds,
+  };
+}
+
+/** Paso de muestreo del primer solape corporal (s): técnico, sin efecto deportivo propio. */
+const CONTACT_SAMPLE_SECONDS = 0.01;
+
+/** Hechos después de los cuales la acción de media pista ya no está «antes del gesto de tiro». */
+const CONTAINMENT_CUTOFF_KINDS: ReadonlySet<FactKind> = new Set<FactKind>([
+  "possession_continues",
+  "turnover",
+  "pass_control_lost",
+  "shot_clock_violation",
+]);
+
+/**
+ * Adjudica, con las trayectorias reales del tramo de cálculo, si el
+ * defensor que ayuda cerró el paso del continuador **mientras este seguía
+ * desplazándose** y **antes** de que empezara cualquier gesto de tiro o
+ * terminara la acción. Contacto ilegal → falta personal sin tiro: el balón
+ * muere en el instante de contacto y se descarta lo que el núcleo había
+ * calculado después (no pudo ocurrir), igual que la violación de 24 s.
+ * Contacto legal → se deja constancia y el juego sigue.
+ */
+function adjudicatePendingContainment(ctx: CoreContext): PossessionCoreResult | null {
+  const linked = ctx.linked!;
+  const c = linked.containment;
+  if (!c) return null;
+  linked.containment = null;
+
+  let cutoff = linked.firstGestureSeconds;
+  for (const raw of ctx.timeline) {
+    if (CONTAINMENT_CUTOFF_KINDS.has(raw.kind)) cutoff = Math.min(cutoff, raw.atMs / 1000);
+  }
+  const start = Math.max(0, c.attackerDepartSeconds, c.defenderDepartSeconds);
+  const end = Math.min(cutoff, c.attackerArrivalSeconds);
+  let contactSeconds: number | null = null;
+  for (let t = start; t < end; t += CONTACT_SAMPLE_SECONDS) {
+    const d = distance(historyPositionAt(ctx, c.defenderSlot, t), historyPositionAt(ctx, c.attackerSlot, t));
+    if (d <= COMBINED_CONTACT_RADIUS_METERS) {
+      contactSeconds = Math.round(t * 1000) / 1000;
+      break;
+    }
+  }
+  const legality = evaluateContainmentContact({
+    contactSeconds,
+    attackerMoving: contactSeconds !== null,
+    defenderArrivalSeconds: c.defenderArrivalSeconds,
+    brakingExtraSeconds: c.brakingExtraSeconds,
+  });
+  if (legality === "sin_contacto" || contactSeconds === null) return null;
+
+  const defenderPos = historyPositionAt(ctx, c.defenderSlot, contactSeconds);
+  const attackerPos = historyPositionAt(ctx, c.attackerSlot, contactSeconds);
+  const detail = {
+    legality,
+    contactMs: secondsToMs(contactSeconds),
+    defenderArrivalMs: secondsToMs(c.defenderArrivalSeconds),
+    defenderSetMs: secondsToMs(c.defenderArrivalSeconds + c.brakingExtraSeconds),
+    attackerArrivalMs: secondsToMs(c.attackerArrivalSeconds),
+    brakingExtraMs: secondsToMs(c.brakingExtraSeconds),
+    distanceMeters: Math.round(distance(defenderPos, attackerPos) * 100) / 100,
+    defenderPosition: defenderPos,
+    attackerPosition: attackerPos,
+    foulerId: c.defenderSlot,
+    fouledId: c.attackerSlot,
+  };
+
+  if (legality === "contencion_legal") {
+    event(
+      ctx,
+      contactSeconds,
+      "concedido",
+      "legal_containment",
+      [c.defenderSlot, c.attackerSlot],
+      `${c.defenderSlot} contiene legalmente a ${c.attackerSlot} en su continuación: había llegado y frenado antes del contacto.`,
+      detail,
+    );
+    return null;
+  }
+
+  const expiryMs = secondsToMs(contactSeconds);
+  for (let i = ctx.timeline.length - 1; i >= 0; i--) {
+    if (ctx.timeline[i]!.atMs > expiryMs) ctx.timeline.splice(i, 1);
+  }
+  if (ctx.positionHistory) {
+    for (const id of Object.keys(ctx.positionHistory)) {
+      ctx.positionHistory[id] = truncateTrajectory(ctx.positionHistory[id]!, expiryMs);
+      ctx.positions[id] = historyPositionAt(ctx, id, contactSeconds);
+    }
+  }
+  event(
+    ctx,
+    contactSeconds,
+    "concedido",
+    "non_shooting_foul",
+    [c.defenderSlot, c.attackerSlot],
+    `Falta personal sin tiro de ${c.defenderSlot}: cierra el paso de ${c.attackerSlot}, que sigue en carrera hacia su continuación, sin haber frenado antes del contacto (no tenía posición legal establecida).`,
+    detail,
+  );
+  return finalize(
+    ctx,
+    { kind: "non_shooting_foul", foulerId: c.defenderSlot, fouledId: c.attackerSlot },
+    { status: "dead", holderId: null, position: attackerPos },
+  );
+}
+
+// --- ME-04: segunda entrada del bloqueo directo -------------------------------------
+
+/**
+ * Con reglas de partido y la primera lectura negada (O5 contenido de
+ * verdad y la inversión a la esquina cerrada), O5 saca el balón con un pase
+ * real al exterior O2/O4 que haga viable la segunda entrada: línea de pase
+ * libre, creador en el exterior y segundos de tiro suficientes para
+ * recolocar la pantalla (`second-entry-read.ts`). Si ninguno es viable,
+ * devuelve `null` y se mantiene el tiro forzado bajo contención de ME-01.
+ */
+function tryLinkedKickOut(ctx: CoreContext, tRead: number, containerSlot: string): PossessionCoreResult | null {
+  const linked = ctx.linked;
+  if (!linked?.rules?.secondEntryAllowed) return null;
+  const scenario = getScenario(ctx.input.scenarioId);
+  const base: Record<string, Point2D> = {};
+  const local: Record<string, Point2D> = {};
+  for (const slot of [...scenario.offense, ...scenario.defense]) {
+    base[slot.playerId] = slot.initialPosition;
+    local[slot.playerId] = historyPositionAt(ctx, slot.playerId, tRead);
+  }
+  // El defensor que contiene a O5 presiona el pase (T17, como en la
+  // inversión de ME-02); la línea se comprueba frente a los otros cuatro.
+  const defenders: RaceParticipant[] = scenario.defense.filter((slot) => slot.playerId !== containerSlot).map((slot) => {
+    const p = player(ctx, slot.playerId);
+    return {
+      slot: slot.playerId,
+      id: linked.binding[slot.playerId] ?? slot.playerId,
+      position: local[slot.playerId]!,
+      runSpeedMps: attackerMoveSpeedMps(p.attributes.F01),
+      lateralSpeedMps: defenderLateralSpeedMps(p.attributes.F04),
+      t23: p.attributes.T23,
+    };
+  });
+  const options = (["O4", "O2"] as const).map((creatorSlot) => {
+    const passSeconds = PASS_RELEASE_SECONDS + distance(local.O5!, local[creatorSlot]!) / PASS_FLIGHT_SPEED_MPS;
+    const plan: SecondEntryPlan = planSecondEntry({
+      creatorSlot,
+      local,
+      base,
+      passerAtRelease: local.O5!,
+      creatorAtRelease: local[creatorSlot]!,
+      defendersAtRelease: defenders,
+      screenerSpeedMps: runSpeed(ctx, "O5"),
+      shotClockRemainingSeconds: ctx.shotClockMs / 1000 - (tRead + passSeconds),
+    });
+    return { creatorSlot, passSeconds, plan, realId: linked.binding[creatorSlot] ?? creatorSlot };
+  });
+  const viable = options
+    .filter((o) => o.plan.viable)
+    .sort((a, b) => a.passSeconds - b.passSeconds || (a.realId < b.realId ? -1 : a.realId > b.realId ? 1 : 0));
+  const choice = viable[0];
+  if (!choice || !choice.plan.viable) {
+    event(
+      ctx,
+      tRead,
+      "reconocido",
+      "second_entry",
+      ["O5"],
+      `${containerSlot} contiene a O5 y la esquina está cerrada, pero no hay segunda entrada (${options.map((o) => (o.plan.viable ? "" : o.plan.reason)).join("; ")}): O5 fuerza el tiro.`,
+      { viable: false, reasons: options.map((o) => (o.plan.viable ? null : o.plan.reason)) },
+    );
+    return null;
+  }
+  const plan = choice.plan;
+  const creator = player(ctx, choice.creatorSlot);
+  const o5 = player(ctx, "O5");
+  const release = tRead + PASS_RELEASE_SECONDS;
+  const arrival = tRead + choice.passSeconds;
+  event(
+    ctx,
+    release,
+    "ejecutado",
+    "pass_released",
+    ["O5", choice.creatorSlot],
+    `Primera lectura negada (${containerSlot} contiene a O5 y la esquina está cerrada): O5 saca el balón hacia ${choice.creatorSlot}.`,
+  );
+  // Línea libre frente a los defensores sin balón; el que contiene a O5 sí
+  // puede tocarlo bajo presión, igual que en la inversión de ME-02.
+  const container = player(ctx, containerSlot);
+  const outcome = resolvePass(o5.attributes.T09, creator.attributes.T11, true, container.attributes.T17, 1, ctx.rng);
+  if (outcome.kind === "deflected_loose_ball") {
+    return resolveLooseBallAfterPass(ctx, release, "O5", containerSlot);
+  }
+  const delay = outcome.kind === "awkward_control" ? outcome.extraDelaySeconds : 0;
+  event(ctx, arrival, "concedido", "pass_received", [choice.creatorSlot], `${choice.creatorSlot} recibe${delay > 0 ? " con control incómodo" : ""} para crear la segunda entrada.`);
+  event(
+    ctx,
+    arrival + delay,
+    "concedido",
+    "second_entry",
+    [choice.creatorSlot, "O5"],
+    `Segunda entrada del bloqueo directo: ${choice.creatorSlot} crea desde su nuevo ángulo y O5 se recoloca para ponerle la pantalla (${plan.reason}).`,
+    { viable: true, creatorSlot: choice.creatorSlot, screenSpot: plan.targets.O5, screenSetSeconds: plan.screenSetSeconds },
+  );
+  return finalize(
+    ctx,
+    {
+      kind: "second_entry_kick_out",
+      passerId: "O5",
+      creatorId: choice.creatorSlot,
+      slotSwap: plan.slotSwap,
+      targets: plan.targets,
+      screenSetSeconds: plan.screenSetSeconds,
+      reason: plan.reason,
+    },
+    { status: "held", holderId: choice.creatorSlot, position: local[choice.creatorSlot]! },
+  );
 }

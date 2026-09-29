@@ -5,7 +5,7 @@
 **Debe leerse cuando:** vayas a activar una nueva capacidad o a calibrar un coeficiente existente.
 **No cubre:** las 45 capacidades candidatas completas del catálogo (ver `docs/match/reference/BeManager-capitulo-atributos-y-motor-v2.md` §2.2–2.4).
 **Documentos relacionados:** `ACTIONS.md`, `docs/decisions/ADR-0004-detailed-engine-analytic-timing.md`.
-**Última actualización:** 2026-09-28 (ME-03).
+**Última actualización:** 2026-09-29 (ME-04).
 
 ## 27 capacidades activas (de 45 candidatas)
 
@@ -110,6 +110,20 @@ El tramo enlazado no activa capacidades nuevas ni coeficientes nuevos:
   el balón suelto tras tapón o desvío (misma regla del palmeo).
 - **T01/T18/F03/F06/C01/C04**: la finalización en transición o segunda
   oportunidad pasa por el mismo `resolveShotAttempt`.
+
+## ME-04: las mismas 27, sin coeficientes nuevos
+
+- **C04 + F06:** alcance del salto inicial (`ME-04-JUMP-1`, ver `RULES.md`);
+  C01 no se suma otra vez.
+- **F03 + F04 + T23:** la contención del continuador por la ayuda (llegada
+  con F04 y el ajuste interior de T23 ya vigentes, frenada con F03) decide
+  si el contacto es legal o falta sin tiro.
+- **T17 + T09/T11:** el pase de salida de la segunda entrada (toque del
+  defensor que contiene, como en la inversión de ME-02).
+- **T05:** libres, también los del bonus.
+- Los **roles funcionales declarados** (1–5) del banquillo son datos del
+  fixture para formar quintetos, no capacidades: no modifican ningún
+  cálculo ni se deducen de la altura.
 
 ## Editor de equilibrio
 

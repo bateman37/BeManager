@@ -10,6 +10,8 @@ import {
   compareLabCoverageBatch,
 } from "@match/application/use-cases/compare-lab-scenario-batch";
 import { playLabTramo } from "@match/application/use-cases/play-lab-tramo";
+import { playLabGame } from "@match/application/use-cases/play-lab-game";
+import type { BuildGameTeamArgs } from "@match/domain/game/game-model";
 import { LAB_0_2_PARAMETERS_VERSION } from "@match/domain/lab/lab-0-2-parameters";
 import type { BuildTramoTeamArgs } from "@match/domain/sequence/tramo-model";
 import type { PlayerProfile } from "@match/domain/players/player-profile";
@@ -104,4 +106,13 @@ export async function playTramoAction(
   defenseTeam: BuildTramoTeamArgs,
 ) {
   return playLabTramo({ seed, coverage, offenseTeam, defenseTeam });
+}
+
+/**
+ * ME-04: partido completo de laboratorio. Usa una única foto de los perfiles
+ * que muestra la interfaz (guardados o de referencia si PostgreSQL no está
+ * disponible); no escribe nada en la base de datos ni guarda el partido.
+ */
+export async function playGameAction(seed: number, home: BuildGameTeamArgs, away: BuildGameTeamArgs) {
+  return playLabGame({ seed, home, away });
 }

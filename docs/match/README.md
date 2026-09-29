@@ -5,9 +5,9 @@
 **Debe leerse cuando:** vayas a tocar cualquier código de `modules/match/` o a planificar la siguiente entrega del motor.
 **No cubre:** el razonamiento completo de diseño (ver `docs/match/reference/`) ni el orden de las diez entregas (ver `docs/match/roadmap.md`).
 **Documentos relacionados:** `docs/foundation/MATCH_CORE_PRINCIPLES.md`, `docs/architecture/MODULE_BOUNDARIES.md`.
-**Última actualización:** 2026-09-28.
+**Última actualización:** 2026-09-29.
 
-## Qué existe hoy (ME-01 + ME-02 + ME-03)
+## Qué existe hoy (ME-01 a ME-04)
 
 Un Laboratorio de Partido con un único bloqueo directo central 5×5, ante el
 que la defensa puede responder con **drop** (con o sin ayuda de D3) o con
@@ -26,8 +26,15 @@ lectura de ventaja temprana o ataque organizado, con los diez jugadores
 continuos en una cancha global y Puerto Ámbar atacando de verdad el otro
 aro (ver `docs/decisions/ADR-0006-linked-possessions-local-frame.md`).
 
-**No implementado todavía:** partido completo (cuatro períodos, bonus,
-final de cuarto), temporadas, más de una
+**ME-04:** partido completo FIBA 2026 de laboratorio (`domain/game/`):
+salto inicial, 4 × 10:00 y prórrogas sucesivas, bocina, faltas personales y
+de equipo con bonus, exclusión por cinco faltas, plantillas de doce con
+rotación automática fija, segunda entrada del bloqueo directo, relato y acta
+calculados de los hechos, y casos de frontera reglamentarios en `/lab` (ver
+`docs/decisions/ADR-0007-shared-continuity-engine-and-game-rules-profile.md`).
+
+**No implementado todavía:** dirección en vivo, fatiga, tiempos muertos,
+temporadas, más de una
 acción táctica ofensiva, coberturas de bloqueo distintas de drop/trampa,
 zonas, cualquier familia de ecosistema (ver
 `docs/foundation/COMPETITION_ECOSYSTEMS.md`), la mayoría de los 76 sucesos
@@ -42,7 +49,8 @@ están activas; ver `CAPABILITIES.md`).
 | Reglas FIBA 2026 alcanzables (incluidos relojes y saques del tramo) | `RULES.md` |
 | La acción de bloqueo directo, carga/balance y transición | `ACTIONS.md` |
 | Capacidades activas y parámetros LAB-0.1 | `CAPABILITIES.md` |
-| Los tres escenarios, el modo «Jugar tramo» y cómo se validan | `SCENARIOS.md` |
+| Los tres escenarios, el modo «Jugar tramo», el partido completo y los casos de frontera | `SCENARIOS.md` |
+| Acta (boxscore) calculada de los hechos y su conciliación | `BOXSCORE.md` |
 | Diseño completo (no solo lo aprobado) | `reference/README.md` |
 | Próximas entregas | `roadmap.md` |
 
@@ -55,11 +63,12 @@ modules/match/
     players/                      # atributos, perfiles, fixture, validación
     lab/                          # parámetros LAB-0.1, escenarios, MatchInput
     simulation/                   # núcleo compartido (modo enlazado ME-03), hechos, resolvers
-    sequence/                     # tramo de posesiones enlazadas, reglas de reloj, transición (ME-03)
+    sequence/                     # motor de continuidad compartido, tramo, reglas de reloj, transición (ME-03/ME-04)
+    game/                         # partido completo: reglas FIBA 2026 puras, rotación, acta, casos de frontera (ME-04)
     fast/                         # aproximación rápida por lotes
   application/
     ports/ use-cases/             # casos de uso de laboratorio
   infrastructure/
     db/                           # PrismaLabTeamRepository
-  ui/                              # editor de jugadores, cancha, relato, visor del tramo (ME-03)
+  ui/                              # editor de jugadores, cancha, relato, visor del tramo y del partido
 ```

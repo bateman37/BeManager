@@ -1,11 +1,11 @@
-# Escenarios, cobertura y validación (ME-01/ME-02)
+# Escenarios, cobertura y validación (ME-01 a ME-04)
 
 **Estado:** ACTIVE
-**Es fuente de verdad para:** los tres escenarios cargables, la cobertura defensiva (`drop`/`trampa`), el modo «Jugar tramo» y cómo se comprueban.
+**Es fuente de verdad para:** los tres escenarios cargables, la cobertura defensiva (`drop`/`trampa`), el modo «Jugar tramo», el partido completo, los casos de frontera y cómo se comprueban.
 **Debe leerse cuando:** vayas a añadir un escenario, una cobertura, o a entender por qué una rama concreta es alcanzable.
 **No cubre:** el modo rápido completo de ME-08 (aquí solo hay una aproximación limitada a este escenario).
 **Documentos relacionados:** `ACTIONS.md`, `RULES.md`.
-**Última actualización:** 2026-09-28 (ME-03, aclaración opción B).
+**Última actualización:** 2026-09-29 (ME-04).
 
 ## Los tres escenarios (`domain/lab/scenario.ts`)
 
@@ -100,3 +100,46 @@ y relojes, carga frente a balance, guardián y regresión de ME-01/ME-02;
 `ACTIONS.md`) y con el plan manual
 `docs/testing/manual/ME-03-manual-test-plan.md`. El coste se perfila con
 `npm run profile:tramo` (`scripts/profile-tramo.ts`).
+
+## Partido completo y casos de frontera (ME-04)
+
+Sección «Partido completo FIBA 2026 (ME-04)» de `/lab`: los dos equipos con
+sus doce inscritos (titulares y suplentes con sus roles), semilla, cobertura
+y prioridad **de cada equipo**, «Jugar partido». Cambiar la semilla, una
+cobertura, una prioridad o guardar un perfil retira el partido anterior con
+un aviso. El visor muestra ganador, marcador y parciales, faltas de equipo y
+bonus, sustituciones, relato por período → posesión → evento con cancha y
+quinteto en pista, y el acta con minutos, DNP y su conciliación.
+
+**Partido natural publicado:** semilla **82**, drop/drop, «Proteger balance»
+en ambos, perfiles del fixture: final Sierra Clara 138 – 141 Puerto Ámbar
+(C1 33–43, C2 34–37, C3 31–28, C4 40–33), 209 posesiones, 40 sustituciones
+de ambos banquillos, un and-one (PA09 sobre SC12) y un tiro de PA12 soltado
+0,04 s antes de la bocina final que entra. Otras semillas naturales
+útiles: 3 (una prórroga), 121 (fallo soltado a tiempo sin rebote tras la
+bocina) y 13 con trampa/trampa y «Cargar rebote» (dos prórrogas).
+
+**Barrido reproducible** (semillas 1–20 × drop/drop, trampa/trampa y
+drop/trampa con prioridades mezcladas; 60 partidos): 60 finales, 3 con
+prórroga; ~185 posesiones y ~50 sustituciones por partido; entradas de
+ataque: organizado 12 011, segunda oportunidad 2 780, ventaja temprana 0,
+segunda entrada 0; 63 faltas (todas de tiro), 0 sin tiro, 0 bonus, 0
+exclusiones. En 450 partidos (semillas 1–150 × las tres configuraciones)
+aparecen 8 tiros soltados antes de la bocina aún en el aire, 23 partidos
+con prórroga (17 con una, 5 con dos, 1 con tres) y ninguna parada del
+guardián.
+
+**Casos de frontera** (sección con borde discontinuo, etiquetada «Caso de
+frontera reglamentario (fixture de prueba, no es un partido)»,
+`domain/game/rule-boundary-fixtures.ts`): (a) tiro soltado antes, en y
+después de la bocina; (b) reset del reloj de lanzamiento tras falta sin tiro
+a 13/14 s; (c) falta de tiro y and-one con su acta; (d) cuarta y quinta falta
+de equipo, bonus y quinta personal (también en prórroga, contada en C4); (e)
+empate al acabar C4 → prórroga → otra prórroga → final; (f) canasta en C4 a
+2:00 con oportunidad del equipo que encaja. Cada paso muestra su estado y
+hechos de entrada, la función pura del partido que lo adjudica y su
+resultado; nada se inserta en un acta real.
+
+Se comprueba en `domain/game/me04.test.ts` (prompt §8, puntos 1–7) y con el
+plan `docs/testing/manual/ME-04-manual-test-plan.md`. El coste se perfila
+con `npm run profile:game` (`scripts/profile-game.ts`).

@@ -5,7 +5,7 @@
 **Debe leerse cuando:** se vaya a diseñar cualquier modelo Prisma.
 **No cubre:** el detalle de los modelos de laboratorio (ver `docs/match/MODEL.md` y `prisma/schema.prisma`).
 **Documentos relacionados:** `docs/architecture/TECHNICAL_ARCHITECTURE.md`, `docs/match/MODEL.md`, ADR relacionados en `docs/decisions/`.
-**Última actualización:** 2026-09-28.
+**Última actualización:** 2026-09-29.
 
 ## Categorías de datos previstas
 
@@ -39,6 +39,11 @@ Los primeros modelos reales son `LabTeam` y `LabPlayer`
 categoría 1 ("datos de contenido... cuando se diseñen", aquí perfiles
 ficticios escritos a mano, no generación poblacional). No son la categoría
 2 (partida/carrera): el laboratorio no es una carrera ni una temporada.
+
+ME-04 amplía el fixture a doce jugadores por equipo sin migración: el seed
+(caso de uso `seedLabRoster` con su puerto `LabSeedStore`) solo crea los
+que falten. El partido completo no se persiste: su resultado vive en memoria
+y en la interfaz; historial y checkpoints llegan en ME-09.
 
 ## Qué no existe todavía
 

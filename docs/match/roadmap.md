@@ -93,6 +93,12 @@ REQUERIDA` sobre la ventana de ventaja temprana, ver
 
 ### ME-04 — Primer partido reglamentario FIBA
 
+**Estado: implementado** (PR ME-04: partido completo, rotación automática,
+acta y casos de frontera; queda una `DECISIÓN REQUERIDA` no bloqueante sobre
+el alcance natural de faltas y segunda entrada con el fixture, ver
+`docs/decisions/DECISION-REQUERIDA-ME-04-alcance-natural-faltas-y-segunda-entrada.md`).
+Ver `docs/match/{MODEL,RULES,ACTIONS,SCENARIOS,BOXSCORE}.md`.
+
 **Alcance:** cuatro períodos, relojes, canastas, faltas ordinarias y bonus alcanzables, libres, reanudaciones, fin y prórroga aplicable del perfil FIBA 2026. Acta y estadísticas de equipo/jugador derivadas de hechos, no ajustadas después. Plantillas de prueba ampliadas para banquillo, con rotación automática sencilla y reglas de elegibilidad. Se amplía el repertorio mínimo necesario para que un partido pueda fluir sin repetir un guion fijo; se declaran todavía sus limitaciones tácticas.
 
 **Interfaz y cierre:** iniciar y terminar un partido, ver marcador, relato, minutos y boxscore coherentes. Escenarios exactos para bocina, reset de reloj, falta en tiro, bonus y prórroga; primero se resuelven hechos y después se adjudican las reglas.
