@@ -43,6 +43,7 @@ const PHASE_KIND_LABELS: Record<PhaseKind, string> = {
   rebote_ofensivo: "Rebote ofensivo = nueva fase de la misma posesión",
   salida_segura: "Salida segura = nueva fase de la misma posesión",
   recuperacion_propia: "Balón suelto recuperado = nueva fase de la misma posesión",
+  salto_inicial: "Primer control tras el salto inicial",
 };
 
 const ENTRY_LABELS: Record<PhaseEntry, string> = {

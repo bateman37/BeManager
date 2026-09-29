@@ -130,6 +130,7 @@ const DECISIVE_KINDS: ReadonlySet<FactKind> = new Set<FactKind>([
   "possession_continues",
   "shooting_foul",
   "non_shooting_foul",
+  "second_entry",
 ]);
 
 export const ROLE_LABELS: Readonly<Record<string, string>> = {
@@ -194,6 +195,8 @@ export type Step =
       readonly reason: string;
       readonly sameTeamKeepsBall: boolean;
       readonly shotClockMs: Milliseconds;
+      /** Texto de la fase cuando el mismo equipo conserva el balón con otro reloj (p. ej. falta sin bonus, ME-04). */
+      readonly note?: string;
     }
   /** Paso propio de un modo (p. ej. inicio de período del partido). */
   | { readonly kind: "custom"; readonly label: string; readonly atMs: Milliseconds; readonly run: () => Step | null };
@@ -300,7 +303,8 @@ export abstract class LinkedRun {
   protected abstract onGameClockExpired(e: EmitArgs, expiryMs: Milliseconds): boolean;
 
   /** Tras cerrar una posesión (con su hecho ya emitido o no); `false` detiene el paso en curso. */
-  protected afterPossessionClosed(_atMs: Milliseconds, emitted: boolean): boolean {
+  protected afterPossessionClosed(atMs: Milliseconds, emitted: boolean): boolean {
+    void atMs;
     return emitted;
   }
   /** ¿Detiene el reloj de partido esta canasta? (FIBA art. 50; el tramo, C1: nunca). */
@@ -312,7 +316,9 @@ export abstract class LinkedRun {
     return undefined;
   }
   /** Tiempo de juego transcurrido con el reloj en marcha, para minutos. */
-  protected onClockRan(_deltaMs: Milliseconds): void {}
+  protected onClockRan(deltaMs: Milliseconds): void {
+    void deltaMs;
+  }
   /** Período al que pertenece un hecho. */
   protected currentPeriod(): number {
     return 1;
@@ -908,6 +914,7 @@ export abstract class LinkedRun {
       }
       case "shooting_foul_free_throws_pending":
       case "non_shooting_foul":
+      case "second_entry_kick_out":
         // Solo los produce el núcleo con reglas de partido; un modo sin
         // ellas no sabe adjudicarlas y no inventa una reanudación.
         this.guardianStop(endMs, `desenlace «${terminal.kind}» sin reglas de partido para adjudicarlo.`);
@@ -972,7 +979,7 @@ export abstract class LinkedRun {
     this.shot = null;
     if (!step.sameTeamKeepsBall) {
       if (!this.openPossession(team.id, t0, "saque", `saque ${step.reason}`)) return null;
-    } else if (!this.newPhase(t0, "saque", `Saque ${step.reason}: ${team.name} conserva el balón y el reloj restante.`)) {
+    } else if (!this.newPhase(t0, "saque", step.note ?? `Saque ${step.reason}: ${team.name} conserva el balón y el reloj restante.`)) {
       return null;
     }
 
@@ -1044,7 +1051,10 @@ export abstract class LinkedRun {
   }
 
   /** Un saque termina (legalmente o por violación): el partido invierte aquí la flecha de alternancia. */
-  protected onThrowInEnded(_teamId: string, _legal: boolean): void {}
+  protected onThrowInEnded(teamId: string, legal: boolean): void {
+    void teamId;
+    void legal;
+  }
 
   // --- organización y acción organizada ----------------------------------------
 

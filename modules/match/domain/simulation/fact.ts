@@ -61,6 +61,7 @@ export type FactKind =
   | "player_disqualified"
   | "substitution"
   | "jump_ball"
+  | "jump_ball_control"
   | "period_started"
   | "period_ended"
   | "buzzer"

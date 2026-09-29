@@ -49,6 +49,7 @@ export type TerminalOutcome =
       readonly kind: "shooting_foul_free_throws_pending";
       readonly shooterId: string;
       readonly foulerId: string;
+      readonly shotType: "close_finish" | "three_point";
       readonly basketCounted: boolean;
       readonly freeThrowsAwarded: number;
     }
@@ -62,6 +63,21 @@ export type TerminalOutcome =
       readonly kind: "non_shooting_foul";
       readonly foulerId: string;
       readonly fouledId: string;
+    }
+  /**
+   * Solo en el partido de ME-04: la primera lectura del bloqueo quedó
+   * negada y el continuador sacó el balón con un pase real a un exterior,
+   * que inicia la segunda entrada del mismo bloqueo directo. Los roles y
+   * destinos (marco local) los calcula `second-entry-read.ts`.
+   */
+  | {
+      readonly kind: "second_entry_kick_out";
+      readonly passerId: string;
+      readonly creatorId: string;
+      readonly slotSwap: Readonly<Record<string, string>>;
+      readonly targets: Readonly<Record<string, Point2D>>;
+      readonly screenSetSeconds: number;
+      readonly reason: string;
     }
   | { readonly kind: "out_of_bounds"; readonly lastTouchPlayerId: string }
   | { readonly kind: "shot_clock_violation" }

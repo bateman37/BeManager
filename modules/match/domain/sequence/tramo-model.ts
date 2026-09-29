@@ -141,7 +141,9 @@ export type PhaseKind =
   | "saque"
   | "rebote_ofensivo"
   | "salida_segura"
-  | "recuperacion_propia";
+  | "recuperacion_propia"
+  /** ME-04: primer control vivo tras el salto inicial (solo en el partido). */
+  | "salto_inicial";
 
 /** Cómo se resolvió el ataque de la fase (ventaja temprana frente a ataque organizado). */
 export type PhaseEntry =

@@ -62,6 +62,8 @@ import {
   type ReboundOutcome,
 } from "./resolvers/rebound-resolver";
 import { resolvesTurnoverUnderPressure } from "./resolvers/turnover-resolver";
+import { planSecondEntry, type SecondEntryPlan } from "./second-entry-read";
+import type { RaceParticipant } from "../sequence/transition";
 import {
   evaluateCloseoutLegality,
   awardFreeThrowsForShootingFoul,
@@ -190,6 +192,8 @@ export interface LinkedGameRules {
   readonly deferFreeThrows: boolean;
   /** Adjudica la vía ordinaria sin tiro (contención ilegal del continuador). */
   readonly ordinaryFouls: boolean;
+  /** Permite la segunda entrada del bloqueo si la primera lectura queda negada (una por acción). */
+  readonly secondEntryAllowed: boolean;
 }
 
 export interface LinkedSegmentOptions {
@@ -759,6 +763,12 @@ function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition): Possessio
       }
     }
 
+    if (d3TrulyContaining) {
+      // Primera lectura negada: O5 contenido y la inversión cerrada (ME-04 §5).
+      const kickOut = tryLinkedKickOut(ctx, tO5Ready, "D3");
+      if (kickOut) return kickOut;
+    }
+
     return resolveShotAttempt(ctx, {
       shooterId: "O5",
       shooterSkill: o5.attributes.T01,
@@ -1106,6 +1116,10 @@ function runTrapPhase(ctx: CoreContext): PossessionCoreResult {
         contesterGeometry: d4CornerGeometry,
       });
     }
+
+    // Primera lectura negada: D3 contiene el short roll y la inversión está cerrada (ME-04 §5).
+    const kickOut = tryLinkedKickOut(ctx, tO5Ready, "D3");
+    if (kickOut) return kickOut;
 
     return resolveShotAttempt(ctx, {
       shooterId: "O5",
@@ -1726,6 +1740,7 @@ function resolveShootingFoulSequence(ctx: CoreContext, args: ShootingFoulArgs): 
         kind: "shooting_foul_free_throws_pending",
         shooterId: args.shooterId,
         foulerId: args.foulerId,
+        shotType: args.shotType,
         basketCounted: award.basketCounted,
         freeThrowsAwarded: award.count,
       },
@@ -1946,5 +1961,107 @@ function adjudicatePendingContainment(ctx: CoreContext): PossessionCoreResult | 
     ctx,
     { kind: "non_shooting_foul", foulerId: c.defenderSlot, fouledId: c.attackerSlot },
     { status: "dead", holderId: null, position: attackerPos },
+  );
+}
+
+// --- ME-04: segunda entrada del bloqueo directo -------------------------------------
+
+/**
+ * Con reglas de partido y la primera lectura negada (O5 contenido de
+ * verdad y la inversión a la esquina cerrada), O5 saca el balón con un pase
+ * real al exterior O2/O4 que haga viable la segunda entrada: línea de pase
+ * libre, creador en el exterior y segundos de tiro suficientes para
+ * recolocar la pantalla (`second-entry-read.ts`). Si ninguno es viable,
+ * devuelve `null` y se mantiene el tiro forzado bajo contención de ME-01.
+ */
+function tryLinkedKickOut(ctx: CoreContext, tRead: number, containerSlot: string): PossessionCoreResult | null {
+  const linked = ctx.linked;
+  if (!linked?.rules?.secondEntryAllowed) return null;
+  const scenario = getScenario(ctx.input.scenarioId);
+  const base: Record<string, Point2D> = {};
+  const local: Record<string, Point2D> = {};
+  for (const slot of [...scenario.offense, ...scenario.defense]) {
+    base[slot.playerId] = slot.initialPosition;
+    local[slot.playerId] = historyPositionAt(ctx, slot.playerId, tRead);
+  }
+  const defenders: RaceParticipant[] = scenario.defense.map((slot) => {
+    const p = player(ctx, slot.playerId);
+    return {
+      slot: slot.playerId,
+      id: linked.binding[slot.playerId] ?? slot.playerId,
+      position: local[slot.playerId]!,
+      runSpeedMps: attackerMoveSpeedMps(p.attributes.F01),
+      lateralSpeedMps: defenderLateralSpeedMps(p.attributes.F04),
+      t23: p.attributes.T23,
+    };
+  });
+  const options = (["O4", "O2"] as const).map((creatorSlot) => {
+    const passSeconds = PASS_RELEASE_SECONDS + distance(local.O5!, local[creatorSlot]!) / PASS_FLIGHT_SPEED_MPS;
+    const plan: SecondEntryPlan = planSecondEntry({
+      creatorSlot,
+      local,
+      base,
+      passerAtRelease: local.O5!,
+      creatorAtRelease: local[creatorSlot]!,
+      defendersAtRelease: defenders,
+      screenerSpeedMps: runSpeed(ctx, "O5"),
+      shotClockRemainingSeconds: ctx.shotClockMs / 1000 - (tRead + passSeconds),
+    });
+    return { creatorSlot, passSeconds, plan, realId: linked.binding[creatorSlot] ?? creatorSlot };
+  });
+  const viable = options
+    .filter((o) => o.plan.viable)
+    .sort((a, b) => a.passSeconds - b.passSeconds || (a.realId < b.realId ? -1 : a.realId > b.realId ? 1 : 0));
+  const choice = viable[0];
+  if (!choice || !choice.plan.viable) {
+    event(
+      ctx,
+      tRead,
+      "reconocido",
+      "second_entry",
+      ["O5"],
+      `${containerSlot} contiene a O5 y la esquina está cerrada, pero no hay segunda entrada (${options.map((o) => (o.plan.viable ? "" : o.plan.reason)).join("; ")}): O5 fuerza el tiro.`,
+      { viable: false, reasons: options.map((o) => (o.plan.viable ? null : o.plan.reason)) },
+    );
+    return null;
+  }
+  const plan = choice.plan;
+  const creator = player(ctx, choice.creatorSlot);
+  const o5 = player(ctx, "O5");
+  const release = tRead + PASS_RELEASE_SECONDS;
+  const arrival = tRead + choice.passSeconds;
+  event(
+    ctx,
+    release,
+    "ejecutado",
+    "pass_released",
+    ["O5", choice.creatorSlot],
+    `Primera lectura negada (${containerSlot} contiene a O5 y la esquina está cerrada): O5 saca el balón hacia ${choice.creatorSlot}.`,
+  );
+  // Línea libre (comprobada): ningún defensor es elegible para tocar el pase.
+  const outcome = resolvePass(o5.attributes.T09, creator.attributes.T11, false, 0, 0, ctx.rng);
+  const delay = outcome.kind === "awkward_control" ? outcome.extraDelaySeconds : 0;
+  event(ctx, arrival, "concedido", "pass_received", [choice.creatorSlot], `${choice.creatorSlot} recibe${delay > 0 ? " con control incómodo" : ""} para crear la segunda entrada.`);
+  event(
+    ctx,
+    arrival + delay,
+    "concedido",
+    "second_entry",
+    [choice.creatorSlot, "O5"],
+    `Segunda entrada del bloqueo directo: ${choice.creatorSlot} crea desde su nuevo ángulo y O5 se recoloca para ponerle la pantalla (${plan.reason}).`,
+    { viable: true, creatorSlot: choice.creatorSlot, screenSpot: plan.targets.O5, screenSetSeconds: plan.screenSetSeconds },
+  );
+  return finalize(
+    ctx,
+    {
+      kind: "second_entry_kick_out",
+      passerId: "O5",
+      creatorId: choice.creatorSlot,
+      slotSwap: plan.slotSwap,
+      targets: plan.targets,
+      screenSetSeconds: plan.screenSetSeconds,
+      reason: plan.reason,
+    },
+    { status: "held", holderId: choice.creatorSlot, position: local[choice.creatorSlot]! },
   );
 }
