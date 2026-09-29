@@ -1,11 +1,11 @@
-# Reglas FIBA 2026 alcanzables en el Laboratorio (ME-01 a ME-03)
+# Reglas FIBA 2026 alcanzables en el Laboratorio (ME-01 a ME-04)
 
 **Estado:** ACTIVE
-**Es fuente de verdad para:** qué parte del reglamento FIBA 2026 adjudica realmente el motor: la posesión individual (ME-01/ME-02) y las fronteras y relojes del tramo enlazado (ME-03).
+**Es fuente de verdad para:** qué parte del reglamento FIBA 2026 adjudica realmente el motor: la posesión individual (ME-01/ME-02), las fronteras y relojes del tramo enlazado (ME-03) y el partido completo (ME-04).
 **Debe leerse cuando:** vayas a añadir o cambiar un estado terminal, una falta o una reanudación.
 **No cubre:** el reglamento completo (solo lo alcanzable por el escenario de ME-01); NBA/NCAA no están implementados.
-**Documentos relacionados:** `docs/match/reference/BeManager-estudio-baloncesto-v1.md` (capítulo 01 §§1.1, 1.4–1.5; capítulo 02 §§2.2–2.5), `MODEL.md` (continuidad del tramo), Official Basketball Rules 2026 v1.1, arts. 17, 28, 29 y 50.
-**Última actualización:** 2026-09-28 (ME-03).
+**Documentos relacionados:** `docs/match/reference/BeManager-estudio-baloncesto-v1.md` (capítulo 01 §§1.1, 1.4–1.5; capítulo 02 §§2.2–2.5), `MODEL.md` (continuidad del tramo), Official Basketball Rules 2026 v1.1, arts. 4, 8–12, 17, 19, 28, 29, 33–34, 41, 42, 44 y 50–51.
+**Última actualización:** 2026-09-29 (ME-04).
 
 ## Perfil de reglas
 
@@ -152,3 +152,52 @@ sustituciones, salto entre dos, campo atrás y otras infracciones. Si el
 reloj de partido llega a 0:00, el tramo **se detiene** (causa «tiempo
 reglamentario agotado») sin adjudicar la bocina; si un estado generado no
 tiene reanudación adjudicable, lo detiene el guardián con su diagnóstico.
+
+## Partido completo (ME-04)
+
+Funciones puras en `domain/game/fiba-2026-rules.ts` (perfil `FIBA_2026`),
+llamadas por el partido y por los casos de frontera de `/lab`.
+
+| Frontera | Adjudicación |
+|---|---|
+| Salto inicial (`ME-04-JUMP-1`) | Interiores titulares; alcance = `C04 + 2 × (F06 − 8)` + variación sembrada uniforme ±5 cm (C01 no se suma); empate exacto, sorteo sembrado. Aproximación de laboratorio: el vencedor toca hacia su **base** (rol 1), que obtiene el primer control; el vuelo del toque usa la velocidad de pase LAB-0.1. El reloj arranca con el toque; el de lanzamiento, con el control |
+| Flecha | Al equipo sin el primer control; saque de C2–C4 y prórrogas desde la prolongación de la línea central; se invierte cuando ese saque termina (legalmente o por violación, art. 12.5). Los diez se colocan durante el descanso: ese saque abre un ataque organizado, sin lectura de transición |
+| Duración y sentido | 4 × 10:00; prórrogas de 5:00 hasta desempatar; cambio de canastas en C3, las prórrogas conservan C4. Los descansos no son tiempo disputado |
+| Bocina | Un tiro soltado antes de la señal termina de resolverse (FGA, puntos, tapón o falta con sus libres); soltado en la señal o después no existe. Tras la bocina no empieza ninguna acción ni hay rebote |
+| Reloj tras canasta | Solo se detiene desde 2:00 o menos en C4 y cada prórroga, hasta el toque del saque |
+| Faltas | Cada falta personal suma una al autor y una al equipo en el período; C1/C2/C3 separados, las prórrogas en C4. Falta de tiro: 1/2/3 libres con o sin bonus. Falta sin tiro: dos libres si el equipo ya tenía cuatro en el período; si no, saque del equipo objeto de la falta desde la línea más cercana (nunca detrás del tablero) con 24 s en pista trasera o, en delantera, conserva ≥14 s y pasa a 14 s con 13 s o menos (≥ 14 000 ms = «14 s o más») |
+| Exclusión | Quinta personal: sale en la misma parada, antes de reanudar, y no vuelve |
+| Libres | Tirador real y T05; en ME-04 se ejecutan después de abrir la sustitución. Último fallado vivo → rebote; último anotado → saque rival |
+
+**Vía sin tiro alcanzable:** el defensor que ayuda (D3 en drop con ayuda o
+low man en trampa) cierra el paso del continuador. Hay contacto si los
+espacios corporales (0,35 m por jugador) se solapan; es **falta** solo si el
+continuador aún se desplaza y el defensor no había llegado **y frenado**
+(llegada + frenada F03) antes del contacto, y todo ocurre antes de cualquier
+gesto de tiro (art. 33.5: el tiempo y la distancia protegen a un oponente en
+movimiento). Si el continuador ya estaba parado, la contención es legal. El
+hecho lleva actor, receptor, posiciones, instante, distancia, llegada,
+frenada y legalidad. Sin cuotas: con el fixture no se produce ninguna (ver
+`DECISION-REQUERIDA-ME-04-alcance-natural-faltas-y-segunda-entrada.md`).
+
+**Sustituciones (art. 19, política `ME-04-ROT-1`).** Oportunidades: falta
+(ambos equipos; se conserva al tirador de los libres), último libre
+anotado, balón fuera y violaciones (ambos), inicio de período (ambos) y,
+desde 2:00 en C4/prórroga, canasta **solo para el equipo que la recibe**;
+nunca con el balón vivo ni con el reloj en marcha. Política fija: primero
+las exclusiones (sin consumir cupo); después, como máximo dos voluntarias
+por equipo y parada (cinco entre períodos) entre quienes llevan 5:00 de
+reloj continuo desde su entrada, mayor tiempo primero y desempate por ID;
+entra el suplente elegible con ese rol declarado y menos minutos, desempate
+por ID; sin compatible, sigue el mismo. Quien entra o sale no invierte el
+cambio hasta que corre el reloj. Si un excluido no tiene relevo compatible,
+el guardián lo explica y no hay ganador. Interpretación documentada: el
+umbral de 5:00 es condición para ser candidato voluntario (no se sustituye
+a nadie que no lo alcance).
+
+**No representado (y no fingido):** faltas técnicas, antideportivas o
+descalificantes, faltas durante el saque en los dos últimos minutos, falta
+ofensiva de equipo con control, libres con infracción, lucha por el balón,
+tiempos muertos, tres segundos, pasos y campo atrás. El caso «tirador
+excluido por la misma falta» no es alcanzable: solo se sancionan faltas
+defensivas.

@@ -1,11 +1,11 @@
 # Modelo y hechos del Laboratorio de Partido
 
 **Estado:** ACTIVE
-**Es fuente de verdad para:** las entidades de estado y el modelo de hechos de ME-01, y el modelo de continuidad entre posesiones del tramo de ME-03.
+**Es fuente de verdad para:** las entidades de estado y el modelo de hechos de ME-01, el modelo de continuidad entre posesiones del tramo de ME-03 y el estado del partido completo de ME-04.
 **Debe leerse cuando:** vayas a leer o modificar `modules/match/domain/simulation/`.
-**No cubre:** un partido completo de 40 minutos (todavía no existe); las reglas de reloj/reanudación del tramo (ver `RULES.md`).
+**No cubre:** las reglas de reloj, faltas y reanudación (ver `RULES.md`) ni el acta (ver `BOXSCORE.md`).
 **Documentos relacionados:** `RULES.md`, `ACTIONS.md`, `docs/architecture/DATA_AND_PERSISTENCE.md`.
-**Última actualización:** 2026-09-28 (ME-03).
+**Última actualización:** 2026-09-29 (ME-04).
 
 ## Entidades de estado (`MatchState`)
 
@@ -98,9 +98,44 @@ roles canónicos (ver `docs/decisions/ADR-0006-linked-possessions-local-frame.md
 Puerto Ámbar ataca el aro izquierdo con sus propios jugadores y
 capacidades, y la foto que ve el usuario es siempre global.
 
+## Partido completo (ME-04)
+
+`domain/game/play-full-game.ts` (`playFullGame`) juega un partido entero en
+una llamada del dominio con el **mismo motor de continuidad** del tramo
+(`domain/sequence/linked-run.ts`, ADR-0007); no hay bucle de microticks: el
+tiempo avanza de hecho en hecho.
+
+- **Foto única** (`GameInput`, `game-model.ts`): hasta doce inscritos por
+  equipo (copia profunda), cinco titulares en orden de rol, roles
+  funcionales declarados (`players/functional-roles.ts`), prioridad tras tiro
+  y **cobertura de cada equipo**, semilla y versiones (`FIBA-2026`,
+  `LAB-0.2`, `ME-04-GAME-1`, `ME-04-JUMP-1`, `ME-04-ROT-1`). Empieza 0–0, C1
+  10:00, con el salto inicial; no reutiliza la entrada 7:12/18 s del tramo.
+- **Estado del partido:** período, sentido de ataque de cada equipo, flecha
+  de alternancia, control/derecho a saque/balón suelto, relojes (partido,
+  lanzamiento, 8 s), marcador, faltas personales y de equipo por período,
+  elegibilidad (excluidos, bloqueo de reentrada), quinteto por rol, minutos
+  totales y continuos, hechos y estado del azar.
+- **Quinteto y roles:** en cada instante hay cinco jugadores reales por
+  equipo, uno por rol `1 base / 2 escolta / 3 alero / 4 ala-pívot / 5
+  interior`. El rol del sistema (O1…O5/D1…D5 dentro del núcleo) sale del
+  quinteto vigente, no del ID; un suplente ocupa el rol de quien sale. Cada
+  ID está en pista o en el banquillo, nunca en ambos.
+- **Hechos:** los del tramo (`TramoEvent`) más `period` y `onCourtIds`
+  (los diez en pista), con nuevos tipos para salto, flecha, bocina, inicio y
+  fin de período, falta personal, exclusión, sustitución, contención,
+  segunda entrada y final. Los hechos entre el fin de un período y el
+  siguiente saque no pertenecen a ninguna posesión (`possessionIndex` 0).
+- **Resultado** (`GameResult`): `gameId` local reproducible, hechos,
+  posesiones, períodos con parciales, sustituciones, faltas, acta
+  (`BOXSCORE.md`), minutos del motor, tiempo disputado y recuento de
+  entradas de ataque. No se persiste (historial y checkpoints: ME-09).
+- **Guardián:** límite de pasos, fases por posesión, ciclos sin avance y
+  prórrogas encadenadas (12): detiene con diagnóstico y `winnerTeamId: null`.
+
 ## Qué no modela todavía
 
-Partido completo (cuatro períodos, fin de cuarto, prórroga), faltas
-acumuladas y bonus, sustituciones, más de un quinteto por equipo,
-alineación de jugadores en los pasillos de tiros libres, y un modo rápido
-de tramos (el rápido sigue limitado a sus escenarios de una posesión).
+Dirección en vivo, fatiga y tiempos muertos (ME-05), alineación de
+jugadores en los pasillos de tiros libres, historial de partidos (ME-09) y
+un modo rápido de partidos (ME-08; el rápido sigue limitado a sus
+escenarios de una posesión).

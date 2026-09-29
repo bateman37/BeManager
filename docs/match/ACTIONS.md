@@ -5,7 +5,7 @@
 **Debe leerse cuando:** vayas a modificar `possession-core.ts` o a añadir una segunda acción táctica u otra cobertura.
 **No cubre:** ninguna otra familia táctica (mano a mano, poste, zonas) ni otras coberturas de bloqueo (switch, ICE/veer...): llegan en entregas posteriores (ver `docs/match/roadmap.md`). La transición de ME-03 no es una táctica nueva: solo decide si existe ventana y reutiliza las ejecuciones ya existentes (sección final).
 **Documentos relacionados:** `docs/match/reference/BeManager-capitulo-tacticas-integradas-al-motor-v1.md`, `CAPABILITIES.md`, `RULES.md`.
-**Última actualización:** 2026-09-28 (ME-03, aclaración opción B).
+**Última actualización:** 2026-09-29 (ME-04).
 
 ## Disposición y roles fijos
 
@@ -186,3 +186,42 @@ en encargos, trayectorias y rebotes (ver la prueba (5) de `me03.test.ts`),
 no en transición concedida con este fixture concreto. Ver
 `docs/decisions/DECISION-REQUERIDA-ME-03-ventaja-temprana.md` (resuelta:
 opción B).
+
+## Partido completo (ME-04): segunda entrada del mismo bloqueo
+
+El partido elige entre la ventaja temprana que ME-03 encuentre de verdad,
+el bloqueo central desde la posición alcanzada y una **segunda entrada del
+mismo bloqueo** (`domain/simulation/second-entry-read.ts`), sin tácticas
+nuevas. Solo con reglas de partido y una vez por acción:
+
+1. **Primera lectura negada:** O5 recibe, su defensor lo contiene de verdad
+   (solape corporal en el instante de actuar) y la inversión a la esquina
+   está cerrada: el punto en que ME-01 forzaría el tiro bajo contención.
+2. **Viabilidad**, para O4 y O2: línea de pase libre frente a los cuatro
+   defensores sin balón (carrera de intercepción de ME-03; el que contiene a
+   O5 puede tocar el pase con T17 bajo presión, como en la inversión de
+   ME-02), receptor en el exterior de pista delantera, nuevo punto de
+   bloqueo dentro de la pista y más de 2 s de lanzamiento tras recolocar la
+   pantalla. Se elige el pase más corto; desempate por ID real.
+3. **Ejecución:** pase real (`resolvePass`), intercambio de roles canónicos
+   O1↔creador y D1↔su defensor, recolocación del bloqueador a su velocidad
+   real con la misma geometría aprobada del bloqueo girada hacia el aro
+   desde el creador, y el árbol de siempre desde las posiciones alcanzadas.
+   Los puntos LAB-0.2 del short roll y de la esquina débil no cambian
+   (simplificación declarada).
+4. **Sin viabilidad:** se conserva el tiro forzado de ME-01 y el relato
+   dice por qué no hubo segunda entrada.
+
+**Alcance con el fixture: 0 segundas entradas** en el barrido documentado:
+el árbol siempre deja abierta la continuación o la inversión, y en `drop` el
+pívot de la disposición aprobada está a 0,73 m del short roll, de modo que
+alcanza cualquier pase de salida del continuador contenido. Demostrada con
+geometría construida a mano en `domain/game/me04.test.ts`. Ventaja temprana:
+0, como en ME-03 (el saque de inicio de período, con los diez ya colocados,
+abre ataque organizado sin lectura de transición). Ver
+`docs/decisions/DECISION-REQUERIDA-ME-04-alcance-natural-faltas-y-segunda-entrada.md`.
+
+**Reparto observable:** con una sola acción ofensiva, el continuador recibe
+casi todos los tiros y los marcadores son altos (~280 puntos por partido);
+no es un partido calibrado. Las responsabilidades de los diez se
+reasignan en cada organización tras un cambio de quinteto.

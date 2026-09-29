@@ -3,6 +3,57 @@
 Formato libre en español, orden cronológico inverso. Los motivos de
 decisiones duraderas viven en `docs/decisions/`, no aquí.
 
+## ME-04 — Primer partido reglamentario FIBA (sin fusionar)
+
+- Prompt guardado en `docs/prompts/implementation/ME-04-primer-partido-fiba.md`
+  antes de modificar producto.
+- **Partido completo** (`modules/match/domain/game/`, `playFullGame`): una
+  sola foto de los dos equipos (hasta doce inscritos), 4 × 10:00 desde el
+  salto inicial `ME-04-JUMP-1` y prórrogas de 5:00 hasta desempatar; flecha
+  de alternancia, cambio de canastas en C3, bocina con tiro soltado a
+  tiempo, reloj que solo se detiene tras canasta desde 2:00 en C4/prórroga,
+  faltas personales y de equipo con bonus (C1–C3 separados, prórrogas en
+  C4), saque tras falta con 24/14 s (art. 29), quinta personal con
+  sustitución obligatoria, libres con el tirador real. Adjudicación en
+  funciones puras (`fiba-2026-rules.ts`), acta proyectada de los hechos
+  (`box-score.ts`) con conciliación. Guardián sin ganador falso.
+- **Motor de continuidad compartido** (`domain/sequence/linked-run.ts`,
+  ADR-0007): el tramo de ME-03 es ahora una subclase; su huella (y la de la
+  posesión individual y los lotes) es idéntica a la de `main`.
+- **Núcleo** con reglas de partido opcionales: libres diferidos, infractor
+  en la falta de tiro, vía sin tiro por contención del continuador (FIBA
+  art. 33.5, geometría y frenada) y **segunda entrada** del bloqueo cuando
+  la primera lectura queda negada. Sin esas reglas, ME-01/02/03 no cambian.
+- **Banquillo**: siete suplentes escritos a mano por equipo (SC06–SC12,
+  PA06–PA12) con roles funcionales declarados; los diez titulares no
+  cambian. Rotación automática fija `ME-04-ROT-1` en oportunidades legales
+  del art. 19. La siembra pasa a `seedLabRoster` (caso de uso probado):
+  solo crea lo que falta.
+- **`/lab`**: sección «Partido completo» (plantillas, cobertura y prioridad
+  por equipo, semilla, «Jugar partido», visor por período → posesión →
+  evento con cancha, faltas y bonus, sustituciones, acta con minutos/DNP y
+  conciliación) y seis **casos de frontera** etiquetados como fixtures de
+  prueba (bocina, reset 13/14 s, and-one, bonus y quinta, dos prórrogas,
+  canasta a 2:00).
+- **Pruebas**: 32 nuevas en `domain/game/me04.test.ts` (§8 puntos 1–7) más
+  siembra y caso de uso; 157 en total, en verde sin base de datos.
+- **Barrido del fixture** (60 partidos): 0 paradas del guardián, 3 con
+  prórroga, 63 faltas (todas de tiro), 0 sin tiro, 0 bonus, 0 segundas
+  entradas y 0 ventajas tempranas; el continuador acapara los tiros. Se
+  registra como `DECISION-REQUERIDA-ME-04-alcance-natural-faltas-y-segunda-entrada.md`
+  (no bloquea). No se ha tocado ningún coeficiente, posición ni la opción B.
+- **Rendimiento** (`npm run profile:game`, 12 partidos, semillas 1–12, sin
+  BD, Xeon 2,1 GHz de 4 núcleos del contenedor): mediana 204 ms por partido,
+  peor 258 ms; ~4 600 hechos y ~205 posesiones; ~1 ms por posesión (tres
+  veces el tramo: el coste crece con trayectorias más largas y el GC);
+  proyección del acta ~2,4 ms; ~8 MB retenidos por resultado.
+- Recorrido real: PostgreSQL 16 local, migraciones al día, seed no
+  destructivo (14 creados, ediciones conservadas) y navegador Chromium
+  (Playwright) sobre `next start`: partido, C3, prórroga, acta con
+  suplentes, casos de frontera, edición/recarga de un titular, posesión,
+  tramo y lote.
+- Plan manual: `docs/testing/manual/ME-04-manual-test-plan.md`.
+
 ## ME-03 — Aclaración: ventaja temprana, opción B (sin fusionar)
 
 - Guardado el prompt en

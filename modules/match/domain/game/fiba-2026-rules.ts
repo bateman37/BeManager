@@ -92,7 +92,7 @@ export function adjudicatePeriodEnd(
   score: readonly [{ readonly teamId: string; readonly points: number }, { readonly teamId: string; readonly points: number }],
 ): PeriodEndDecision {
   if (period < profile.regulationPeriods) {
-    return { kind: "siguiente_periodo", nextPeriod: period + 1, overtime: false, reason: `termina ${periodLabel(profile, period)}` };
+    return { kind: "siguiente_periodo", nextPeriod: period + 1, overtime: false, reason: `el final de ${periodLabel(profile, period)}` };
   }
   const [a, b] = score;
   if (a.points === b.points) {
