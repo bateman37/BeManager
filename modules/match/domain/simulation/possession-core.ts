@@ -1984,7 +1984,9 @@ function tryLinkedKickOut(ctx: CoreContext, tRead: number, containerSlot: string
     base[slot.playerId] = slot.initialPosition;
     local[slot.playerId] = historyPositionAt(ctx, slot.playerId, tRead);
   }
-  const defenders: RaceParticipant[] = scenario.defense.map((slot) => {
+  // El defensor que contiene a O5 presiona el pase (T17, como en la
+  // inversión de ME-02); la línea se comprueba frente a los otros cuatro.
+  const defenders: RaceParticipant[] = scenario.defense.filter((slot) => slot.playerId !== containerSlot).map((slot) => {
     const p = player(ctx, slot.playerId);
     return {
       slot: slot.playerId,
@@ -2038,8 +2040,13 @@ function tryLinkedKickOut(ctx: CoreContext, tRead: number, containerSlot: string
     ["O5", choice.creatorSlot],
     `Primera lectura negada (${containerSlot} contiene a O5 y la esquina está cerrada): O5 saca el balón hacia ${choice.creatorSlot}.`,
   );
-  // Línea libre (comprobada): ningún defensor es elegible para tocar el pase.
-  const outcome = resolvePass(o5.attributes.T09, creator.attributes.T11, false, 0, 0, ctx.rng);
+  // Línea libre frente a los defensores sin balón; el que contiene a O5 sí
+  // puede tocarlo bajo presión, igual que en la inversión de ME-02.
+  const container = player(ctx, containerSlot);
+  const outcome = resolvePass(o5.attributes.T09, creator.attributes.T11, true, container.attributes.T17, 1, ctx.rng);
+  if (outcome.kind === "deflected_loose_ball") {
+    return resolveLooseBallAfterPass(ctx, release, "O5", containerSlot);
+  }
   const delay = outcome.kind === "awkward_control" ? outcome.extraDelaySeconds : 0;
   event(ctx, arrival, "concedido", "pass_received", [choice.creatorSlot], `${choice.creatorSlot} recibe${delay > 0 ? " con control incómodo" : ""} para crear la segunda entrada.`);
   event(

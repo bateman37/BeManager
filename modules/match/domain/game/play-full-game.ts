@@ -853,7 +853,16 @@ class GameRun extends LinkedRun {
         change.reason === "exclusion"
           ? `Sustitución obligatoria en ${this.team(teamId).name}: entra ${change.inId} (${roleLabel}) por ${change.outId}, excluido por cinco faltas.`
           : `Sustitución en ${this.team(teamId).name}: entra ${change.inId} (${roleLabel}, ${minutes(change.inTotalMs)} jugados) por ${change.outId} (${minutes(change.outContinuousMs)} seguidos en pista).`,
-      detail: { teamId, role: change.role, reason: change.reason, window: cause, position, outContinuousMs: change.outContinuousMs, inTotalMs: change.inTotalMs },
+      detail: {
+        teamId,
+        role: change.role,
+        reason: change.reason,
+        window: cause,
+        position,
+        outContinuousMs: change.outContinuousMs,
+        inTotalMs: change.inTotalMs,
+        gameClockStopped: !this.game.running,
+      },
     });
   }
 
