@@ -176,6 +176,11 @@ function Scoreboard({ game }: { readonly game: LabGameView }) {
         {game.possessions.length} posesiones · {game.events.length} hechos
       </p>
       <p className="text-xs text-slate-500 dark:text-slate-400">
+        Plan ofensivo (ME-06): {home.name} ataca con {OFFENSIVE_PLAN_LABELS[home.offensivePlan]}, defiende la mano a mano con{" "}
+        {OFF_BALL_CALL_LABELS[home.offBallDefensiveCall]} · {away.name} ataca con {OFFENSIVE_PLAN_LABELS[away.offensivePlan]}, defiende la mano a mano
+        con {OFF_BALL_CALL_LABELS[away.offBallDefensiveCall]}.
+      </p>
+      <p className="text-xs text-slate-500 dark:text-slate-400">
         Entradas de ataque (fases):{" "}
         {(Object.keys(ENTRY_LABELS) as PhaseEntry[])
           .filter((k) => k !== "pendiente" || game.entryCounts[k] > 0)
