@@ -8,7 +8,7 @@ import { LAB_0_2_PARAMETERS_VERSION } from "../lab/lab-0-2-parameters";
 import type { BallStatus } from "../simulation/match-state";
 import type { FactKind, FactPhase, PlayerSnapshot } from "../simulation/fact";
 import type { ReboundPriority } from "../simulation/possession-core";
-import { PUERTO_AMBAR, SIERRA_CLARA } from "../players/lab-roster-fixture";
+import { LAB_STARTER_IDS } from "../players/lab-roster-fixture";
 
 export type { ReboundPriority } from "../simulation/possession-core";
 
@@ -24,16 +24,15 @@ export const REBOUND_PRIORITY_LABELS: Readonly<Record<ReboundPriority, string>> 
 };
 
 /**
- * Quinteto en pista de cada equipo, en orden de rol del fixture (1 base,
+ * Quinteto del tramo de cada equipo: los titulares del fixture (ME-04 amplía
+ * la plantilla a doce, pero el tramo sigue jugando con este quinteto), en
+ * orden de rol (1 base,
  * 2 escolta, 3 alero, 4 ala-pívot, 5 pívot). El prefijo del ID identifica
  * el equipo del fixture; el número, el rol natural del jugador en la acción
  * organizada. Ninguno de los dos decide quién ataca: eso lo decide el
  * control real del balón.
  */
-export const QUINTET_IDS_BY_TEAM: Readonly<Record<string, readonly string[]>> = {
-  [SIERRA_CLARA.id]: SIERRA_CLARA.players.map((p) => p.id),
-  [PUERTO_AMBAR.id]: PUERTO_AMBAR.players.map((p) => p.id),
-};
+export const QUINTET_IDS_BY_TEAM: Readonly<Record<string, readonly string[]>> = LAB_STARTER_IDS;
 
 export interface TramoTeamSnapshot {
   readonly id: string;
