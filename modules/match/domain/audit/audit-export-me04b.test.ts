@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildGameInput, type GameInput } from "../game/game-model";
 import { playFullGame } from "../game/play-full-game";
-import { SIERRA_CLARA, PUERTO_AMBAR, LAB_ROSTER_FIXTURE } from "../players/lab-roster-fixture";
+import { SIERRA_CLARA, PUERTO_AMBAR } from "../players/lab-roster-fixture";
 import type { DefensiveCoverage } from "../lab/match-input";
 import type { ReboundPriority } from "../sequence/tramo-model";
 import { buildAuditExport, AUDIT_SCHEMA_VERSION } from "./build-audit-export";
@@ -17,8 +17,6 @@ import { buildAuditExport, AUDIT_SCHEMA_VERSION } from "./build-audit-export";
  */
 const SC = SIERRA_CLARA.id;
 const PA = PUERTO_AMBAR.id;
-const ON_COURT_IDS = new Set(LAB_ROSTER_FIXTURE.flatMap((t) => t.players.map((p) => p.id)));
-
 function input(
   seed: number,
   coverage: readonly [DefensiveCoverage, DefensiveCoverage] = ["drop", "drop"],

@@ -5,7 +5,6 @@ import { LAB_ROSTER_FIXTURE } from "../players/lab-roster-fixture";
 import type { MatchInput } from "../lab/match-input";
 import { LAB_0_3_PARAMETERS_VERSION } from "../lab/lab-0-3-parameters";
 import { createSeededRandom } from "../random/seeded-random";
-import { distance } from "../geometry/point";
 import { createRecordingAuditCollector } from "../audit/audit-collector";
 import type { PlayerProfile } from "../players/player-profile";
 
