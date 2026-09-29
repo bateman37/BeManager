@@ -5,7 +5,7 @@
 **Debe leerse cuando:** vayas a activar una nueva capacidad o a calibrar un coeficiente existente.
 **No cubre:** las 45 capacidades candidatas completas del catálogo (ver `docs/match/reference/BeManager-capitulo-atributos-y-motor-v2.md` §2.2–2.4).
 **Documentos relacionados:** `ACTIONS.md`, `docs/decisions/ADR-0004-detailed-engine-analytic-timing.md`.
-**Última actualización:** 2026-09-29 (ME-04).
+**Última actualización:** 2026-09-29 (ME-04B).
 
 ## 27 capacidades activas (de 45 candidatas)
 
@@ -48,6 +48,15 @@ el gesto).
   (`BODY_CONTACT_RADIUS_METERS` = 0,35 m por jugador), los dos puntos de
   referencia del short roll/continuación (`SHORT_ROLL_SPOT` (23,0; 7,5) y
   `DEEP_CONTINUATION_SPOT` (24,8; 7,5)), y la latencia de M09.
+- `modules/match/domain/lab/lab-0-3-parameters.ts`
+  (`LAB_0_3_PARAMETERS_VERSION = "LAB-0.3"`): los parámetros nuevos de
+  ME-04B — el alcance geométrico de contestación `R_contest`
+  (`contestReachMeters`, C03/200 + radio corporal), la banda de empate del
+  valor de tiro situacional de la primera lectura
+  (`FIRST_READ_TIE_BAND_POINTS` = 0,15 puntos esperados) y el margen de uso
+  legal de la pantalla (reexporta `SCREEN_USE_STANDOFF_METERS` desde
+  LAB-0.2, misma noción física de radio corporal, no un parámetro nuevo
+  independiente).
 
 Cada función documenta su fórmula, unidad y el rango acotado exacto del
 prompt correspondiente. No son porcentajes de liga FIBA: son hipótesis de
@@ -82,18 +91,30 @@ Cada intervención usa solo uno de los dos ajustes, nunca ambos, según sea
 exterior o interior (regla ya vigente, ahora aplicada de verdad).
 
 **C1 (ME-02):** subir T22/T23 acerca la llegada del defensor, pero ya no
-convierte por sí sola una llegada tardía en falta: la legalidad se decide
+convierte por sí sola una llegada tardía en falta: el contacto se decide
 comprobando primero si el espacio corporal del defensor (reconstruido en
 el instante real de liberación del tiro, no en su instante de "llegada" a
 un punto de referencia) se solapa con el del tirador (radio LAB-0.2 de
-0,35 m por jugador). Si no se solapan, no hay contacto ni oposición
-atribuible, por rápido o lento que llegue el defensor por el reloj.
+0,35 m por jugador). Si no se solapan, no hay contacto atribuible, por
+rápido o lento que llegue el defensor por el reloj.
+
+**R_contest (ME-04B §3.3):** la oposición al tiro (para `shotProbability`)
+es una pregunta distinta del contacto: usa el alcance de brazos
+`contestReachMeters(C03)` desde la misma posición real del defensor, no el
+radio de contacto de 0,35 m. Subir C03 (envergadura) mueve ese alcance en
+el umbral sin tocar el radio corporal de contacto; subir T16/T22/T23 sigue
+alterando solo las llegadas pertinentes (navegación de pantalla, cierre
+exterior, protección interior), sin garantizar un resultado ni conceder un
+robo o tapón ficticio.
 
 Además, un tapón (T18) solo es elegible cuando el defensor puede tocar
 físicamente el punto de liberación del tiro: `maxTouchHeightMeters` del
 defensor debe alcanzar `shotReleaseHeightMeters` del tirador (ambas
-fórmulas ya existían, sin usarse en el motor). Subir T18 no garantiza más
-tapones brutos si cambian los tiros y ventanas que realmente se alcanzan.
+fórmulas ya existían, sin usarse en el motor antes de HF-002). Subir T18 no
+garantiza más tapones brutos si cambian los tiros y ventanas que realmente
+se alcanzan; desde ME-04B, el tapón es elegible con cualquier oposición
+geométrica real (0,5 o 1 de `R_contest`), no solo con el defensor ya
+colocado de antes.
 
 ## ME-03: las mismas 27, en tareas del tramo que ya las usaban
 

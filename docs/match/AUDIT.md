@@ -1,4 +1,4 @@
-# Auditoría exportable del partido detallado (ME-04A)
+# Auditoría exportable del partido detallado (ME-04A/ME-04B)
 
 **Estado:** ACTIVE
 **Es fuente de verdad para:** el esquema del `.json` de auditoría, sus
@@ -11,7 +11,9 @@ hechos (ver `MODEL.md`) ni el acta (ver `BOXSCORE.md`): este documento solo
 describe cómo se observa y se exporta lo que esos documentos ya definen.
 **Documentos relacionados:** `MODEL.md`, `ACTIONS.md`, `BOXSCORE.md`,
 `docs/decisions/DECISION-REQUERIDA-ME-04-alcance-natural-faltas-y-segunda-entrada.md`.
-**Última actualización:** 2026-09-29.
+**Última actualización:** 2026-09-29 (ME-04B: esquema `ME-04B-AUDIT-1`,
+IDs reales, `factLink` saneado y `rejectionReasons` separado por
+elegida/alternativas — ver más abajo).
 
 ## Qué es y qué no es
 
@@ -38,7 +40,7 @@ que ON y OFF producen el mismo marcador, acta, hechos, sustituciones,
 relojes y estados del generador de números aleatorios, con la única
 diferencia del registro.
 
-## Esquema (`schemaVersion: "ME-04A-AUDIT-1"`)
+## Esquema (`schemaVersion: "ME-04B-AUDIT-1"`)
 
 | Sección | Contenido |
 |---|---|
@@ -61,20 +63,42 @@ opciones realmente evaluadas y cuál se eligió. Cada opción lleva:
 
 - `status`: `elegida`, `descartada_por_condicion` (se evaluó y perdió) o
   `no_evaluada_por_cortocircuito` (el árbol ya había decidido antes: nunca
-  se presenta como si hubiera perdido una comparación).
+  se presenta como si hubiera perdido una comparación). Desde ME-04B, la
+  primera lectura del bloqueo (`lectura_bloqueo_o1`) evalúa de verdad sus
+  cinco vías con un valor comparable: ninguna se corta por cortocircuito
+  ahí (la reasonCode `situational_value_lower` o `tie_band_resolved_by_
+  tendency` sustituye al antiguo `not_evaluated_short_circuit` para las
+  vías realmente evaluadas y perdidas por valor); el cortocircuito real
+  sigue vivo en `lectura_segunda_o5` (p. ej. `segunda_entrada` cuando la
+  inversión a la esquina ya estaba abierta) y en `lectura_trampa`.
 - `reasonCode`: un código estable en inglés (`AuditReasonCode`), documentado
   en el propio tipo — nunca se depende de parsear la frase en español.
 - `values`: las magnitudes realmente usadas (tiempos de llegada, márgenes,
-  distancias, capacidades, probabilidad de conversión). Cuando el motor no
-  calculó una magnitud en esa rama, el campo queda ausente o con
-  `reasonCode: "not_available"`; nunca un número inventado.
-- `factLink`: instante y tipo del hecho de `timeline` que ejecuta esta
-  decisión, cuando se pudo enlazar.
+  distancias, capacidades, probabilidad de conversión, y desde ME-04B el
+  valor de tiro situacional `situationalValue` de cada vía de la primera
+  lectura). Cuando el motor no calculó una magnitud en esa rama, el campo
+  queda ausente o con `reasonCode: "not_available"`; nunca un número
+  inventado.
+- `holderId`/`participants`: **IDs reales en pista** (ME-04B §4.1), nunca el
+  código de rol/opción del núcleo (`O1`..`D5`) cuando ese código no coincide
+  con quien realmente ocupa el rol tras una sustitución; los identificadores
+  de *opción* (`"pase_o5"`, `"O1+O4"`...) siguen siendo símbolos del árbol,
+  no jugadores, y no se traducen.
+- `factLink`: instante y tipo del hecho de `timeline` que **efectivamente se
+  emitió** para esta decisión (ME-04B §4.2), buscado hacia atrás en la línea
+  de tiempo ya calculada y saneado contra la línea de tiempo final del
+  partido antes de exportar — nunca el instante propio de la decisión. Si el
+  hecho no llegó a ocurrir de verdad (desvío previo, bocina, guardián, corte
+  de período), el enlace queda `null` explícito en vez de apuntar a un
+  instante inventado; un enlace `null` nunca coincide por casualidad con uno
+  roto porque se resuelve buscando el hecho real, no reutilizando una marca.
 
 `resolucion_tiro` incluye, además, la probabilidad de conversión y (si
 aplica) de tapón que la regla **realmente usó**, recalculadas de forma pura
-con las mismas fórmulas LAB-0.1 sin consumir un sorteo nuevo (el sorteo real
-lo sigue consumiendo `resolveShot`, con su propio generador).
+con las mismas fórmulas LAB-0.1/LAB-0.3 sin consumir un sorteo nuevo (el
+sorteo real lo sigue consumiendo `resolveShot`, con su propio generador), y
+el alcance `R_contest` y el nivel de oposición geométrica (0/0,5/1) que se
+usaron (ver `RULES.md`).
 
 ## Cobertura declarada como faltante
 
@@ -92,14 +116,23 @@ misma cobertura que el resto.
 
 El barrido documentado en
 `docs/decisions/DECISION-REQUERIDA-ME-04-alcance-natural-faltas-y-segunda-entrada.md`
-(0 faltas sin tiro, 0 segundas entradas, 0 ventajas tempranas con el
-fixture) sigue **pendiente**: esta entrega da mejor evidencia trazable de
-esos ceros (por ejemplo, `puerta_falta_sin_tiro` casi siempre en
-`no_evaluada` porque la ayuda llega después de que el continuador ya se
-detuvo), pero no cambia ninguna probabilidad, atributo, geometría o
-táctica. `result.summary.rejectionReasons` resume, solo cuando la auditoría
-estuvo activada, los motivos de rechazo agrupados por punto para las tres
-ramas hoy ausentes.
+queda **parcialmente resuelto** por ME-04B: la ventaja temprana ya no es
+exactamente 0 con el fixture natural (aparece `penetracion` en una muestra
+pequeña de semillas, ver `SCENARIOS.md`), pero la falta ordinaria sin tiro y
+la segunda entrada siguen sin producirse de forma natural con este fixture
+concreto (siguen demostradas como mecánicamente alcanzables con geometría
+construida a mano en `domain/game/me04b.test.ts`). La decisión se actualiza
+en consecuencia, no se cierra del todo.
+
+`result.summary.rejectionReasons` (ME-04B): antes solo contaba las opciones
+`descartada_por_condicion` de cada punto, así que un punto donde el único
+motivo real vivía en la opción **elegida** (p. ej. `entrada_fase_transicion`
+con `sin_ventaja` elegido, o `puerta_falta_sin_tiro` con `no_evaluada`
+elegido) se exportaba con `byReasonCode: {}`, aunque la traza sí tuviera el
+motivo. Ahora cada entrada separa `chosenByReasonCode` (motivo del desenlace
+elegido) de `alternativesByReasonCode` (motivos de las alternativas
+realmente evaluadas y descartadas, sin contar los cortocircuitos), con
+denominadores (`total`) en cada punto.
 
 ## Cómo abrir y comparar archivos
 
