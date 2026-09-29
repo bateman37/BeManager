@@ -67,7 +67,9 @@ export type FactKind =
   | "buzzer"
   | "game_ended"
   | "alternating_arrow"
-  | "second_entry";
+  | "second_entry"
+  // ME-06: segunda familia posicional (mano a mano sin balón).
+  | "handoff_action_started";
 
 export interface PlayerSnapshot {
   readonly playerId: string;

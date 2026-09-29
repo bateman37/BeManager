@@ -8,7 +8,7 @@
  */
 import type { Milliseconds } from "../time/clock";
 import type { PlayerProfile } from "../players/player-profile";
-import type { DefensiveCoverage } from "../lab/match-input";
+import type { DefensiveCoverage, OffensivePlanChoice, OffBallDefensiveCall } from "../lab/match-input";
 import { LAB_0_3_PARAMETERS_VERSION } from "../lab/lab-0-3-parameters";
 import type { ReboundPriority } from "../simulation/possession-core";
 import { LAB_STARTER_IDS } from "../players/lab-roster-fixture";
@@ -19,7 +19,7 @@ import { SUBSTITUTION_POLICY_VERSION, type SubstitutionReason } from "./substitu
 import type { BoxScore } from "./box-score";
 import type { RawAuditLog } from "../audit/audit-types";
 
-export const GAME_VERSION = "ME-04B-GAME-1";
+export const GAME_VERSION = "ME-06-GAME-1";
 export const MAX_ROSTER_SIZE = 12;
 
 export interface GameTeamInput {
@@ -34,6 +34,10 @@ export interface GameTeamInput {
   readonly priority: ReboundPriority;
   /** Cobertura con la que este equipo defiende el bloqueo directo. */
   readonly coverage: DefensiveCoverage;
+  /** Plan ofensivo previo de este equipo para todo el partido (ME-06 §3.2). */
+  readonly offensivePlan: OffensivePlanChoice;
+  /** Orden de defensa sin balón de este equipo ante la mano a mano (ME-06 §3.1). */
+  readonly offBallDefensiveCall: OffBallDefensiveCall;
 }
 
 export interface GameInput {
@@ -61,6 +65,10 @@ export interface BuildGameTeamArgs {
   readonly coverage: DefensiveCoverage;
   readonly starters?: readonly string[];
   readonly declaredRoles?: Readonly<Record<string, readonly FunctionalRole[]>>;
+  /** ME-06 §3.2: por defecto `"auto"`, igual que en `/lab`. */
+  readonly offensivePlan?: OffensivePlanChoice;
+  /** ME-06 §3.1: por defecto `"guardar_espacio"`. */
+  readonly offBallDefensiveCall?: OffBallDefensiveCall;
 }
 
 function buildTeam(args: BuildGameTeamArgs): GameTeamInput {
@@ -88,6 +96,8 @@ function buildTeam(args: BuildGameTeamArgs): GameTeamInput {
     declaredRoles,
     priority: args.priority,
     coverage: args.coverage,
+    offensivePlan: args.offensivePlan ?? "auto",
+    offBallDefensiveCall: args.offBallDefensiveCall ?? "guardar_espacio",
   };
 }
 

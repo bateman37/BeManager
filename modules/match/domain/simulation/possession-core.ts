@@ -16,7 +16,7 @@ import { ATTACKED_HOOP, FREE_THROW_LINE_SPOT, COURT_WIDTH_METERS, isBehindThreeP
 import { MIDCOURT_LINE_X } from "../geometry/frame";
 import { createSeededRandom, type SeededRandom } from "../random/seeded-random";
 import { secondsToMs, type Milliseconds } from "../time/clock";
-import type { MatchInput } from "../lab/match-input";
+import type { MatchInput, OffensivePlan, OffensivePlanChoice, OffBallDefensiveCall } from "../lab/match-input";
 import { findPlayerInInput } from "../lab/match-input";
 import { getScenario, type ScenarioDefinition } from "../lab/scenario";
 import type { PlayerProfile } from "../players/player-profile";
@@ -32,6 +32,7 @@ import {
   movingShotPrepSeconds,
   perimeterArrivalAdjustmentSeconds,
   interiorArrivalAdjustmentSeconds,
+  cutterStartTimeReductionSeconds,
   jumpCeilingMeters,
   shotReleaseHeightMeters,
   maxTouchHeightMeters,
@@ -88,6 +89,26 @@ const WEAK_CORNER_SPOT: Point2D = { x: 24.0, y: 13.9 };
  * siendo alcanzable de verdad.
  */
 const LATE_CLOSEOUT_D4_START: Point2D = { x: 24.5, y: 9.4 };
+
+/**
+ * Geometría sintética propia de la segunda familia posicional (mano a mano
+ * sin balón, ME-06 §3.1), no una fórmula LAB-0.1 compartida: punto real de
+ * bloqueo indirecto de O4 sobre D3 y ventana de recepción/corte de O3 tras
+ * usarlo, en el lado débil de la misma disposición 4-out/1-in. O5 recibe
+ * la entrada de O1 en el codo alto ya versionado `FREE_THROW_LINE_SPOT`
+ * (reutilizado, no un punto nuevo).
+ */
+const WEAK_SIDE_SCREEN_SPOT: Point2D = { x: 22.9, y: 12.1 };
+const WEAK_SIDE_CUT_SPOT: Point2D = { x: 22.5, y: 12.8 };
+/**
+ * Ajuste local (no LAB-0.1) de la orden fija de defensa sin balón (ME-06
+ * §3.1) sobre la navegación real de D3 al bloqueo indirecto: con
+ * `negar_primera_salida`, D3 persigue más apretado (llega antes);con
+ * `guardar_espacio`, D3 prioriza proteger el carril y concede más
+ * separación real (llega después). Ninguna magnitud garantiza robo, tiro
+ * o falta: solo desplaza el instante real de navegación de D3.
+ */
+const OFF_BALL_CALL_NAVIGATION_ADJUSTMENT_SECONDS = 0.15;
 const MAX_PROGRESS_ITERATIONS = 12;
 /** Velocidad común de llegada a un balón suelto/rebote (HF-002); la reutiliza el tramo de ME-03. */
 export const REBOUND_CANDIDATE_SPEED_MPS = 3.2;
@@ -554,6 +575,54 @@ export function computePossessionCore(
     }
   }
 
+  const planChoice: OffensivePlanChoice = ctx.input.offensivePlan ?? "bloqueo_directo";
+  let resolvedPlan: OffensivePlan;
+  if (planChoice === "auto") {
+    // ME-06 §3.2: evaluación pura de la oportunidad de entrada de cada
+    // familia desde el estado real heredado, sin RNG y sin ejecutar la vía
+    // descartada. Solo se ejecuta (con su propio árbol de lectura, sorteos
+    // y hechos) la familia elegida aquí.
+    const bloqueoOpportunity = estimateBloqueoDirectoOpportunity(ctx);
+    const handoffOpportunity = estimateHandoffOpportunity(ctx);
+    // Empate exacto: regla estable vinculada a las opciones reales (no una
+    // alternancia por número de posesión) — se conserva el bloqueo directo,
+    // la familia central ya versionada.
+    resolvedPlan = handoffOpportunity.value > bloqueoOpportunity.value ? "mano_a_mano_sin_balon" : "bloqueo_directo";
+    auditDecision(ctx, 0, {
+      point: "seleccion_familia",
+      holderId: "O1",
+      participants: ["O1", "O2", "O3", "O4", "O5"],
+      chosenOptionId: resolvedPlan,
+      options: [
+        {
+          id: "bloqueo_directo",
+          status: resolvedPlan === "bloqueo_directo" ? "elegida" : "descartada_por_condicion",
+          reasonCode: resolvedPlan === "bloqueo_directo" ? "family_opportunity_higher" : "family_opportunity_lower",
+          values: { situationalValue: bloqueoOpportunity.value, viable: bloqueoOpportunity.viable },
+        },
+        {
+          id: "mano_a_mano_sin_balon",
+          status: resolvedPlan === "mano_a_mano_sin_balon" ? "elegida" : "descartada_por_condicion",
+          reasonCode: resolvedPlan === "mano_a_mano_sin_balon" ? "family_opportunity_higher" : "family_opportunity_lower",
+          values: { situationalValue: handoffOpportunity.value, viable: handoffOpportunity.viable },
+        },
+      ],
+    });
+  } else {
+    resolvedPlan = planChoice;
+    auditDecision(ctx, 0, {
+      point: "seleccion_familia",
+      holderId: "O1",
+      participants: ["O1", "O2", "O3", "O4", "O5"],
+      chosenOptionId: resolvedPlan,
+      options: [
+        { id: "bloqueo_directo", status: resolvedPlan === "bloqueo_directo" ? "elegida" : "no_evaluada_por_cortocircuito", reasonCode: resolvedPlan === "bloqueo_directo" ? "family_forced_by_plan" : "not_evaluated_short_circuit" },
+        { id: "mano_a_mano_sin_balon", status: resolvedPlan === "mano_a_mano_sin_balon" ? "elegida" : "no_evaluada_por_cortocircuito", reasonCode: resolvedPlan === "mano_a_mano_sin_balon" ? "family_forced_by_plan" : "not_evaluated_short_circuit" },
+      ],
+    });
+  }
+
+  if (resolvedPlan === "mano_a_mano_sin_balon") return runHandoffPhase(ctx);
   return ctx.input.coverage === "trampa" ? runTrapPhase(ctx) : runDropPhase(ctx, scenario);
 }
 
@@ -1663,6 +1732,475 @@ function runTrapPhase(ctx: CoreContext): PossessionCoreResult {
     { kind: "possession_reorganized_control_kept", outletPlayerId: "O2" },
     { status: "held", holderId: "O2", position: ctx.positions.O2! },
   );
+}
+
+// ============================================================================
+// ME-06 §3: segunda familia posicional — mano a mano sin balón.
+// ============================================================================
+
+/**
+ * Oportunidad pura y comparable de entrada de cada familia desde el estado
+ * heredado (ME-06 §3.2): sin RNG, sin ejecutar la vía descartada, sin mirar
+ * el resultado futuro. No es el árbol de lectura completo de cada familia
+ * (que solo se ejecuta una vez elegida, con su propio reloj de sorteos y
+ * hechos): es un valor situacional provisional con la misma geometría real
+ * heredada (posición, balón, quinteto, defensa, reloj), suficiente para
+ * decidir cuál entrada tiene mejor oportunidad sin adivinar cuál lectura
+ * concreta ganará dentro de ella.
+ */
+interface EntryOpportunity {
+  readonly viable: boolean;
+  readonly value: number;
+}
+
+/**
+ * Oportunidad del bloqueo directo: mismas tres vías reales de O1
+ * (finalizar/pase_o5/triple_o1) que `runDropPhase` evalúa después con más
+ * detalle, aquí solo hasta el valor puro, con las posiciones originales
+ * heredadas (antes de que O1 se desplace de verdad a usar la pantalla).
+ */
+function estimateBloqueoDirectoOpportunity(ctx: CoreContext): EntryOpportunity {
+  const o1 = player(ctx, "O1");
+  const o5 = player(ctx, "O5");
+  const d1 = player(ctx, "D1");
+  const d5 = player(ctx, "D5");
+
+  const o1TimeToHoop = timeToReach(ctx.positions.O1!, ATTACKED_HOOP, attackerMoveSpeedMps(o1.attributes.F01));
+  const d5RawTimeToHoop = timeToReach(ctx.positions.D5!, ATTACKED_HOOP, defenderLateralSpeedMps(d5.attributes.F04));
+  const d5TimeToHoop = Math.max(0, d5RawTimeToHoop - interiorArrivalAdjustmentSeconds(d5.attributes.T23));
+  const d5HoopGeometry: ContestGeometry = {
+    originPos: ctx.positions.D5!,
+    destinationPos: ATTACKED_HOOP,
+    speedMps: defenderLateralSpeedMps(d5.attributes.F04),
+    brakingExtraSeconds: closeoutBrakingExtraSeconds(d5.attributes.F03),
+  };
+  const tO1FinishReady = o1TimeToHoop + CLOSE_FINISH_PREP_SECONDS;
+  const d5PosAtO1FinishReady = positionAtInstant(d5HoopGeometry, d5TimeToHoop, tO1FinishReady);
+  const d5TrulyBlockingFinish = distance(d5PosAtO1FinishReady, ATTACKED_HOOP) <= COMBINED_CONTACT_RADIUS_METERS;
+  const finishOpposition: EffectiveOpposition = d5TimeToHoop - tO1FinishReady >= 0.25 ? 0 : 1;
+  const finishValue = !d5TrulyBlockingFinish
+    ? 2 * shotProbability(CLOSE_FINISH_BASE_PROBABILITY, o1.attributes.T01, finishOpposition)
+    : -Infinity;
+
+  const screenDelay =
+    screenInterceptDelaySeconds(o5.attributes.T13, o5.attributes.F05, d1.attributes.T16) +
+    screenContactAdjustmentSeconds(o5.measures.weightKg - d1.measures.weightKg);
+  const o5PassValue = screenDelay >= 0.2 ? 2 * shotProbability(CLOSE_FINISH_BASE_PROBABILITY, o5.attributes.T01, 0) : -Infinity;
+
+  const behindLine = isBehindThreePointLine(ctx.positions.O1!);
+  const tripleValue = behindLine && o1.attributes.T04 >= 9 ? 3 * shotProbability(THREE_POINT_BASE_PROBABILITY, o1.attributes.T04, 0) : -Infinity;
+
+  const best = Math.max(finishValue, o5PassValue, tripleValue, 0);
+  return { viable: Number.isFinite(best) && best > 0, value: best };
+}
+
+/**
+ * Oportunidad de la mano a mano sin balón: puede O1 encontrar a O5 en el
+ * codo alto con el reloj disponible, y hay una salida real razonablemente
+ * alcanzable desde ahí (mano a mano a O2 o bloqueo/corte a O3), con las
+ * posiciones originales heredadas.
+ */
+function estimateHandoffOpportunity(ctx: CoreContext): EntryOpportunity {
+  const o2 = player(ctx, "O2");
+  const o3 = player(ctx, "O3");
+  const d2 = player(ctx, "D2");
+  const d3 = player(ctx, "D3");
+
+  const entryPoint = FREE_THROW_LINE_SPOT;
+  const tEntryArrival = PASS_RELEASE_SECONDS + distanceSeconds(ctx.positions.O1!, entryPoint);
+  const shotClockRemainingAtEntry = ctx.shotClockMs / 1000 - tEntryArrival;
+  if (shotClockRemainingAtEntry <= 2) return { viable: false, value: -Infinity };
+
+  const handoffPoint = pointShortOfTarget(ctx.positions.O2!, entryPoint, COMBINED_CONTACT_RADIUS_METERS);
+  const tO2Arrival = timeToReach(ctx.positions.O2!, handoffPoint, attackerMoveSpeedMps(o2.attributes.F01));
+  const tHandoffReady = Math.max(tEntryArrival, tO2Arrival);
+  const d2RawArrival = timeToReach(ctx.positions.D2!, handoffPoint, defenderLateralSpeedMps(d2.attributes.F04));
+  const d2Arrival = Math.max(0, d2RawArrival - perimeterArrivalAdjustmentSeconds(d2.attributes.T22));
+  const handoffDenied = d2Arrival <= tHandoffReady;
+  const o2Value = !handoffDenied ? 2 * shotProbability(CLOSE_FINISH_BASE_PROBABILITY, o2.attributes.T01, 0) : -Infinity;
+
+  const o4 = player(ctx, "O4");
+  const screenDelay = screenInterceptDelaySeconds(o4.attributes.T13, o4.attributes.F05, d3.attributes.T16);
+  const cutStart = Math.max(0, tHandoffReady - cutterStartTimeReductionSeconds(o3.attributes.T21));
+  const d3RawArrival = timeToReach(ctx.positions.D3!, WEAK_SIDE_CUT_SPOT, defenderLateralSpeedMps(d3.attributes.F04));
+  const tD3AtCut = cutStart + d3RawArrival + screenDelay;
+  const tO3Cut = cutStart + timeToReach(ctx.positions.O3!, WEAK_SIDE_CUT_SPOT, attackerMoveSpeedMps(o3.attributes.F01));
+  const cutWindowOpen = tD3AtCut > tO3Cut;
+  const o3Value = cutWindowOpen ? 3 * shotProbability(THREE_POINT_BASE_PROBABILITY, o3.attributes.T04, 0) : -Infinity;
+
+  const best = Math.max(o2Value, o3Value, 0);
+  return { viable: Number.isFinite(best) && best > 0, value: best };
+}
+
+/**
+ * Segunda familia posicional completa (ME-06 §3.1): mano a mano sin balón.
+ * Reutiliza movimientos, tiempos de llegada, geometría de pase, oposición
+ * `R_contest`, contacto y responsabilidades ya versionados (LAB-0.1/0.2/0.3);
+ * ningún parámetro deportivo nuevo. IDs canónicos O1..O5/D1..D5, traducidos
+ * a los reales del quinteto por `player()`, no nombres fijos.
+ */
+function runHandoffPhase(ctx: CoreContext): PossessionCoreResult {
+  const o1 = player(ctx, "O1");
+  const o2 = player(ctx, "O2");
+  const o3 = player(ctx, "O3");
+  const o4 = player(ctx, "O4");
+  const o5 = player(ctx, "O5");
+  const d2 = player(ctx, "D2");
+  const d3 = player(ctx, "D3");
+  const d4 = player(ctx, "D4");
+  const d5 = player(ctx, "D5");
+  const offBallCall: OffBallDefensiveCall = ctx.input.offBallDefensiveCall ?? "guardar_espacio";
+
+  event(
+    ctx,
+    0,
+    "reconocido",
+    "handoff_action_started",
+    ["O1", "O5", "O2", "O3", "O4"],
+    "Se organiza el mano a mano: O1 busca a O5 en el codo alto mientras O4 coloca un bloqueo indirecto para O3 en el lado débil.",
+    { offBallDefensiveCall: offBallCall },
+  );
+
+  // --- 1. Entrada: O1 encuentra a O5 en el codo alto (ME-06 §3.1.1) --------
+  const entryPoint = FREE_THROW_LINE_SPOT;
+  const tEntryArrival = PASS_RELEASE_SECONDS + distanceSeconds(ctx.positions.O1!, entryPoint);
+  const shotClockRemainingAtEntry = ctx.shotClockMs / 1000 - tEntryArrival;
+  if (shotClockRemainingAtEntry <= 0) {
+    if (ctx.linked) return linkedShotClockViolation(ctx, "O1");
+    return finalize(ctx, { kind: "shot_clock_violation" }, { status: "dead", holderId: null, position: ctx.positions.O1! });
+  }
+  const entryPass = resolvePass(o1.attributes.T09, o5.attributes.T11, true, d5.attributes.T17, 1, ctx.rng);
+  event(ctx, tEntryArrival, "ejecutado", "pass_released", ["O1", "O5"], "O1 busca a O5 en el codo alto.");
+  if (entryPass.kind === "deflected_loose_ball") {
+    auditDecision(ctx, tEntryArrival, {
+      point: "entrada_mano_a_mano",
+      holderId: "O1",
+      participants: ["O1", "O5", "D5"],
+      chosenOptionId: "entrada_negada",
+      factLinkKind: "pass_released",
+      options: [{ id: "entrada_o5", status: "elegida", reasonCode: "entry_pass_denied", reasonNote: "El pase de entrada fue desviado por D5." }],
+    });
+    return resolveLooseBallAfterPass(ctx, tEntryArrival, "O1", "D5");
+  }
+  const entryReadyDelay = entryPass.kind === "awkward_control" ? entryPass.extraDelaySeconds : 0;
+  const tO5Ready = tEntryArrival + entryReadyDelay;
+  setArrival(ctx, "O5", tO5Ready, entryPoint, 0);
+  event(ctx, tO5Ready, "concedido", "pass_received", ["O5"], "O5 recibe la entrada en el codo alto.");
+  auditDecision(ctx, tO5Ready, {
+    point: "entrada_mano_a_mano",
+    holderId: "O1",
+    participants: ["O1", "O5"],
+    chosenOptionId: "entrada_o5",
+    factLinkKind: "pass_received",
+    options: [{ id: "entrada_o5", status: "elegida", reasonCode: "entry_pass_completed", values: { tO5Ready } }],
+  });
+
+  // --- 2. Mano a mano: O5 entrega a O2, que sube desde el lado fuerte
+  //        (ME-06 §3.1.2). D2 puede perseguir o negar la recepción; D5
+  //        puede contener o saltar a la pelota según la cobertura. --------
+  const handoffPoint = pointShortOfTarget(ctx.positions.O2!, entryPoint, COMBINED_CONTACT_RADIUS_METERS);
+  const tO2Arrival = timeToReach(ctx.positions.O2!, handoffPoint, attackerMoveSpeedMps(o2.attributes.F01));
+  setArrival(ctx, "O2", tO2Arrival, handoffPoint, 0);
+  const tHandoffReady = Math.max(tO5Ready, tO2Arrival);
+
+  const d2Origin = ctx.positions.D2!;
+  const d2Speed = defenderLateralSpeedMps(d2.attributes.F04);
+  const d2Braking = closeoutBrakingExtraSeconds(d2.attributes.F03);
+  const d2RawArrival = timeToReach(d2Origin, handoffPoint, d2Speed);
+  const d2Arrival = Math.max(0, d2RawArrival - perimeterArrivalAdjustmentSeconds(d2.attributes.T22));
+  const d2Geometry: ContestGeometry = { originPos: d2Origin, destinationPos: handoffPoint, speedMps: d2Speed, brakingExtraSeconds: d2Braking };
+  setArrival(ctx, "D2", d2Arrival, handoffPoint, 0);
+
+  // Cobertura sobre el mano a mano (ME-06 §3.1, respuesta defensiva): en
+  // drop, D5 protege el interior y no se suma a negar la entrega; en
+  // trampa, D5 sale a presionar la recepción junto a D2 si llega a tiempo,
+  // dejando un coste interior real y verificable (se registra abajo).
+  let d5CommittedToHandoffTrap = false;
+  let tD5RecoverToRim = 0;
+  if (ctx.input.coverage === "trampa") {
+    const d5RawArrivalAtHandoff = timeToReach(ctx.positions.D5!, handoffPoint, defenderLateralSpeedMps(d5.attributes.F04));
+    const d5ArrivalAtHandoff = Math.max(0, d5RawArrivalAtHandoff - interiorArrivalAdjustmentSeconds(d5.attributes.T23));
+    if (d5ArrivalAtHandoff <= tHandoffReady + COMBINED_CONTACT_RADIUS_METERS / d2Speed) {
+      d5CommittedToHandoffTrap = true;
+      tD5RecoverToRim =
+        m09CoordinationLatencySeconds(d5.attributes.M09, d5.attributes.M09) +
+        timeToReach(handoffPoint, ATTACKED_HOOP, defenderLateralSpeedMps(d5.attributes.F04));
+      event(ctx, d5ArrivalAtHandoff, "concedido", "help_left_assignment", ["D5", "O5"], "D5 salta a presionar la recepción del mano a mano (trampa); deja el interior expuesto mientras recupera.");
+    }
+  }
+
+  const d2PosAtHandoff = positionAtInstant(d2Geometry, d2Arrival, tHandoffReady);
+  const handoffDenied = distance(d2PosAtHandoff, handoffPoint) <= COMBINED_CONTACT_RADIUS_METERS || d5CommittedToHandoffTrap;
+
+  auditDecision(ctx, tHandoffReady, {
+    point: "transferencia_mano_a_mano",
+    holderId: "O5",
+    participants: ["O5", "O2", "D2", "D5"],
+    chosenOptionId: handoffDenied ? "entrega_negada" : "entrega_completada",
+    options: [
+      handoffDenied
+        ? { id: "entrega_negada", status: "elegida", reasonCode: "handoff_denied_defender_arrived", values: { d2ArrivalSeconds: d2Arrival, tHandoffReady, d5CommittedToHandoffTrap } }
+        : { id: "entrega_completada", status: "elegida", reasonCode: "handoff_completed", values: { d2ArrivalSeconds: d2Arrival, tHandoffReady } },
+    ],
+  });
+
+  // --- 3. Simultáneamente: bloqueo indirecto de O4 para el corte de O3
+  //        desde el lado débil (ME-06 §3.1.3). La orden fija de defensa
+  //        sin balón desplaza la navegación real de D3 (T13/F05 la
+  //        pantalla; T21 el desmarque de O3; T16 la navegación de D3). --
+  const d3NavigationAdjustment =
+    offBallCall === "negar_primera_salida" ? -OFF_BALL_CALL_NAVIGATION_ADJUSTMENT_SECONDS : OFF_BALL_CALL_NAVIGATION_ADJUSTMENT_SECONDS;
+  const screenDelay = Math.max(
+    0,
+    screenInterceptDelaySeconds(o4.attributes.T13, o4.attributes.F05, d3.attributes.T16) + d3NavigationAdjustment,
+  );
+  const tO4ScreenSet = timeToReach(ctx.positions.O4!, WEAK_SIDE_SCREEN_SPOT, attackerMoveSpeedMps(o4.attributes.F01));
+  setArrival(ctx, "O4", tO4ScreenSet, WEAK_SIDE_SCREEN_SPOT, 0);
+  event(ctx, tO4ScreenSet, "ejecutado", "screen_set", ["O4"], "O4 coloca un bloqueo indirecto legal para el corte de O3 en el lado débil.");
+
+  const cutStart = Math.max(0, tO4ScreenSet - cutterStartTimeReductionSeconds(o3.attributes.T21));
+  const tO3Cut = cutStart + timeToReach(ctx.positions.O3!, WEAK_SIDE_CUT_SPOT, attackerMoveSpeedMps(o3.attributes.F01));
+  setArrival(ctx, "O3", tO3Cut, WEAK_SIDE_CUT_SPOT, cutStart);
+  event(ctx, tO3Cut, "ejecutado", "screen_navigated", ["O3", "D3"], `O3 corta tras el bloqueo indirecto; D3 navega con un retraso real de ${screenDelay.toFixed(2)} s.`, { screenDelay });
+
+  // D3 navega directo hacia el punto real de recepción/corte de O3 (mismo
+  // patrón que D1 en el bloqueo directo: viaja al destino real de su
+  // hombre, no a un punto intermedio), desde el mismo instante en que O3
+  // arranca su corte (`cutStart`: ambos reaccionan a la misma acción real),
+  // con el retraso real del bloqueo indirecto de O4 sumado sobre ese
+  // trayecto.
+  const d3RawArrival = timeToReach(ctx.positions.D3!, WEAK_SIDE_CUT_SPOT, defenderLateralSpeedMps(d3.attributes.F04));
+  const tD3AtCut = cutStart + d3RawArrival + screenDelay;
+  setArrival(ctx, "D3", tD3AtCut, WEAK_SIDE_CUT_SPOT, cutStart);
+  const cutWindowOpen = tD3AtCut > tO3Cut;
+
+  // D4 responde al bloqueador: en `guardar_espacio`, D4 está listo para
+  // ayudar a cerrar a O3 en cuanto D3 no lo deniega con margen real
+  // (`d4HelpMargin`, positivo cuando D3 llega después que O3): si ayuda,
+  // O3 recibe contestado (no un tiro libre) y O4 se abre en su propio
+  // punto de bloqueo (mismo patrón que la ayuda de D3/D4 del bloqueo
+  // directo). En `negar_primera_salida`, D4 nunca ayuda: sigue siempre al
+  // bloqueador, así que O3 recibe sin contestar si D3 lo pierde, pero O4
+  // no se abre nunca por esta vía.
+  const d4HelpMargin = tD3AtCut - tO3Cut;
+  const d4Helps = offBallCall === "guardar_espacio" && d4HelpMargin > -0.5;
+  const o4Open = d4Helps;
+  if (d4Helps) {
+    event(ctx, tD3AtCut, "concedido", "help_left_assignment", ["D4", "O4"], "D4 ayuda a cerrar a O3 en el corte; O4 queda libre en su propio punto de bloqueo.");
+  }
+
+  auditDecision(ctx, tO3Cut, {
+    point: "bloqueo_indirecto_o3",
+    holderId: null,
+    participants: ["O3", "O4", "D3", "D4"],
+    chosenOptionId: cutWindowOpen ? "corte_liberado" : "corte_negado",
+    factLinkKind: "screen_navigated",
+    options: [
+      cutWindowOpen
+        ? { id: "corte_liberado", status: "elegida", reasonCode: "cut_window_open", values: { tD3AtCut, tO3Cut, screenDelay } }
+        : { id: "corte_negado", status: "elegida", reasonCode: "cut_window_denied", values: { tD3AtCut, tO3Cut, screenDelay } },
+      o4Open
+        ? { id: "ayuda_d4_abre_o4", status: "elegida", reasonCode: "help_rotation_opened_o4", values: { d4HelpMargin } }
+        : { id: "ayuda_d4_abre_o4", status: "descartada_por_condicion", reasonCode: "help_rotation_not_available", values: { d4HelpMargin, offBallCall } },
+    ],
+  });
+
+  // --- 4. Primera lectura real: el portador (O2 si la entrega se
+  //        completó; si no, O5 conserva el balón) elige entre finalizar,
+  //        pasar a O3, continuar a O4, o la seguridad a O1 (ME-06 §3.1.4).
+  const holderId = handoffDenied ? "O5" : "O2";
+  const holder = handoffDenied ? o5 : o2;
+  const holderPos = handoffDenied ? entryPoint : handoffPoint;
+  // El portador no decide hasta que también puede leer de verdad la salida
+  // del bloqueo/corte simultáneo (§3.1.3): si esa acción paralela tarda más
+  // que la entrega en resolverse, la lectura espera a la más lenta de las
+  // dos, en vez de decidir con el corte todavía en el aire.
+  const tDecision = Math.max(tHandoffReady, tO3Cut, tD3AtCut);
+
+  const shotClockRemainingSeconds = ctx.shotClockMs / 1000 - tDecision;
+  if (shotClockRemainingSeconds <= 0) {
+    if (ctx.linked) return linkedShotClockViolation(ctx, holderId);
+    return finalize(ctx, { kind: "shot_clock_violation" }, { status: "held", holderId, position: holderPos });
+  }
+
+  // Vía "finalizar_portador": el portador conduce al aro. D5 protege el
+  // interior salvo que ya esté comprometido en la trampa del mano a mano,
+  // en cuyo caso recupera con el retraso real de coordinación (M09).
+  const d5FinishOrigin = d5CommittedToHandoffTrap ? handoffPoint : ctx.positions.D5!;
+  const d5FinishDepart = d5CommittedToHandoffTrap ? tHandoffReady : tDecision;
+  const d5FinishGeometry: ContestGeometry = {
+    originPos: d5FinishOrigin,
+    destinationPos: ATTACKED_HOOP,
+    speedMps: defenderLateralSpeedMps(d5.attributes.F04),
+    brakingExtraSeconds: closeoutBrakingExtraSeconds(d5.attributes.F03),
+  };
+  const holderTimeToHoop = timeToReach(holderPos, ATTACKED_HOOP, attackerMoveSpeedMps(holder.attributes.F01));
+  const tHolderFinishReady = tDecision + holderTimeToHoop + CLOSE_FINISH_PREP_SECONDS;
+  const d5RawArrivalAtRim = d5FinishDepart + timeToReach(d5FinishOrigin, ATTACKED_HOOP, defenderLateralSpeedMps(d5.attributes.F04));
+  const d5ArrivalAtRim = d5CommittedToHandoffTrap ? tHandoffReady + tD5RecoverToRim : Math.max(0, d5RawArrivalAtRim - interiorArrivalAdjustmentSeconds(d5.attributes.T23));
+  const d5PosAtHolderReady = positionAtInstant(d5FinishGeometry, d5ArrivalAtRim, tHolderFinishReady);
+  const d5TrulyBlockingFinish = distance(d5PosAtHolderReady, ATTACKED_HOOP) <= COMBINED_CONTACT_RADIUS_METERS;
+  const finishMarginSeconds = d5ArrivalAtRim - tHolderFinishReady;
+  const finishOpposition: EffectiveOpposition = finishMarginSeconds >= 0.25 ? 0 : 1;
+  const finishValue = !handoffDenied && !d5TrulyBlockingFinish
+    ? 2 * shotProbability(CLOSE_FINISH_BASE_PROBABILITY, holder.attributes.T01, finishOpposition)
+    : -Infinity;
+
+  // Vía "pase_o3": el corte quedó liberado.
+  const d4CornerGeometry: ContestGeometry = {
+    originPos: ctx.positions.D4!,
+    destinationPos: WEAK_SIDE_SCREEN_SPOT,
+    speedMps: defenderLateralSpeedMps(d4.attributes.F04),
+    brakingExtraSeconds: closeoutBrakingExtraSeconds(d4.attributes.F03),
+  };
+  const o3Opposition: EffectiveOpposition = d4Helps ? 1 : 0;
+  const o3PassValue = cutWindowOpen ? 3 * shotProbability(THREE_POINT_BASE_PROBABILITY, o3.attributes.T04, o3Opposition) : -Infinity;
+
+  // Vía "continuar_o4": D4 ayudó a cerrar a O3 y O4 quedó libre.
+  const o4PassValue = o4Open ? 3 * shotProbability(THREE_POINT_BASE_PROBABILITY, o4.attributes.T04, 0) : -Infinity;
+
+  // Vía "pase_o1": seguridad, siempre viable, sin puntos esperados.
+  const safeOutletValue = 0;
+
+  type HandoffReadOptionId = "finalizar_portador" | "pase_o3" | "continuar_o4" | "pase_o1";
+  const candidateValues: Readonly<Record<HandoffReadOptionId, number>> = {
+    finalizar_portador: finishValue,
+    pase_o3: o3PassValue,
+    continuar_o4: o4PassValue,
+    pase_o1: safeOutletValue,
+  };
+  const HANDOFF_READ_ORDER: readonly HandoffReadOptionId[] = ["finalizar_portador", "pase_o3", "continuar_o4", "pase_o1"];
+  const viableCandidates = HANDOFF_READ_ORDER.filter((id) => Number.isFinite(candidateValues[id]))
+    .map((id) => ({ id, value: candidateValues[id] }))
+    .sort((a, b) => b.value - a.value);
+  const chosen: HandoffReadOptionId = viableCandidates[0]!.id;
+  const topValue = viableCandidates[0]!.value;
+
+  const handoffReadReasonCodes: Readonly<Record<HandoffReadOptionId, { chosen: AuditReasonCode; notViable: AuditReasonCode }>> = {
+    finalizar_portador: { chosen: "lane_open_before_help", notViable: handoffDenied ? "not_available" : "lane_closed_help_ready" },
+    pase_o3: { chosen: "cut_window_open", notViable: "cut_window_denied" },
+    continuar_o4: { chosen: "help_rotation_opened_o4", notViable: "help_rotation_not_available" },
+    pase_o1: { chosen: "safe_outlet_default", notViable: "not_available" },
+  };
+  const handoffReadValues: Readonly<Record<HandoffReadOptionId, Record<string, number | string | boolean | null>>> = {
+    finalizar_portador: { situationalValue: finishValue, holderTimeToHoopSeconds: holderTimeToHoop, d5TrulyBlockingFinish, finishMarginSeconds },
+    pase_o3: { situationalValue: o3PassValue, cutWindowOpen, tD3AtCut, tO3Cut },
+    continuar_o4: { situationalValue: o4PassValue, o4Open, d4HelpMargin },
+    pase_o1: { situationalValue: safeOutletValue },
+  };
+  function handoffReadOptionRecord(id: HandoffReadOptionId): AuditOptionRecord {
+    const value = candidateValues[id];
+    if (id === chosen) return { id, status: "elegida", reasonCode: handoffReadReasonCodes[id].chosen, values: handoffReadValues[id] };
+    if (!Number.isFinite(value)) return { id, status: "descartada_por_condicion", reasonCode: handoffReadReasonCodes[id].notViable, values: handoffReadValues[id] };
+    return { id, status: "descartada_por_condicion", reasonCode: "situational_value_lower", values: handoffReadValues[id] };
+  }
+  const handoffReadOptions = HANDOFF_READ_ORDER.map(handoffReadOptionRecord);
+  void topValue;
+
+  if (chosen === "pase_o1") {
+    auditDecision(ctx, tDecision, {
+      point: "lectura_mano_a_mano",
+      holderId,
+      participants: [holderId, "O1"],
+      chosenOptionId: "pase_o1",
+      options: handoffReadOptions,
+    });
+    const tOutlet = tDecision + PASS_RELEASE_SECONDS + distanceSeconds(holderPos, ctx.positions.O1!);
+    event(ctx, tOutlet, "concedido", "possession_continues", [holderId, "O1"], `${holderId} elige la salida segura hacia O1; el ataque conserva el control y se reorganiza.`);
+    return finalize(
+      ctx,
+      { kind: "possession_reorganized_control_kept", outletPlayerId: "O1" },
+      { status: "held", holderId: "O1", position: ctx.positions.O1! },
+    );
+  }
+
+  if (chosen === "finalizar_portador") {
+    auditDecision(ctx, tDecision, {
+      point: "lectura_mano_a_mano",
+      holderId,
+      participants: [holderId, "D5"],
+      chosenOptionId: "finalizar_portador",
+      options: handoffReadOptions,
+    });
+    return resolveShotAttempt(ctx, {
+      shooterId: holderId,
+      shooterSkill: holder.attributes.T01,
+      shotType: "close_finish",
+      shooterPos: ATTACKED_HOOP,
+      tReady: tHolderFinishReady,
+      prepSeconds: CLOSE_FINISH_PREP_SECONDS,
+      contesterId: "D5",
+      contesterArrival: d5ArrivalAtRim,
+      contesterGeometry: d5FinishGeometry,
+    });
+  }
+
+  if (chosen === "pase_o3") {
+    const passOutcome = resolvePass(holder.attributes.T09, o3.attributes.T11, true, d3.attributes.T17, 1, ctx.rng);
+    const tPassArrivalO3 = tDecision + PASS_RELEASE_SECONDS + distanceSeconds(holderPos, WEAK_SIDE_CUT_SPOT);
+    event(ctx, tPassArrivalO3, "ejecutado", "pass_released", [holderId, "O3"], `${holderId} pasa a O3, liberado por el bloqueo/corte.`);
+    auditDecision(ctx, tDecision, {
+      point: "lectura_mano_a_mano",
+      holderId,
+      participants: [holderId, "O3", "D3"],
+      chosenOptionId: "pase_o3",
+      factLinkKind: "pass_released",
+      options: handoffReadOptions,
+    });
+    if (passOutcome.kind === "deflected_loose_ball") {
+      return resolveLooseBallAfterPass(ctx, tPassArrivalO3, holderId, "D3");
+    }
+    const readyDelay = passOutcome.kind === "awkward_control" ? passOutcome.extraDelaySeconds : 0;
+    const tPrepReadyO3 = tPassArrivalO3 + readyDelay + CATCH_AND_SHOOT_PREP_SECONDS;
+    event(ctx, tPassArrivalO3, "concedido", "pass_received", ["O3"], "O3 recibe liberado tras el bloqueo/corte.");
+    // Si D4 ayudó a cerrar (guardar_espacio con D3 batido), el contestador
+    // real del tiro de O3 es D4 rotando, no D3 (que ya perdió la carrera);
+    // si D3 lo deniega solo (negar_primera_salida o D3 gana con margen),
+    // el propio D3 es quien contesta al recuperar.
+    return resolveShotAttempt(ctx, {
+      shooterId: "O3",
+      shooterSkill: o3.attributes.T04,
+      shotType: "three_point",
+      shooterPos: WEAK_SIDE_CUT_SPOT,
+      tReady: tPrepReadyO3,
+      prepSeconds: CATCH_AND_SHOOT_PREP_SECONDS + readyDelay,
+      contesterId: d4Helps ? "D4" : "D3",
+      contesterArrival: tD3AtCut,
+      contesterGeometry: d4Helps
+        ? { originPos: ctx.positions.D4!, destinationPos: WEAK_SIDE_CUT_SPOT, speedMps: defenderLateralSpeedMps(d4.attributes.F04), brakingExtraSeconds: closeoutBrakingExtraSeconds(d4.attributes.F03) }
+        : { originPos: ctx.positions.D3!, destinationPos: WEAK_SIDE_CUT_SPOT, speedMps: defenderLateralSpeedMps(d3.attributes.F04), brakingExtraSeconds: closeoutBrakingExtraSeconds(d3.attributes.F03) },
+    });
+  }
+
+  // chosen === "continuar_o4"
+  const passOutcome = resolvePass(holder.attributes.T09, o4.attributes.T11, true, d4.attributes.T17, 1, ctx.rng);
+  const tPassArrivalO4 = tDecision + PASS_RELEASE_SECONDS + distanceSeconds(holderPos, WEAK_SIDE_SCREEN_SPOT);
+  event(ctx, tPassArrivalO4, "ejecutado", "pass_released", [holderId, "O4"], `${holderId} continúa hacia O4, abierto tras la ayuda de D4.`);
+  auditDecision(ctx, tDecision, {
+    point: "lectura_mano_a_mano",
+    holderId,
+    participants: [holderId, "O4", "D4"],
+    chosenOptionId: "continuar_o4",
+    factLinkKind: "pass_released",
+    options: handoffReadOptions,
+  });
+  if (passOutcome.kind === "deflected_loose_ball") {
+    return resolveLooseBallAfterPass(ctx, tPassArrivalO4, holderId, "D4");
+  }
+  const readyDelayO4 = passOutcome.kind === "awkward_control" ? passOutcome.extraDelaySeconds : 0;
+  const tPrepReadyO4 = tPassArrivalO4 + readyDelayO4 + CATCH_AND_SHOOT_PREP_SECONDS;
+  event(ctx, tPassArrivalO4, "concedido", "pass_received", ["O4"], "O4 recibe abierto en su propio punto de bloqueo.");
+  return resolveShotAttempt(ctx, {
+    shooterId: "O4",
+    shooterSkill: o4.attributes.T04,
+    shotType: "three_point",
+    shooterPos: WEAK_SIDE_SCREEN_SPOT,
+    tReady: tPrepReadyO4,
+    prepSeconds: CATCH_AND_SHOOT_PREP_SECONDS + readyDelayO4,
+    contesterId: "D4",
+    contesterArrival: tD3AtCut,
+    contesterGeometry: d4CornerGeometry,
+  });
 }
 
 /**

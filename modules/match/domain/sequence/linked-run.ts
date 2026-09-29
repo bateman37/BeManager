@@ -32,7 +32,7 @@ import {
 import { positionOnTrajectory, truncateTrajectory, type TrajectoryPoint } from "../geometry/trajectory";
 import { createResumableRandom, type ResumableRandom } from "../random/seeded-random";
 import { secondsToMs, type Milliseconds } from "../time/clock";
-import type { DefensiveCoverage, MatchInput } from "../lab/match-input";
+import type { DefensiveCoverage, MatchInput, OffensivePlanChoice, OffBallDefensiveCall } from "../lab/match-input";
 import { getScenario } from "../lab/scenario";
 import type { LAB_0_3_PARAMETERS_VERSION } from "../lab/lab-0-3-parameters";
 import {
@@ -319,6 +319,25 @@ export abstract class LinkedRun {
   /** Reglas de partido que el núcleo debe aplicar (ninguna en el tramo). */
   protected coreRules(): LinkedGameRules | undefined {
     return undefined;
+  }
+  /**
+   * Plan ofensivo con el que ataca el equipo (ME-06 §3.2). Por defecto,
+   * siempre el bloqueo directo ya versionado: los modos que no declaren la
+   * segunda familia (p. ej. el tramo de ME-03, §3.2 in fine) conservan
+   * exactamente su alcance actual sin cambiar nada.
+   */
+  protected offensivePlanWhenAttacking(teamId: string): OffensivePlanChoice {
+    void teamId;
+    return "bloqueo_directo";
+  }
+  /**
+   * Orden de defensa sin balón del equipo que defiende ante la mano a
+   * mano (ME-06 §3.1). Sin efecto cuando la familia resuelta es el
+   * bloqueo directo.
+   */
+  protected offBallCallWhenDefending(teamId: string): OffBallDefensiveCall {
+    void teamId;
+    return "guardar_espacio";
   }
   /** Tiempo de juego transcurrido con el reloj en marcha, para minutos. */
   protected onClockRan(deltaMs: Milliseconds): void {
@@ -763,6 +782,8 @@ export abstract class LinkedRun {
       labParametersVersion: this.settings.labParametersVersion,
       offensePlayers: frame.attacking.players,
       defensePlayers: frame.defending.players,
+      offensivePlan: this.offensivePlanWhenAttacking(frame.attacking.id),
+      offBallDefensiveCall: this.offBallCallWhenDefending(frame.defending.id),
     };
     const rules = this.coreRules();
     const possession = this.possessionRef();
