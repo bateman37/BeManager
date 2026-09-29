@@ -5,7 +5,7 @@
 **Debe leerse cuando:** vayas a activar una nueva capacidad o a calibrar un coeficiente existente.
 **No cubre:** las 45 capacidades candidatas completas del catálogo (ver `docs/match/reference/BeManager-capitulo-atributos-y-motor-v2.md` §2.2–2.4).
 **Documentos relacionados:** `ACTIONS.md`, `docs/decisions/ADR-0004-detailed-engine-analytic-timing.md`.
-**Última actualización:** 2026-09-28 (ME-02).
+**Última actualización:** 2026-09-28 (ME-03).
 
 ## 27 capacidades activas (de 45 candidatas)
 
@@ -94,6 +94,22 @@ físicamente el punto de liberación del tiro: `maxTouchHeightMeters` del
 defensor debe alcanzar `shotReleaseHeightMeters` del tirador (ambas
 fórmulas ya existían, sin usarse en el motor). Subir T18 no garantiza más
 tapones brutos si cambian los tiros y ventanas que realmente se alcanzan.
+
+## ME-03: las mismas 27, en tareas del tramo que ya las usaban
+
+El tramo enlazado no activa capacidades nuevas ni coeficientes nuevos:
+
+- **F01** (movimiento, `attackerMoveSpeedMps`): carrera sin balón o con
+  bote de cualquier jugador — cargar, retornar, subir el balón, colocarse,
+  correr al aro en transición (P53 del catálogo cita F01 para el balance).
+- **F04 + T23**: protector del aro en la segunda oportunidad (mismo
+  criterio de la opción 1); **T23** también ajusta la llegada al aro del
+  primer defensor en transición.
+- **T09/T11**: pase de salida, pase adelantado, saque y devolución al base.
+- **T19/T20/F05**: la disputa de rebote de siempre; **T20** decide también
+  el balón suelto tras tapón o desvío (misma regla del palmeo).
+- **T01/T18/F03/F06/C01/C04**: la finalización en transición o segunda
+  oportunidad pasa por el mismo `resolveShotAttempt`.
 
 ## Editor de equilibrio
 

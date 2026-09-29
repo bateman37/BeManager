@@ -37,7 +37,23 @@ export type FactKind =
   | "turnover"
   | "out_of_bounds"
   | "shot_clock_violation"
-  | "possession_continues";
+  | "possession_continues"
+  // ME-03: tramo de posesiones enlazadas. Amplían la taxonomía sin cambiar
+  // el significado de las anteriores (el resolvedor rápido las ignora).
+  | "rebound_duties_assigned"
+  | "possession_started"
+  | "possession_ended"
+  | "phase_started"
+  | "transition_outlet"
+  | "transition_read"
+  | "second_chance_read"
+  | "organized_entry"
+  | "throw_in_awarded"
+  | "throw_in_completed"
+  | "loose_ball_recovered"
+  | "backcourt_violation"
+  | "throw_in_violation"
+  | "tramo_stopped";
 
 export interface PlayerSnapshot {
   readonly playerId: string;

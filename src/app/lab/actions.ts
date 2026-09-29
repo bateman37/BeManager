@@ -9,7 +9,9 @@ import {
   compareLabScenarioBatch,
   compareLabCoverageBatch,
 } from "@match/application/use-cases/compare-lab-scenario-batch";
+import { playLabTramo } from "@match/application/use-cases/play-lab-tramo";
 import { LAB_0_2_PARAMETERS_VERSION } from "@match/domain/lab/lab-0-2-parameters";
+import type { BuildTramoTeamArgs } from "@match/domain/sequence/tramo-model";
 import type { PlayerProfile } from "@match/domain/players/player-profile";
 import type { ScenarioId } from "@match/domain/lab/scenario";
 import type { DefensiveCoverage, MatchInput } from "@match/domain/lab/match-input";
@@ -88,4 +90,18 @@ export async function compareCoverageAction(
     },
     sampleSize,
   );
+}
+
+/**
+ * ME-03: tramo de hasta cuatro posesiones enlazadas. Usa los perfiles que
+ * muestra la interfaz (guardados o de referencia si PostgreSQL no está
+ * disponible); no escribe nada en la base de datos.
+ */
+export async function playTramoAction(
+  seed: number,
+  coverage: DefensiveCoverage,
+  offenseTeam: BuildTramoTeamArgs,
+  defenseTeam: BuildTramoTeamArgs,
+) {
+  return playLabTramo({ seed, coverage, offenseTeam, defenseTeam });
 }

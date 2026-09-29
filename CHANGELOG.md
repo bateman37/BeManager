@@ -3,6 +3,97 @@
 Formato libre en español, orden cronológico inverso. Los motivos de
 decisiones duraderas viven en `docs/decisions/`, no aquí.
 
+## ME-03 — Aclaración: ventaja temprana, opción B (sin fusionar)
+
+- Guardado el prompt en
+  `docs/prompts/implementation/ME-03-aclaracion-ventaja-temprana.md`.
+  Dennis resuelve `DECISION-REQUERIDA-ME-03-ventaja-temprana.md` con la
+  **opción B**: leer también la superioridad numérica en el instante real
+  en que el balón entra en pista delantera, no solo la carrera directa al
+  aro.
+- **`readTransition`** (`domain/sequence/transition.ts`): un defensor solo
+  cuenta como protector si, en ese instante (posición real, no una carrera
+  hipotética desde la salida), ya está entre el balón y el aro atacado.
+  Nueva lectura **3×2** (`superioridad_3x2`): cuando el corredor también
+  queda contenido pero un segundo receptor exterior recibe el pase directo
+  del portador antes de que exista un tercer defensor ya situado.
+- **`play-tramo.ts`**: la trayectoria de subida de balón se programa de
+  verdad (`moveGlobal`) antes de leer el cruce de media pista, para que las
+  diez posiciones en ese instante sean reales, no congeladas. La ventaja se
+  resuelve con `resolvePass`/`resolveShotAttempt`, sin árbol estadístico
+  aparte.
+- 4 pruebas discriminantes nuevas en `me03.test.ts` (3×2 ejecutable, ambas
+  opciones cerradas → ataque organizado, prioridad de rebote que cambia
+  tiempos sin cambiar resultados por cuota) más una prueba que documenta
+  que un defensor todavía no situado ya no cuenta como protector. 120/120
+  pruebas del módulo en verde.
+- **Barrido del fixture real** (semillas 1–1000 × cuatro combinaciones de
+  prioridad × drop/trampa, 8 000 tramos, 24 000 lecturas de transición):
+  **0 ejecutadas, 24 000 neutralizadas**. El mecanismo en sí es correcto
+  (probado con geometría construida a mano); la causa de que este fixture
+  concreto nunca abra una ventana es que el defensor de `drop` permanece
+  siempre cerca del aro que protege y llega solo, por sí mismo, entre 0,25
+  y 1 s antes que cualquier atacante en tránsito, incluso en el ~6,7% de
+  lecturas donde 1 o 2 de los otros cuatro defensores quedan legítimamente
+  excluidos por no estar aún situados. No se ha ajustado ningún
+  coeficiente ni posición del fixture para cambiar esta frecuencia. Detalle
+  en `docs/match/ACTIONS.md` y en la resolución de la decisión.
+- Documentación actualizada: `docs/match/{ACTIONS,SCENARIOS}.md`,
+  `docs/decisions/DECISION-REQUERIDA-ME-03-ventaja-temprana.md` (resuelta)
+  y `docs/decisions/README.md`.
+- Pendiente: el recorrido real de navegador y PostgreSQL no se ha
+  ejecutado en este contenedor (sin navegador ni base de datos
+  disponibles aquí). Verificar desde un entorno con ambos, en `main` tras
+  la fusión que decida Dennis, con el plan
+  `docs/testing/manual/ME-03-manual-test-plan.md` (semillas 1, 3, 27 y las
+  cuatro combinaciones de prioridad).
+
+## ME-03 — Posesiones enlazadas y transición (sin fusionar)
+
+- Guardado el prompt de implementación en
+  `docs/prompts/implementation/ME-03-posesiones-enlazadas-y-transicion.md`.
+- **Tramo enlazado** (`modules/match/domain/sequence/`): hasta cuatro
+  posesiones estadísticas desde `drop_con_ayuda` (7:12 C1, 18 s) con los
+  mismos diez jugadores, balón y cancha global. Separa evento, fase,
+  posesión estadística, equipo con control, derecho a saque y balón suelto.
+  Termina por cuatro posesiones cerradas, tiempo reglamentario agotado o
+  guardián, y lo muestra. Snapshot único (`TramoInput`) con semilla,
+  perfiles copiados, planes, cobertura y versiones (`ME-03-TRAMO-1`).
+- **Fronteras y relojes FIBA 2026 alcanzables** (`fiba-clock-rules.ts`):
+  rebote ofensivo = fase nueva con 14 s; rebote defensivo, robo o balón
+  suelto rival = posesión nueva con 24 s (sin robo inventado); tapón sin
+  aro recuperado por el mismo equipo sin reinicio; saques tras canasta,
+  último libre, balón fuera y violación con 24/14 s según pista; reloj de
+  partido que no se detiene por canasta en C1, parado en libres, fuera y
+  violaciones, y que vuelve con el toque legal; cuentas de 8 y 5 s y
+  liberación antes de 24 s con fronteras exactas.
+- **Carga frente a balance** por equipo: encargos antes de conocer el tiro,
+  por llegada real al aro (F01) y desempate por ID; desplazamientos reales
+  hacia el aro o la línea central; quien retorna no disputa el rebote.
+- **Transición**: salida al base con carrera de intercepción, lecturas de
+  penetración, pase adelantado y 2×1 por llegadas reales, o «Sin ventaja:
+  ataque organizado» con recorridos y reloj consumido; segunda oportunidad
+  con el criterio de la opción 1 o reorganización con 14 s. Sin
+  multiplicador de ataque temprano.
+- **Núcleo compartido en modo enlazado** (ADR-0006): marco local por giro
+  de 180°, roles canónicos asignados a jugadores reales, generador
+  reanudable. Sin la opción, ME-01/ME-02 producen exactamente la misma
+  huella que antes (prueba de regresión con hash).
+- **Interfaz `/lab`**: sección «Jugar tramo» separada, prioridades por
+  equipo, visor por eventos y por posesiones con cancha completa, relojes,
+  control, marcador, encargos y motivo de la entrada de cada fase.
+- 20 pruebas nuevas en `domain/sequence/me03.test.ts`.
+- Perfil de coste (`npm run profile:tramo`, semillas 1–100, sin BD, mismo
+  proceso, Node 22, 4 núcleos): media 1,35–1,98 ms por tramo y
+  0,34–0,50 ms por posesión según configuración; peor tramo 5,78 ms
+  (semilla 21, drop, ambos «Proteger balance»); máximo 184 hechos en un
+  tramo (semilla 99, trampa). Sin bucles: los 8 000 tramos de semillas
+  1–1000 terminan por cuatro posesiones cerradas.
+- `DECISIÓN REQUERIDA` sobre el criterio de ventaja temprana
+  (`docs/decisions/DECISION-REQUERIDA-ME-03-ventaja-temprana.md`): con el
+  fixture, el balance de dos o tres jugadores nunca concede transición.
+- Plan manual en `docs/testing/manual/ME-03-manual-test-plan.md`.
+
 ## ME-02 — Trampa, salidas reales y tres correcciones de ME-01 (sin fusionar)
 
 - Guardado el prompt de implementación en

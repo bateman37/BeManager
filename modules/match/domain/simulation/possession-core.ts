@@ -11,7 +11,9 @@
  */
 import type { Point2D } from "../geometry/point";
 import { timeToReach, distance, moveToward } from "../geometry/point";
-import { ATTACKED_HOOP, FREE_THROW_LINE_SPOT, isBehindThreePointLine } from "../geometry/court";
+import { positionOnTrajectory, truncateTrajectory, type TrajectoryPoint } from "../geometry/trajectory";
+import { ATTACKED_HOOP, FREE_THROW_LINE_SPOT, COURT_WIDTH_METERS, isBehindThreePointLine } from "../geometry/court";
+import { MIDCOURT_LINE_X } from "../geometry/frame";
 import { createSeededRandom, type SeededRandom } from "../random/seeded-random";
 import { secondsToMs, type Milliseconds } from "../time/clock";
 import type { MatchInput } from "../lab/match-input";
@@ -52,7 +54,13 @@ import type { TerminalOutcome, BallState } from "./match-state";
 import type { FactPhase, FactKind } from "./fact";
 import { resolvePass } from "./resolvers/pass-resolver";
 import { resolveShot, type ShotType } from "./resolvers/shot-resolver";
-import { seedReboundLanding, resolveRebound, type ReboundCandidate, type ReboundOutcome } from "./resolvers/rebound-resolver";
+import {
+  seedReboundLanding,
+  resolveRebound,
+  pickTipWinnerByT20,
+  type ReboundCandidate,
+  type ReboundOutcome,
+} from "./resolvers/rebound-resolver";
 import { resolvesTurnoverUnderPressure } from "./resolvers/turnover-resolver";
 import { evaluateCloseoutLegality, awardFreeThrowsForShootingFoul } from "./resolvers/foul-resolver";
 
@@ -66,7 +74,8 @@ const WEAK_CORNER_SPOT: Point2D = { x: 24.0, y: 13.9 };
  */
 const LATE_CLOSEOUT_D4_START: Point2D = { x: 24.9, y: 8.2 };
 const MAX_PROGRESS_ITERATIONS = 12;
-const REBOUND_CANDIDATE_SPEED_MPS = 3.2;
+/** Velocidad común de llegada a un balón suelto/rebote (HF-002); la reutiliza el tramo de ME-03. */
+export const REBOUND_CANDIDATE_SPEED_MPS = 3.2;
 
 export interface RawEvent {
   sequence: number;
@@ -78,10 +87,13 @@ export interface RawEvent {
   readonly detail: Readonly<Record<string, unknown>>;
 }
 
-export interface PositionHistoryEntry {
-  readonly atMs: Milliseconds;
-  readonly position: Point2D;
-}
+/**
+ * Entrada del historial de llegadas. `moving` solo lo usa el modo enlazado
+ * de ME-03 (desplazamiento lineal desde la entrada anterior); el motor
+ * detallado de ME-01/ME-02 nunca lo activa y conserva su semántica
+ * escalonada.
+ */
+export type PositionHistoryEntry = TrajectoryPoint;
 
 export type PositionHistory = Readonly<Record<string, readonly PositionHistoryEntry[]>>;
 
@@ -100,6 +112,77 @@ export interface PossessionCoreResult {
 export interface ComputePossessionCoreOptions {
   /** Activa el historial de posiciones para reconstruir snapshots por hecho (motor detallado). */
   readonly trackPositionHistory?: boolean;
+  /**
+   * Modo enlazado (ME-03, ADR-0006): el núcleo calcula un tramo de juego
+   * dentro de un tramo de varias posesiones, partiendo de posiciones,
+   * relojes y azar reales en vez del fixture. Sin esta opción, el
+   * comportamiento es exactamente el de ME-01/ME-02.
+   */
+  readonly linked?: LinkedSegmentOptions;
+}
+
+/** Prioridad tras tiro elegida por cada equipo antes del tramo (ME-03 §4). */
+export type ReboundPriority = "proteger_balance" | "cargar_rebote";
+
+/**
+ * Desplazamiento ya planificado al comenzar el tramo de cálculo (en el
+ * marco local): el jugador sale de su posición inicial en `departSeconds`
+ * y llega a `to` en `arriveSeconds`, en línea recta. Lo usa la transición
+ * para que los diez sigan moviéndose mientras se resuelve una ventaja.
+ */
+export interface PlannedLeg {
+  readonly departSeconds: number;
+  readonly arriveSeconds: number;
+  readonly to: Point2D;
+}
+
+/**
+ * Qué acción ejecuta el núcleo en modo enlazado. `organized_set` es el
+ * bloqueo directo central ya existente (drop o trampa según la cobertura),
+ * que solo se usa cuando los diez están situados en la disposición. En
+ * `direct_finish` la decisión (penetración, pase adelantado o segunda
+ * oportunidad) la toma quien llama con tiempos reales; el núcleo solo
+ * ejecuta pase/recepción y lanzamiento con el mismo `resolveShotAttempt`
+ * (oposición por geometría real, tapón, falta y rebote), sin un segundo
+ * árbol de tiro.
+ */
+export type LinkedEntry =
+  | { readonly kind: "organized_set" }
+  | {
+      readonly kind: "direct_finish";
+      readonly shooterSlot: string;
+      readonly finishSpot: Point2D;
+      /** Instante en que el tirador alcanza `finishSpot` (su pierna ya planificada). */
+      readonly shooterAtSpotSeconds: number;
+      readonly pass: {
+        readonly passerSlot: string;
+        readonly releaseSeconds: number;
+        readonly arrivalSeconds: number;
+      } | null;
+      readonly contesterSlot: string;
+      readonly contesterArrivalSeconds: number;
+      readonly contesterGeometry: ContestGeometry;
+    };
+
+export interface LinkedSegmentOptions {
+  /** Rol canónico de la acción (O1..O5 ataca, D1..D5 defiende) → ID real del jugador. */
+  readonly binding: Readonly<Record<string, string>>;
+  /** Posiciones de partida en el marco local, por rol canónico. */
+  readonly startPositions: Readonly<Record<string, Point2D>>;
+  readonly legs?: Readonly<Record<string, PlannedLeg>>;
+  readonly shotClockMs: Milliseconds;
+  readonly gameClockMs: Milliseconds;
+  /** Mismo flujo de azar para todo el tramo: no se reinicia con la semilla. */
+  readonly rng: SeededRandom;
+  readonly attackingPriority: ReboundPriority;
+  readonly entry: LinkedEntry;
+}
+
+interface LinkedState {
+  readonly binding: Readonly<Record<string, string>>;
+  readonly priority: ReboundPriority;
+  /** Atacantes con encargo de balance en el tiro vigente: no disputan el rebote. */
+  balancers: ReadonlySet<string>;
 }
 
 interface CoreContext {
@@ -112,10 +195,11 @@ interface CoreContext {
   readonly gameClockMs: Milliseconds;
   readonly shotClockMs: Milliseconds;
   possessionPhase: number;
+  readonly linked: LinkedState | null;
 }
 
 function player(ctx: CoreContext, id: string): PlayerProfile {
-  return findPlayerInInput(ctx.input, id);
+  return findPlayerInInput(ctx.input, ctx.linked ? (ctx.linked.binding[id] ?? id) : id);
 }
 
 function event(
@@ -145,11 +229,51 @@ function event(
  * que el código la ejecuta (HF-002 §1.3: un hecho representa el instante en
  * que ocurrió, no una posición futura adelantada).
  */
-function setArrival(ctx: CoreContext, playerId: string, arrivalAtSeconds: number, position: Point2D): void {
+function setArrival(
+  ctx: CoreContext,
+  playerId: string,
+  arrivalAtSeconds: number,
+  position: Point2D,
+  departAtSeconds?: number,
+): void {
+  if (ctx.linked && ctx.positionHistory) {
+    // Modo enlazado (ME-03): la llegada es un desplazamiento real desde la
+    // posición que el jugador ocupaba al salir, no un salto en el instante
+    // de llegada.
+    redirect(ctx, playerId, departAtSeconds ?? arrivalAtSeconds, arrivalAtSeconds, position);
+    return;
+  }
   ctx.positions[playerId] = position;
   if (ctx.positionHistory) {
     (ctx.positionHistory[playerId] ??= []).push({ atMs: secondsToMs(arrivalAtSeconds), position });
   }
+}
+
+/** Posición real (historial) de un jugador en un instante, solo en modo enlazado. */
+function historyPositionAt(ctx: CoreContext, playerId: string, atSeconds: number): Point2D {
+  const entries = ctx.positionHistory?.[playerId];
+  if (!entries || entries.length === 0) return ctx.positions[playerId]!;
+  return positionOnTrajectory(entries, secondsToMs(atSeconds));
+}
+
+/**
+ * Cambia el objetivo de un jugador en `departSeconds` (ME-03): recorta lo
+ * que tenía previsto después de ese instante y le hace recorrer en línea
+ * recta el camino desde donde realmente está hasta `to`.
+ */
+function redirect(ctx: CoreContext, playerId: string, departSeconds: number, arriveSeconds: number, to: Point2D): void {
+  const history = ctx.positionHistory!;
+  const departMs = secondsToMs(Math.max(0, departSeconds));
+  const arriveMs = Math.max(departMs, secondsToMs(arriveSeconds));
+  const truncated = truncateTrajectory(history[playerId] ?? [{ atMs: 0, position: ctx.positions[playerId]! }], departMs);
+  truncated.push({ atMs: arriveMs, position: to, moving: arriveMs > departMs });
+  history[playerId] = truncated;
+  ctx.positions[playerId] = to;
+}
+
+/** Velocidad de carrera sin balón o con bote (F01), reutilizada del movimiento atacante LAB-0.1. */
+function runSpeed(ctx: CoreContext, slot: string): number {
+  return attackerMoveSpeedMps(player(ctx, slot).attributes.F01);
 }
 
 function distanceSeconds(a: Point2D, b: Point2D): number {
@@ -191,17 +315,22 @@ export function computePossessionCore(
   input: MatchInput,
   options: ComputePossessionCoreOptions = {},
 ): PossessionCoreResult {
-  const rng = createSeededRandom(input.seed);
+  const linked = options.linked ?? null;
+  const rng = linked ? linked.rng : createSeededRandom(input.seed);
   const scenario = getScenario(input.scenarioId);
-  const trackPositionHistory = options.trackPositionHistory ?? false;
+  const trackPositionHistory = linked ? true : (options.trackPositionHistory ?? false);
 
   const positions: Record<string, Point2D> = {};
   const positionHistory: Record<string, PositionHistoryEntry[]> | null = trackPositionHistory ? {} : null;
 
   for (const slot of [...scenario.offense, ...scenario.defense]) {
-    positions[slot.playerId] = slot.initialPosition;
+    // Modo enlazado: la posición de partida es la real heredada, nunca la
+    // del fixture (ME-03 §2).
+    const start = linked ? linked.startPositions[slot.playerId] : slot.initialPosition;
+    if (!start) throw new Error(`Falta la posición de partida del rol ${slot.playerId}`);
+    positions[slot.playerId] = start;
     if (positionHistory) {
-      positionHistory[slot.playerId] = [{ atMs: 0, position: slot.initialPosition }];
+      positionHistory[slot.playerId] = [{ atMs: 0, position: start }];
     }
   }
 
@@ -212,12 +341,105 @@ export function computePossessionCore(
     sequence: 0,
     positions,
     positionHistory,
-    gameClockMs: scenario.initialGameClockMs,
-    shotClockMs: scenario.initialShotClockMs,
+    gameClockMs: linked ? linked.gameClockMs : scenario.initialGameClockMs,
+    shotClockMs: linked ? linked.shotClockMs : scenario.initialShotClockMs,
     possessionPhase: 0,
+    linked: linked ? { binding: linked.binding, priority: linked.attackingPriority, balancers: new Set() } : null,
   };
 
+  if (linked) {
+    for (const [slot, leg] of Object.entries(linked.legs ?? {})) {
+      redirect(ctx, slot, leg.departSeconds, leg.arriveSeconds, leg.to);
+    }
+    if (linked.entry.kind === "direct_finish") {
+      return runDirectFinish(ctx, linked.entry);
+    }
+  }
+
   return ctx.input.coverage === "trampa" ? runTrapPhase(ctx) : runDropPhase(ctx, scenario);
+}
+
+/**
+ * Ejecución enlazada de una finalización cercana decidida fuera del árbol
+ * del bloqueo (ventaja temprana o segunda oportunidad, ME-03 §3-§4): pase
+ * opcional sin defensor elegible en la línea (quien llama ya comprobó que
+ * ningún defensor llega antes que el balón) y lanzamiento con el mismo
+ * `resolveShotAttempt` que el resto de ramas.
+ */
+function runDirectFinish(
+  ctx: CoreContext,
+  entry: Extract<LinkedEntry, { kind: "direct_finish" }>,
+): PossessionCoreResult {
+  const shooter = player(ctx, entry.shooterSlot);
+  let tCatch = entry.shooterAtSpotSeconds;
+  let readyDelay = 0;
+
+  if (entry.pass) {
+    const passer = player(ctx, entry.pass.passerSlot);
+    event(
+      ctx,
+      entry.pass.releaseSeconds,
+      "ejecutado",
+      "pass_released",
+      [entry.pass.passerSlot, entry.shooterSlot],
+      `${entry.pass.passerSlot} adelanta el balón a ${entry.shooterSlot}, que corre hacia el aro.`,
+    );
+    const outcome = resolvePass(passer.attributes.T09, shooter.attributes.T11, false, 0, 0, ctx.rng);
+    readyDelay = outcome.kind === "awkward_control" ? outcome.extraDelaySeconds : 0;
+    event(
+      ctx,
+      entry.pass.arrivalSeconds,
+      "concedido",
+      "pass_received",
+      [entry.shooterSlot],
+      readyDelay > 0
+        ? `${entry.shooterSlot} recibe en carrera con control incómodo.`
+        : `${entry.shooterSlot} recibe en carrera.`,
+    );
+    tCatch = Math.max(entry.shooterAtSpotSeconds, entry.pass.arrivalSeconds);
+  }
+
+  return resolveShotAttempt(ctx, {
+    shooterId: entry.shooterSlot,
+    shooterSkill: shooter.attributes.T01,
+    shotType: "close_finish",
+    shooterPos: entry.finishSpot,
+    tReady: tCatch + readyDelay + CLOSE_FINISH_PREP_SECONDS,
+    prepSeconds: CLOSE_FINISH_PREP_SECONDS,
+    contesterId: entry.contesterSlot,
+    contesterArrival: entry.contesterArrivalSeconds,
+    contesterGeometry: entry.contesterGeometry,
+  });
+}
+
+/**
+ * Violación del reloj de lanzamiento en modo enlazado (ME-03 §3): el
+ * balón muere en el instante exacto en que se agota el reloj, nunca con
+ * tiempo negativo. Se descartan los hechos y llegadas posteriores, que ya
+ * no pudieron ocurrir.
+ */
+function linkedShotClockViolation(ctx: CoreContext, holderSlot: string): PossessionCoreResult {
+  const expirySeconds = ctx.shotClockMs / 1000;
+  const expiryMs = ctx.shotClockMs;
+  for (let i = ctx.timeline.length - 1; i >= 0; i--) {
+    if (ctx.timeline[i]!.atMs > expiryMs) ctx.timeline.splice(i, 1);
+  }
+  if (ctx.positionHistory) {
+    for (const id of Object.keys(ctx.positionHistory)) {
+      ctx.positionHistory[id] = truncateTrajectory(ctx.positionHistory[id]!, expiryMs);
+      ctx.positions[id] = historyPositionAt(ctx, id, expirySeconds);
+    }
+  }
+  const ballPos = historyPositionAt(ctx, holderSlot, expirySeconds);
+  event(
+    ctx,
+    expirySeconds,
+    "concedido",
+    "shot_clock_violation",
+    [holderSlot],
+    `Se agota el reloj de lanzamiento con el balón en poder de ${holderSlot}: violación, balón muerto.`,
+  );
+  return finalize(ctx, { kind: "shot_clock_violation" }, { status: "dead", holderId: null, position: ballPos });
 }
 
 function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition): PossessionCoreResult {
@@ -258,7 +480,7 @@ function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition): Possessio
   const continuationShift = screenCoordinationShiftSeconds(o5.attributes.M04);
   const rollTravelSeconds = timeToReach(screenPoint, SHORT_ROLL_SPOT, attackerMoveSpeedMps(o5.attributes.F01));
   const tRollReady = Math.max(0.05, tUseScreen - continuationShift + rollTravelSeconds);
-  setArrival(ctx, "O5", tRollReady, SHORT_ROLL_SPOT);
+  setArrival(ctx, "O5", tRollReady, SHORT_ROLL_SPOT, tRollReady - rollTravelSeconds);
   event(ctx, tRollReady, "ejecutado", "roll_continuation", ["O5"], "O5 continúa hacia el short roll tras la pantalla.", {
     rollSpot: SHORT_ROLL_SPOT,
     // Punto de referencia de la continuación profunda (ME-02 §3): O5 no lo
@@ -310,7 +532,7 @@ function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition): Possessio
     // T23 (defensa interior): D3 protege el espacio cercano al aro contra el
     // continuador; ajusta su llegada real a la ayuda (HF-002 §1.5).
     tD3ArriveHelp = Math.max(0, rawD3Arrival - interiorArrivalAdjustmentSeconds(d3.attributes.T23));
-    setArrival(ctx, "D3", tD3ArriveHelp, SHORT_ROLL_SPOT);
+    setArrival(ctx, "D3", tD3ArriveHelp, SHORT_ROLL_SPOT, tHelpDecision);
     event(
       ctx,
       tD3ArriveHelp,
@@ -338,7 +560,7 @@ function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition): Possessio
       "D4 intenta reparar hacia la esquina débil y deja libre a O4.",
       { arrivesAt: tD4ArriveAtCorner },
     );
-    setArrival(ctx, "D4", tD4ArriveAtCorner, WEAK_CORNER_SPOT);
+    setArrival(ctx, "D4", tD4ArriveAtCorner, WEAK_CORNER_SPOT, tD4RepairStart);
   }
 
   // --- Árbol de decisión de O1 --------------------------------------------
@@ -348,6 +570,7 @@ function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition): Possessio
 
   const shotClockRemainingSeconds = ctx.shotClockMs / 1000 - tDecision;
   if (shotClockRemainingSeconds <= 0) {
+    if (ctx.linked) return linkedShotClockViolation(ctx, "O1");
     return finalize(ctx, { kind: "shot_clock_violation" }, { status: "held", holderId: "O1", position: ctx.positions.O1! });
   }
 
@@ -372,6 +595,7 @@ function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition): Possessio
       shotType: "close_finish",
       shooterPos: ATTACKED_HOOP,
       tReady: tDecision + o1TimeToHoop + CLOSE_FINISH_PREP_SECONDS,
+      prepSeconds: CLOSE_FINISH_PREP_SECONDS,
       contesterId: "D5",
       contesterArrival: tDecision + d5TimeToHoop,
       contesterGeometry: d5HoopGeometry,
@@ -455,6 +679,7 @@ function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition): Possessio
           shotType: "three_point",
           shooterPos: WEAK_CORNER_SPOT,
           tReady: tPrepReadyO3 + invertReadyDelay,
+          prepSeconds: CATCH_AND_SHOOT_PREP_SECONDS + invertReadyDelay,
           contesterId: "D4",
           contesterArrival: tD4ArriveAtCorner,
           contesterGeometry: d4CornerGeometry,
@@ -468,6 +693,7 @@ function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition): Possessio
       shotType: "close_finish",
       shooterPos: ctx.positions.O5!,
       tReady: tO5Ready,
+      prepSeconds: CLOSE_FINISH_PREP_SECONDS + readyDelay,
       contesterId,
       contesterArrival: tContestArrival,
       contesterGeometry: rollContestGeometry,
@@ -511,6 +737,7 @@ function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition): Possessio
         shotType: "three_point",
         shooterPos: WEAK_CORNER_SPOT,
         tReady: tPrepReady + readyDelay,
+        prepSeconds: CATCH_AND_SHOOT_PREP_SECONDS + readyDelay,
         contesterId: "D4",
         contesterArrival: tCloseoutArrival,
         contesterGeometry: d4CornerGeometry,
@@ -533,6 +760,7 @@ function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition): Possessio
       shotType: "three_point",
       shooterPos: ctx.positions.O1!,
       tReady: tShotReadyO1,
+      prepSeconds: movingShotPrepSeconds(o1.attributes.T06),
       contesterId: "D5",
       contesterArrival: tD5Contest,
       contesterGeometry: { ...d5HoopGeometry, destinationPos: ctx.positions.O1! },
@@ -606,7 +834,7 @@ function runTrapPhase(ctx: CoreContext): PossessionCoreResult {
   const continuationShift = screenCoordinationShiftSeconds(o5.attributes.M04);
   const rollTravelSeconds = timeToReach(screenPoint, SHORT_ROLL_SPOT, attackerMoveSpeedMps(o5.attributes.F01));
   const tRollReady = Math.max(0.05, tUseScreen - continuationShift + rollTravelSeconds);
-  setArrival(ctx, "O5", tRollReady, SHORT_ROLL_SPOT);
+  setArrival(ctx, "O5", tRollReady, SHORT_ROLL_SPOT, tRollReady - rollTravelSeconds);
   event(ctx, tRollReady, "ejecutado", "roll_continuation", ["O5"], "O5 continúa hacia el short roll tras la pantalla.", {
     rollSpot: SHORT_ROLL_SPOT,
     // Punto de referencia de la continuación profunda (ME-02 §3): O5 no lo
@@ -622,7 +850,7 @@ function runTrapPhase(ctx: CoreContext): PossessionCoreResult {
   const d5TrapOrigin = ctx.positions.D5!;
   const rawD5TrapArrival = tTrapCall + timeToReach(d5TrapOrigin, screenPoint, d5TrapSpeed);
   const tD5TrapArrival = Math.max(0, rawD5TrapArrival - perimeterArrivalAdjustmentSeconds(d5.attributes.T22));
-  setArrival(ctx, "D5", tD5TrapArrival, screenPoint);
+  setArrival(ctx, "D5", tD5TrapArrival, screenPoint, tTrapCall);
   event(
     ctx,
     tD5TrapArrival,
@@ -641,7 +869,7 @@ function runTrapPhase(ctx: CoreContext): PossessionCoreResult {
   const rawD3LowManArrival = tLowManDecision + timeToReach(d3LowManOrigin, SHORT_ROLL_SPOT, d3LowManSpeed);
   const tD3LowManArrival = Math.max(0, rawD3LowManArrival - interiorArrivalAdjustmentSeconds(d3.attributes.T23));
   const d3BrakingExtra = closeoutBrakingExtraSeconds(d3.attributes.F03);
-  setArrival(ctx, "D3", tD3LowManArrival, SHORT_ROLL_SPOT);
+  setArrival(ctx, "D3", tD3LowManArrival, SHORT_ROLL_SPOT, tLowManDecision);
   event(
     ctx,
     tLowManDecision,
@@ -677,12 +905,13 @@ function runTrapPhase(ctx: CoreContext): PossessionCoreResult {
     `D4 rota hacia la amenaza que deja D3 sobre O3 (latencia M09 ${m09LatencyD4.toFixed(2)} s) y expone a O4.`,
     { arrivesAt: tD4ArriveAtCorner, m09LatencySeconds: m09LatencyD4 },
   );
-  setArrival(ctx, "D4", tD4ArriveAtCorner, WEAK_CORNER_SPOT);
+  setArrival(ctx, "D4", tD4ArriveAtCorner, WEAK_CORNER_SPOT, tD4RepairStart);
 
   // --- Decisión de O1 bajo trampa -----------------------------------------
   const tDecision = tUseScreen + recognitionLatencySeconds(o1.attributes.M01, o1.attributes.M05);
   const shotClockRemainingSeconds = ctx.shotClockMs / 1000 - tDecision;
   if (shotClockRemainingSeconds <= 0) {
+    if (ctx.linked) return linkedShotClockViolation(ctx, "O1");
     return finalize(ctx, { kind: "shot_clock_violation" }, { status: "held", holderId: "O1", position: ctx.positions.O1! });
   }
 
@@ -766,6 +995,7 @@ function runTrapPhase(ctx: CoreContext): PossessionCoreResult {
         shotType: o4ShotType,
         shooterPos: ctx.positions.O4!,
         tReady: tPrepReadyO4 + o4ReadyDelay,
+        prepSeconds: CATCH_AND_SHOOT_PREP_SECONDS + o4ReadyDelay,
         contesterId: "D2",
         contesterArrival: Infinity,
         contesterGeometry: {
@@ -797,6 +1027,7 @@ function runTrapPhase(ctx: CoreContext): PossessionCoreResult {
         shotType: "three_point",
         shooterPos: WEAK_CORNER_SPOT,
         tReady: tPrepReadyO3 + invertReadyDelay,
+        prepSeconds: CATCH_AND_SHOOT_PREP_SECONDS + invertReadyDelay,
         contesterId: "D4",
         contesterArrival: tD4ArriveAtCorner,
         contesterGeometry: d4CornerGeometry,
@@ -809,6 +1040,7 @@ function runTrapPhase(ctx: CoreContext): PossessionCoreResult {
       shotType: "close_finish",
       shooterPos: ctx.positions.O5!,
       tReady: tO5Ready,
+      prepSeconds: CLOSE_FINISH_PREP_SECONDS + readyDelay,
       contesterId: "D3",
       contesterArrival: tD3LowManArrival,
       contesterGeometry: d3RollGeometry,
@@ -837,6 +1069,7 @@ function runTrapPhase(ctx: CoreContext): PossessionCoreResult {
       shotType: "close_finish",
       shooterPos: ATTACKED_HOOP,
       tReady: tDecision + o1TimeToHoop + CLOSE_FINISH_PREP_SECONDS,
+      prepSeconds: CLOSE_FINISH_PREP_SECONDS,
       // D5 sigue de camino a la trampa, no protegiendo el aro: se
       // reconstruye su posición real (lejos del aro) con la misma
       // geometría, así que no hay contacto atribuible por defecto.
@@ -879,7 +1112,7 @@ function runTrapPhase(ctx: CoreContext): PossessionCoreResult {
  * reconstruir dónde está físicamente en el instante de tiro, no solo
  * cuándo "llega" a un punto de referencia.
  */
-interface ContestGeometry {
+export interface ContestGeometry {
   readonly originPos: Point2D;
   readonly destinationPos: Point2D;
   readonly speedMps: number;
@@ -907,6 +1140,13 @@ interface ShotAttemptArgs {
   /** Posición real del tirador en el instante de liberación (C1). */
   readonly shooterPos: Point2D;
   readonly tReady: number;
+  /**
+   * Duración del gesto de tiro hasta la liberación (preparación ya
+   * vigente de cada rama). Solo la usa el modo enlazado: los encargos de
+   * carga/balance se asumen al empezar el gesto, antes de conocer el
+   * resultado (ME-03 §4).
+   */
+  readonly prepSeconds: number;
   readonly contesterId: string;
   readonly contesterArrival: number;
   readonly contesterGeometry: ContestGeometry;
@@ -950,6 +1190,10 @@ function emitFieldGoalAttempt(
  * (`evaluateCloseoutLegality`) para decidir contestación legal o falta.
  */
 function resolveShotAttempt(ctx: CoreContext, args: ShotAttemptArgs): PossessionCoreResult {
+  if (ctx.linked) {
+    const violation = prepareLinkedShot(ctx, args);
+    if (violation) return violation;
+  }
   const shooter = player(ctx, args.shooterId);
   const contester = player(ctx, args.contesterId);
 
@@ -1054,14 +1298,111 @@ function resolveShotAttempt(ctx: CoreContext, args: ShotAttemptArgs): Possession
   });
 }
 
+/**
+ * Modo enlazado (ME-03 §3-§4), antes de resolver el tiro: el balón debe
+ * liberarse antes de que se agote el reloj de lanzamiento; el tirador llega
+ * de verdad al punto de lanzamiento; y los cuatro atacantes que no tiran
+ * asumen su encargo de carga o balance **antes** de conocer el resultado y
+ * antes de sembrar el rebote.
+ */
+function prepareLinkedShot(ctx: CoreContext, args: ShotAttemptArgs): PossessionCoreResult | null {
+  if (args.tReady >= ctx.shotClockMs / 1000) {
+    return linkedShotClockViolation(ctx, args.shooterId);
+  }
+  const tGesture = Math.max(0, args.tReady - args.prepSeconds);
+  const shooterAtGesture = historyPositionAt(ctx, args.shooterId, tGesture);
+  if (distance(shooterAtGesture, args.shooterPos) > 1e-6) {
+    const travel = timeToReach(shooterAtGesture, args.shooterPos, runSpeed(ctx, args.shooterId));
+    setArrival(ctx, args.shooterId, tGesture, args.shooterPos, tGesture - travel);
+  }
+  // La carrera real del defensor que cierra (misma geometría que decide
+  // contacto y oposición) queda en el historial para que la foto de cada
+  // instante la muestre.
+  const g = args.contesterGeometry;
+  const contestDistance = distance(g.originPos, g.destinationPos);
+  if (Number.isFinite(args.contesterArrival) && contestDistance > 1e-6 && g.speedMps > 0) {
+    const current = historyPositionAt(ctx, args.contesterId, args.tReady);
+    if (distance(current, g.destinationPos) > 1e-6) {
+      const departure = args.contesterArrival - contestDistance / g.speedMps;
+      setArrival(ctx, args.contesterId, args.contesterArrival, g.destinationPos, Math.max(0, departure));
+    }
+  }
+  assignReboundDuties(ctx, args.shooterId, tGesture);
+  return null;
+}
+
+const ATTACKING_SLOTS = ["O1", "O2", "O3", "O4", "O5"] as const;
+
+/**
+ * Encargos de carga/balance (ME-03 §4). «Mejor acceso» es el tiempo de
+ * llegada al aro atacado desde la posición real en el instante del gesto,
+ * con el movimiento ya modelado (F01), sin mirar dónde caerá el rebote.
+ * Desempate estable por ID real, nunca por el rol canónico. Los cargadores
+ * se desplazan hacia el aro y los de balance hacia la línea central en su
+ * mismo carril; son objetivos de desplazamiento a su velocidad real, no
+ * posiciones asignadas de golpe.
+ */
+function assignReboundDuties(ctx: CoreContext, shooterSlot: string, tGesture: number): void {
+  const linked = ctx.linked!;
+  const binding = linked.binding;
+  const ranked = ATTACKING_SLOTS.filter((slot) => slot !== shooterSlot)
+    .map((slot) => {
+      const position = historyPositionAt(ctx, slot, tGesture);
+      const speed = runSpeed(ctx, slot);
+      return { slot, realId: binding[slot] ?? slot, position, speed, arrival: timeToReach(position, ATTACKED_HOOP, speed) };
+    })
+    .sort((a, b) => a.arrival - b.arrival || (a.realId < b.realId ? -1 : a.realId > b.realId ? 1 : 0));
+
+  const crasherCount = linked.priority === "cargar_rebote" ? 2 : 1;
+  const crashers = ranked.slice(0, crasherCount);
+  const balancers = ranked.slice(crasherCount);
+
+  for (const c of crashers) {
+    redirect(ctx, c.slot, tGesture, tGesture + c.arrival, ATTACKED_HOOP);
+  }
+  for (const b of balancers) {
+    const target =
+      b.position.x > MIDCOURT_LINE_X
+        ? { x: MIDCOURT_LINE_X, y: Math.min(COURT_WIDTH_METERS, Math.max(0, b.position.y)) }
+        : b.position;
+    redirect(ctx, b.slot, tGesture, tGesture + timeToReach(b.position, target, b.speed), target);
+  }
+  linked.balancers = new Set(balancers.map((b) => b.slot));
+
+  const planLabel = linked.priority === "cargar_rebote" ? "Cargar rebote" : "Proteger balance";
+  const crashText = crashers.map((c) => `${c.slot} (llegada prevista al aro ${c.arrival.toFixed(2)} s)`).join(" y ");
+  const balanceText = balancers.map((b) => b.slot).join(", ");
+  event(
+    ctx,
+    tGesture,
+    "ordenado",
+    "rebound_duties_assigned",
+    [...crashers.map((c) => c.slot), ...balancers.map((b) => b.slot)],
+    `Plan «${planLabel}» antes de conocer el tiro de ${shooterSlot}: carga ${crashText}; ${balanceText} preparan el retorno.`,
+    {
+      priority: linked.priority,
+      shooter: shooterSlot,
+      crashers: crashers.map((c) => ({ slot: c.slot, arrivalSeconds: c.arrival })),
+      balancers: balancers.map((b) => ({ slot: b.slot, arrivalSeconds: b.arrival })),
+    },
+  );
+}
+
 function buildReboundCandidates(
   ctx: CoreContext,
   landingPoint: Point2D,
   closedOutPlayerId: string,
+  atSeconds?: number,
 ): ReboundCandidate[] {
-  return Object.keys(ctx.positions).map((id) => {
+  // Modo enlazado: posiciones reales en el instante del fallo y sin los
+  // atacantes que ya retornan por su encargo de balance.
+  const ids = ctx.linked
+    ? Object.keys(ctx.positions).filter((id) => !ctx.linked!.balancers.has(id))
+    : Object.keys(ctx.positions);
+  return ids.map((id) => {
     const profile = player(ctx, id);
-    const arrival = timeToReach(ctx.positions[id]!, landingPoint, REBOUND_CANDIDATE_SPEED_MPS);
+    const from = ctx.linked && atSeconds !== undefined ? historyPositionAt(ctx, id, atSeconds) : ctx.positions[id]!;
+    const arrival = timeToReach(from, landingPoint, REBOUND_CANDIDATE_SPEED_MPS);
     return {
       playerId: id,
       arrivalTimeSeconds: arrival,
@@ -1075,16 +1416,7 @@ function buildReboundCandidates(
 
 /** Elige quién controla un palmeo disputado solo entre quienes realmente llegan (HF-002 §1.4). */
 function pickTipWinner(ctx: CoreContext, tip: Extract<ReboundOutcome, { kind: "loose_ball_tip" }>): string {
-  let best = tip.nearestPlayerId;
-  let bestT20 = player(ctx, best).attributes.T20;
-  for (const id of tip.contestPoolPlayerIds) {
-    const t20 = player(ctx, id).attributes.T20;
-    if (t20 > bestT20) {
-      best = id;
-      bestT20 = t20;
-    }
-  }
-  return best;
+  return pickTipWinnerByT20(tip, (id) => player(ctx, id).attributes.T20);
 }
 
 interface LiveReboundArgs {
@@ -1102,6 +1434,7 @@ interface LiveReboundArgs {
  * duplicar la lógica de disputa de rebote.
  */
 function resolveLiveReboundAfterMiss(ctx: CoreContext, args: LiveReboundArgs): PossessionCoreResult {
+  if (ctx.linked) return resolveLinkedRebound(ctx, args);
   const seed = seedReboundLanding(ATTACKED_HOOP, args.shotOrigin, args.shotType, ctx.rng);
   const candidates = buildReboundCandidates(ctx, seed.landingPoint, args.contesterId);
   const reboundOutcome = resolveRebound(seed, candidates, ctx.rng);
@@ -1152,6 +1485,61 @@ function resolveLiveReboundAfterMiss(ctx: CoreContext, args: LiveReboundArgs): P
   );
 }
 
+/**
+ * Rebote en modo enlazado (ME-03 §3): misma siembra y misma disputa
+ * (T19/T20/F05) que ME-01, pero el núcleo no encadena la segunda
+ * oportunidad por su cuenta. Devuelve el control real (quién, dónde y
+ * cuándo) para que el tramo abra una fase nueva de la misma posesión
+ * (rebote ofensivo, 14 s) o una posesión nueva del rival (24 s). Un balón
+ * que cae fuera se registra con su último toque.
+ */
+function resolveLinkedRebound(ctx: CoreContext, args: LiveReboundArgs): PossessionCoreResult {
+  const seed = seedReboundLanding(ATTACKED_HOOP, args.shotOrigin, args.shotType, ctx.rng);
+  const candidates = buildReboundCandidates(ctx, seed.landingPoint, args.contesterId, args.atSeconds);
+  const reboundOutcome = resolveRebound(seed, candidates, ctx.rng);
+
+  if (reboundOutcome.kind === "out_of_bounds") {
+    event(
+      ctx,
+      args.atSeconds + seed.flightTimeSeconds,
+      "concedido",
+      "out_of_bounds",
+      [args.shooterId],
+      `El rebote sale fuera de la cancha; último toque de ${args.shooterId}.`,
+      { landingPoint: seed.landingPoint },
+    );
+    return finalize(
+      ctx,
+      { kind: "out_of_bounds", lastTouchPlayerId: args.shooterId },
+      { status: "dead", holderId: null, position: seed.landingPoint },
+    );
+  }
+
+  const winner = reboundOutcome.kind === "secured" ? reboundOutcome.playerId : pickTipWinner(ctx, reboundOutcome);
+  const arrival = candidates.find((c) => c.playerId === winner)?.arrivalTimeSeconds ?? 0;
+  const tControl = args.atSeconds + Math.max(1, arrival);
+  setArrival(ctx, winner, tControl, seed.landingPoint, args.atSeconds);
+  const offensive = isOffensivePlayer(winner);
+  event(
+    ctx,
+    tControl,
+    "concedido",
+    reboundOutcome.kind === "secured" ? "rebound_secured" : "rebound_contested",
+    [winner],
+    reboundOutcome.kind === "secured"
+      ? offensive
+        ? `${winner} captura el rebote ofensivo (el tiro tocó aro).`
+        : `${winner} asegura el rebote defensivo.`
+      : `${winner} controla el balón dividido tras el palmeo${offensive ? " (rebote ofensivo)" : " (rebote defensivo)"}.`,
+    { offensive, touchedRim: true, landingPoint: seed.landingPoint },
+  );
+  return finalize(
+    ctx,
+    { kind: offensive ? "missed_shot_offensive_rebound_continues" : "missed_shot_defensive_rebound" },
+    { status: "held", holderId: winner, position: seed.landingPoint },
+  );
+}
+
 function resolveOffensiveReboundContinuation(ctx: CoreContext, playerId: string, atSeconds: number): PossessionCoreResult {
   if (ctx.possessionPhase > MAX_PROGRESS_ITERATIONS) {
     return finalize(
@@ -1173,6 +1561,7 @@ function resolveOffensiveReboundContinuation(ctx: CoreContext, playerId: string,
     shotType: "close_finish",
     shooterPos: putbackSpot,
     tReady: atSeconds + CLOSE_FINISH_PREP_SECONDS,
+    prepSeconds: CLOSE_FINISH_PREP_SECONDS,
     contesterId: opposingContester,
     contesterArrival,
     // Segunda oportunidad inmediata bajo aro (simplificación ya vigente en
@@ -1206,7 +1595,11 @@ function resolveLooseBallAfterPass(
       ? `${defenderId} desvía el pase y recupera el control: pérdida en balón vivo.`
       : `${defenderId} desvía el pase; el balón queda suelto sin control claro.`,
   );
-  const deflectionSpot = ctx.positions[defenderId] ?? ctx.positions[passerId]!;
+  // Modo enlazado: el balón queda donde el defensor está de verdad en ese
+  // instante, no en el destino de su ayuda si aún no ha llegado.
+  const deflectionSpot = ctx.linked
+    ? historyPositionAt(ctx, defenderId, atSeconds)
+    : (ctx.positions[defenderId] ?? ctx.positions[passerId]!);
   if (isSteal) {
     return finalize(ctx, { kind: "steal_by_defense" }, { status: "held", holderId: defenderId, position: deflectionSpot });
   }
@@ -1244,9 +1637,24 @@ function resolveShootingFoulSequence(ctx: CoreContext, args: ShootingFoulArgs): 
   let t = args.atSeconds;
   let freeThrowsMade = 0;
   let lastMissed = false;
+  let tShooterAtLine = args.atSeconds;
+
+  if (ctx.linked) {
+    // El lanzador va de verdad a la línea de tiros libres (sin colocar al
+    // resto en los pasillos: la alineación de libres queda fuera de ME-03).
+    const from = historyPositionAt(ctx, args.shooterId, args.atSeconds);
+    tShooterAtLine = args.atSeconds + timeToReach(from, FREE_THROW_LINE_SPOT, runSpeed(ctx, args.shooterId));
+    setArrival(ctx, args.shooterId, tShooterAtLine, FREE_THROW_LINE_SPOT, args.atSeconds);
+  }
 
   for (let i = 0; i < award.count; i++) {
     t += FREE_THROW_PREP_SECONDS;
+    if (ctx.linked && i === 0) t = Math.max(t, tShooterAtLine);
+    if (ctx.linked && i === award.count - 1) {
+      // Último libre: los encargos se asumen al soltarlo, antes de conocer
+      // su resultado; nadie invade antes de la liberación.
+      assignReboundDuties(ctx, args.shooterId, t);
+    }
     const made = ctx.rng.next() < freeThrowProbability(shooter.attributes.T05);
     lastMissed = !made;
     if (made) freeThrowsMade += 1;

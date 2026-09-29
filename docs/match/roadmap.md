@@ -79,6 +79,12 @@ Ver `docs/match/{ACTIONS,CAPABILITIES,SCENARIOS,RULES}.md`.
 
 ### ME-03 — Posesiones enlazadas y transición
 
+**Estado: implementado** (PR ME-03: tramo de hasta cuatro posesiones
+enlazadas, carga/balance, transición y saques; queda una `DECISIÓN
+REQUERIDA` sobre la ventana de ventaja temprana, ver
+`docs/decisions/DECISION-REQUERIDA-ME-03-ventaja-temprana.md`). Ver
+`docs/match/{MODEL,RULES,ACTIONS,SCENARIOS}.md`.
+
 **Alcance:** conservar ubicación, control de balón, reloj y encargos al terminar una posesión. Rebote ofensivo, rebote defensivo, pérdida viva, salida de balón, regreso defensivo, ventaja temprana o ataque organizado. Comparar prioridad de carga y balance con jugadores y posiciones reales; no transformar «ataque temprano» en un bonus de tiro.
 
 **Interfaz y cierre:** jugar tramos de varias posesiones, identificar quién cargó, quién volvió y qué concedió cada elección. Relojes y reanudaciones de los caminos disponibles deben cuadrar. Primer perfil de coste por posesión y por secuencia para prevenir un bucle detallado demasiado caro.

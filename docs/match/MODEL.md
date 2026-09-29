@@ -1,11 +1,11 @@
 # Modelo y hechos del Laboratorio de Partido
 
 **Estado:** ACTIVE
-**Es fuente de verdad para:** las entidades de estado y el modelo de hechos que usa ME-01.
+**Es fuente de verdad para:** las entidades de estado y el modelo de hechos de ME-01, y el modelo de continuidad entre posesiones del tramo de ME-03.
 **Debe leerse cuando:** vayas a leer o modificar `modules/match/domain/simulation/`.
-**No cubre:** un partido completo de 40 minutos (todavía no existe).
+**No cubre:** un partido completo de 40 minutos (todavía no existe); las reglas de reloj/reanudación del tramo (ver `RULES.md`).
 **Documentos relacionados:** `RULES.md`, `ACTIONS.md`, `docs/architecture/DATA_AND_PERSISTENCE.md`.
-**Última actualización:** 2026-09-28.
+**Última actualización:** 2026-09-28 (ME-03).
 
 ## Entidades de estado (`MatchState`)
 
@@ -67,9 +67,40 @@ independiente del escenario: la misma media pista, quintetos y bloqueo
 central se resuelven con cualquiera de las dos coberturas (ver
 `ACTIONS.md`).
 
+## Continuidad entre posesiones: el tramo de ME-03
+
+`domain/sequence/play-tramo.ts` juega hasta cuatro posesiones estadísticas
+enlazadas desde `drop_con_ayuda` (7:12 del primer cuarto, 18 s). Separa
+conceptos que en ME-01 estaban fusionados:
+
+| Concepto | Dónde vive | Qué es |
+|---|---|---|
+| Evento | `TramoEvent` | Hecho con instante absoluto creciente, posesión y fase, equipo de la posesión, actores reales, foto de los diez, balón, control, relojes y marcador |
+| Fase de una posesión | `PhaseRecord` | Tramo ofensivo continuo: inicio, rebote ofensivo, salida segura, balón suelto propio; con su entrada (ataque organizado, ventaja temprana, segunda oportunidad) y el motivo |
+| Posesión estadística | `PossessionRecord` | Del control (o derecho a saque) de un equipo hasta que el rival lo obtiene; un rebote ofensivo **no** abre otra |
+| Equipo con control | `ControlState.controlTeamId` | Solo con balón retenido o pase en el aire |
+| Derecho a saque | `ControlState.throwInTeamId` | Balón muerto ya adjudicado a un equipo |
+| Balón suelto sin control | `ControlState.status = "balon_suelto"` | Nadie controla; la posesión estadística sigue abierta |
+
+En cada frontera se hereda: los diez IDs y sus coordenadas globales reales
+(trayectorias con puntos de paso, `geometry/trajectory.ts`), el balón,
+los encargos vigentes (`ResponsibilityChange`: cargar, balance, retorno,
+salida, saque, organización), el lado atacado, los relojes, el marcador y
+el estado del azar (`rngStateAtBoundaries`). Ninguna posesión posterior
+recarga `scenario.ts` ni vuelve a 7:12/18 s: los jugadores **se desplazan**
+hacia la disposición del bloqueo a su velocidad real.
+
+`TramoInput` es el snapshot único del tramo: semilla, los diez perfiles
+(copia profunda), la prioridad tras tiro de cada equipo, la cobertura y las
+versiones (`FIBA-2026`, `LAB-0.2`, `ME-03-TRAMO-1`). El tramo reutiliza el
+núcleo compartido en su **modo enlazado** con un marco local de ataque y
+roles canónicos (ver `docs/decisions/ADR-0006-linked-possessions-local-frame.md`);
+Puerto Ámbar ataca el aro izquierdo con sus propios jugadores y
+capacidades, y la foto que ve el usuario es siempre global.
+
 ## Qué no modela todavía
 
-Posesión estadística, fase ofensiva y evento están fusionados en un único
-concepto de "posesión de laboratorio" (el prompt ME-01 no exige separarlos
-todavía). No hay reloj de partido completo (cuatro períodos), ni
-sustituciones, ni más de un quinteto por equipo.
+Partido completo (cuatro períodos, fin de cuarto, prórroga), faltas
+acumuladas y bonus, sustituciones, más de un quinteto por equipo,
+alineación de jugadores en los pasillos de tiros libres, y un modo rápido
+de tramos (el rápido sigue limitado a sus escenarios de una posesión).
