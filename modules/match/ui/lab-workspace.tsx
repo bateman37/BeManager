@@ -19,6 +19,16 @@ import { CourtView } from "./court-view";
 import { NarrativeLog } from "./narrative-log";
 import { TramoSection, toTramoTeam, type PlayTramoAction } from "./tramo-panel";
 import type { ReboundPriority, TramoResult } from "@match/domain/sequence/tramo-model";
+import type { LabGameView } from "@match/application/use-cases/play-lab-game";
+import type { RuleBoundaryCase } from "@match/domain/game/rule-boundary-fixtures";
+import {
+  GameSection,
+  RuleBoundaryCases,
+  teamSettings,
+  toGameTeam,
+  type GameSettings,
+  type PlayGameAction,
+} from "./game-panel";
 
 const SCENARIO_LABELS: Record<ScenarioId, string> = {
   drop_con_ayuda: "Drop con ayuda",
@@ -167,19 +177,24 @@ interface LabWorkspaceActions {
   ) => Promise<CoverageComparisonResult>;
   /** ME-03: tramo de hasta cuatro posesiones enlazadas. */
   playTramo: PlayTramoAction;
+  /** ME-04: partido completo. */
+  playGame: PlayGameAction;
 }
 
 interface LabWorkspaceProps {
   readonly initialTeams: readonly LabTeamRecord[];
   readonly initialWarning?: string;
   readonly actions: LabWorkspaceActions;
+  /** ME-04: casos de frontera reglamentarios (fixtures de prueba, no partidos). */
+  readonly boundaryCases: readonly RuleBoundaryCase[];
+  readonly boundaryLabel: string;
 }
 
 function findTeamOf(teams: readonly LabTeamRecord[], playerId: string): LabTeamRecord | undefined {
   return teams.find((t) => t.players.some((p) => p.id === playerId));
 }
 
-export function LabWorkspace({ initialTeams, initialWarning, actions }: LabWorkspaceProps) {
+export function LabWorkspace({ initialTeams, initialWarning, actions, boundaryCases, boundaryLabel }: LabWorkspaceProps) {
   const [teams, setTeams] = useState(initialTeams);
   const offenseTeam = teams[0];
   const defenseTeam = teams[1];
@@ -203,6 +218,53 @@ export function LabWorkspace({ initialTeams, initialWarning, actions }: LabWorks
   const [tramoError, setTramoError] = useState<string | null>(null);
   const [playingTramo, setPlayingTramo] = useState(false);
   const [tramoRunId, setTramoRunId] = useState(0);
+  const [gameSettings, setGameSettings] = useState<GameSettings>({ seed: 82, teams: {} });
+  const [gameResult, setGameResult] = useState<LabGameView | null>(null);
+  const [gameError, setGameError] = useState<string | null>(null);
+  const [gameStale, setGameStale] = useState<string | null>(null);
+  const [playingGame, setPlayingGame] = useState(false);
+  const [gameRunId, setGameRunId] = useState(0);
+
+  // ME-04 §7: un partido ya resuelto pertenece a su foto; al cambiar la foto
+  // (perfiles, semilla, cobertura o prioridad) se retira y se dice por qué.
+  function invalidateGame(reason: string) {
+    if (gameResult) {
+      setGameStale(`${reason}: el partido anterior (semilla ${gameResult.input.seed}, ${gameResult.gameId}) pertenecía a otra foto y se ha retirado.`);
+    }
+    setGameResult(null);
+    setGameError(null);
+  }
+
+  function handleGameSettingsChange(next: GameSettings) {
+    setGameSettings(next);
+    invalidateGame("Has cambiado la semilla, una cobertura o una prioridad del partido");
+  }
+
+  async function handlePlayGame() {
+    if (!offenseTeam || !defenseTeam) return;
+    setPlayingGame(true);
+    setGameError(null);
+    setGameStale(null);
+    try {
+      const outcome = await actions.playGame(
+        gameSettings.seed,
+        toGameTeam(offenseTeam, teamSettings(gameSettings, offenseTeam.id)),
+        toGameTeam(defenseTeam, teamSettings(gameSettings, defenseTeam.id)),
+      );
+      if (outcome.status === "played") {
+        setGameResult(outcome.game);
+        setGameRunId((n) => n + 1);
+      } else {
+        setGameResult(null);
+        setGameError(outcome.message);
+      }
+    } catch {
+      setGameResult(null);
+      setGameError("No se pudo contactar con el servidor para jugar el partido. Inténtalo de nuevo.");
+    } finally {
+      setPlayingGame(false);
+    }
+  }
 
   // HF-002 §1.7/§4: un resultado calculado con una configuración anterior
   // nunca se atribuye visualmente a la selección actual. Al cambiar
@@ -293,6 +355,7 @@ export function LabWorkspace({ initialTeams, initialWarning, actions }: LabWorks
         ),
       );
       invalidatePreviousResults();
+      invalidateGame(`Has guardado el perfil de ${player.id}`);
       setSaveMessage(
         result.warnings.length > 0
           ? `Guardado con avisos: ${result.warnings.map((w) => w.message).join(" ")}`
@@ -317,6 +380,7 @@ export function LabWorkspace({ initialTeams, initialWarning, actions }: LabWorks
       );
       setSelectedPlayerId(newId);
       invalidatePreviousResults();
+      invalidateGame(`Has añadido la copia ${newId}`);
       setSaveMessage("Jugador duplicado y guardado.");
     } else {
       setSaveMessage(result.message);
@@ -498,6 +562,21 @@ export function LabWorkspace({ initialTeams, initialWarning, actions }: LabWorks
         usingReferenceProfiles={initialWarning !== undefined}
         onPlay={() => void handlePlayTramo()}
       />
+
+      <GameSection
+        teams={teams}
+        settings={gameSettings}
+        onSettingsChange={handleGameSettingsChange}
+        result={gameResult}
+        resultKey={gameRunId}
+        error={gameError}
+        staleNotice={gameStale}
+        running={playingGame}
+        usingReferenceProfiles={initialWarning !== undefined}
+        onPlay={() => void handlePlayGame()}
+      />
+
+      <RuleBoundaryCases cases={boundaryCases} label={boundaryLabel} />
 
       <section className="space-y-3 rounded-lg border border-slate-200 p-4 dark:border-slate-800">
         <h2 className="text-lg font-semibold">Tamaño de muestra (para las dos tablas siguientes)</h2>

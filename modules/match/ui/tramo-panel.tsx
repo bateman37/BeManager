@@ -96,17 +96,23 @@ function toSvg(p: Point2D): { x: number; y: number } {
   return { x: (p.x + MARGIN_M) * SCALE, y: (COURT_WIDTH_METERS - p.y + MARGIN_M) * SCALE };
 }
 
-function TramoCourt({
+/** Cancha completa con los diez en pista y el balón (compartida con el visor del partido de ME-04). */
+export function TramoCourt({
   event,
   teamIndexOf,
   teamNames,
   badgeOf,
+  rightHoopTeamIndex = 0,
 }: {
   readonly event: TramoEvent;
   readonly teamIndexOf: (playerId: string) => number;
   readonly teamNames: readonly [string, string];
   readonly badgeOf: (playerId: string) => string | undefined;
+  /** Equipo que ataca el aro derecho en el instante mostrado (cambia en C3 del partido). */
+  readonly rightHoopTeamIndex?: 0 | 1;
 }) {
+  const right = rightHoopTeamIndex;
+  const left = right === 0 ? 1 : 0;
   const width = (COURT_LENGTH_METERS + 2 * MARGIN_M) * SCALE;
   const height = (COURT_WIDTH_METERS + 2 * MARGIN_M) * SCALE;
   const origin = toSvg({ x: 0, y: COURT_WIDTH_METERS });
@@ -132,13 +138,13 @@ function TramoCourt({
         strokeWidth={2}
       />
       <line x1={mid.x} y1={origin.y} x2={mid.x} y2={origin.y + COURT_WIDTH_METERS * SCALE} stroke="currentColor" strokeWidth={1} />
-      <circle cx={rightHoop.x} cy={rightHoop.y} r={6} fill="none" stroke={TEAM_COLORS[0]} strokeWidth={2} />
-      <circle cx={leftHoop.x} cy={leftHoop.y} r={6} fill="none" stroke={TEAM_COLORS[1]} strokeWidth={2} />
-      <text x={rightHoop.x - 4} y={origin.y + 12} textAnchor="end" fontSize={9} fill={TEAM_COLORS[0]}>
-        aro que ataca {teamNames[0]} →
+      <circle cx={rightHoop.x} cy={rightHoop.y} r={6} fill="none" stroke={TEAM_COLORS[right]} strokeWidth={2} />
+      <circle cx={leftHoop.x} cy={leftHoop.y} r={6} fill="none" stroke={TEAM_COLORS[left]} strokeWidth={2} />
+      <text x={rightHoop.x - 4} y={origin.y + 12} textAnchor="end" fontSize={9} fill={TEAM_COLORS[right]}>
+        aro que ataca {teamNames[right]} →
       </text>
-      <text x={leftHoop.x + 4} y={origin.y + 12} textAnchor="start" fontSize={9} fill={TEAM_COLORS[1]}>
-        ← aro que ataca {teamNames[1]}
+      <text x={leftHoop.x + 4} y={origin.y + 12} textAnchor="start" fontSize={9} fill={TEAM_COLORS[left]}>
+        ← aro que ataca {teamNames[left]}
       </text>
 
       {event.positions.map(({ playerId, position }) => {
@@ -149,7 +155,7 @@ function TramoCourt({
           <g key={playerId}>
             {holder && <circle cx={point.x} cy={point.y} r={13} fill="none" stroke="#f59e0b" strokeWidth={3} />}
             <circle cx={point.x} cy={point.y} r={10} fill={TEAM_COLORS[teamIndexOf(playerId)]} opacity={0.88} />
-            <text x={point.x} y={point.y + 4} textAnchor="middle" fontSize={10} fill="white" fontWeight="bold">
+            <text x={point.x} y={point.y + (playerId.length > 2 ? 3 : 4)} textAnchor="middle" fontSize={playerId.length > 2 ? 7 : 10} fill="white" fontWeight="bold">
               {playerId}
             </text>
             {badge && (
