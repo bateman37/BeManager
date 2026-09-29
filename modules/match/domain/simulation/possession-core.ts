@@ -786,21 +786,37 @@ function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition): Possessio
     return finalize(ctx, { kind: "shot_clock_violation" }, { status: "held", holderId: "O1", position: ctx.positions.O1! });
   }
 
-  // Vía "finalizar": O1 ya tiene carril al aro antes de D5.
+  // Vía "finalizar": O1 conduce al aro. ME-06 §2 corrige un descarte
+  // prematuro de ME-04B: antes, cualquier carrera de reloj perdida por poco
+  // (`o1TimeToHoop >= d5TimeToHoop`, sin margen) excluía la vía entera con
+  // -Infinity, sin comparar valor, aunque D5 solo llegara a contestar y no a
+  // contener de verdad. Ahora se reutiliza la misma comprobación geométrica
+  // de contención real ya usada para D3/O5 más abajo (solape de radios
+  // corporales sobre la posición reconstruida con `positionAtInstant`, no
+  // una comparación de instantes de llegada): solo si D5 de verdad ocupa el
+  // punto de finalización cuando O1 estaría listo para liberar el tiro se
+  // excluye la vía; si D5 llega pero no llega a solapar, la vía sigue
+  // viable y se puntúa contestada (oposición 1) en vez de asumir un tiro
+  // limpio.
   const o1TimeToHoop = timeToReach(ctx.positions.O1!, ATTACKED_HOOP, attackerMoveSpeedMps(o1.attributes.F01));
   // T23 (defensa interior): D5 protege el aro contra la finalización directa.
   const d5RawTimeToHoop = timeToReach(ctx.positions.D5!, ATTACKED_HOOP, defenderLateralSpeedMps(d5.attributes.F04));
   const d5TimeToHoop = Math.max(0, d5RawTimeToHoop - interiorArrivalAdjustmentSeconds(d5.attributes.T23));
-  const finishViable = o1TimeToHoop < d5TimeToHoop && shotClockRemainingSeconds > 2;
   const d5HoopGeometry: ContestGeometry = {
     originPos: ctx.positions.D5!,
     destinationPos: ATTACKED_HOOP,
     speedMps: defenderLateralSpeedMps(d5.attributes.F04),
     brakingExtraSeconds: closeoutBrakingExtraSeconds(d5.attributes.F03),
   };
-  // Sin oposición prevista: por definición de esta vía, D5 llega después
-  // que O1 (`finishViable` exige `o1TimeToHoop < d5TimeToHoop`).
-  const finishValue = finishViable ? 2 * shotProbability(CLOSE_FINISH_BASE_PROBABILITY, o1.attributes.T01, 0) : -Infinity;
+  const tO1FinishReady = tDecision + o1TimeToHoop + CLOSE_FINISH_PREP_SECONDS;
+  const d5PosAtO1FinishReady = positionAtInstant(d5HoopGeometry, tDecision + d5TimeToHoop, tO1FinishReady);
+  const d5TrulyBlockingFinish = distance(d5PosAtO1FinishReady, ATTACKED_HOOP) <= COMBINED_CONTACT_RADIUS_METERS;
+  const finishMarginSeconds = tDecision + d5TimeToHoop - tO1FinishReady;
+  const finishViable = !d5TrulyBlockingFinish && shotClockRemainingSeconds > 2;
+  const finishOpposition: EffectiveOpposition = finishMarginSeconds >= 0.25 ? 0 : 1;
+  const finishValue = finishViable
+    ? 2 * shotProbability(CLOSE_FINISH_BASE_PROBABILITY, o1.attributes.T01, finishOpposition)
+    : -Infinity;
 
   // Vía "pase_o5": bate al perseguidor por >=0,2 s de retraso de pantalla,
   // hay línea, y D3 no negó el roll *antes* de esta decisión (si ya lo negó,
@@ -824,23 +840,26 @@ function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition): Possessio
   const d3PosAtO5ReadyEstimate = positionAtInstant(o5ContestGeometry, o5ContestArrival, tO5ReadyEstimate);
   const d3TrulyContainingEstimate =
     scenario.d3HelpsRoller && distance(d3PosAtO5ReadyEstimate, ctx.positions.O5!) <= COMBINED_CONTACT_RADIUS_METERS;
-  let o3EstimateMargin: number | null = null;
   let o5PassValue = -Infinity;
   if (o5PassViable) {
     if (!d3TrulyContainingEstimate) {
       // O5 recibe sin contención real prevista: puede finalizar en el roll.
       o5PassValue = 2 * shotProbability(CLOSE_FINISH_BASE_PROBABILITY, o5.attributes.T01, 0);
     } else {
-      const tPassArrivalO3Estimate = tO5ReadyEstimate + PASS_RELEASE_SECONDS + distanceSeconds(SHORT_ROLL_SPOT, WEAK_CORNER_SPOT);
-      const tPrepReadyO3Estimate = tPassArrivalO3Estimate + CATCH_AND_SHOOT_PREP_SECONDS;
-      o3EstimateMargin = tD4ArriveAtCorner - tPrepReadyO3Estimate;
-      o5PassValue =
-        o3EstimateMargin >= 0.25
-          ? 3 * shotProbability(THREE_POINT_BASE_PROBABILITY, o3.attributes.T04, 0)
-          : // Esquina también cerrada: la salida real de O5 será la segunda
-            // entrada (si es viable) o el tiro bajo contención; se estima con
-            // la oposición geométrica plena, sin decidir aún cuál de las dos.
-            2 * shotProbability(CLOSE_FINISH_BASE_PROBABILITY, o5.attributes.T01, 1);
+      // ME-06 §2 corrige la "estimación optimista de una recepción futura"
+      // diagnosticada en las ocho auditorías ME-04B-AUDIT-1: si D3 de verdad
+      // contendría a O5 en la recepción, esta vía **no** puede puntuarse con
+      // el valor de una inversión a O3 que todavía depende de una segunda
+      // decisión de O5 (su propia lectura real, más abajo) y de una segunda
+      // proyección defensiva de D4 dos tiempos más adelante — esa cadena de
+      // dos pases es exactamente la canasta/inversión futura que la
+      // continuación real podría no llegar a ejecutar. Se puntúa en su
+      // lugar la salida que O1 sí puede dar por cierta al pasar: O5 recibe
+      // contenido y, si su propia lectura real más abajo no encuentra la
+      // esquina abierta, acaba forzando el mismo tiro bajo contención que
+      // ya modela `finalizar_bajo_contencion`. Misma fórmula, sin sortear ni
+      // adivinar cuál de las dos ramas de la lectura real de O5 ganará.
+      o5PassValue = 2 * shotProbability(CLOSE_FINISH_BASE_PROBABILITY, o5.attributes.T01, 1);
     }
   }
 
@@ -934,13 +953,19 @@ function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition): Possessio
     salida_segura: { chosen: "safe_outlet_default", notViable: "not_available" },
   };
   const firstReadValues: Readonly<Record<FirstReadOptionId, Record<string, number | string | boolean | null>>> = {
-    finalizar: { situationalValue: finishValue, o1TimeToHoopSeconds: o1TimeToHoop, d5TimeToHoopSeconds: d5TimeToHoop, shotClockRemainingSeconds },
+    finalizar: {
+      situationalValue: finishValue,
+      o1TimeToHoopSeconds: o1TimeToHoop,
+      d5TimeToHoopSeconds: d5TimeToHoop,
+      shotClockRemainingSeconds,
+      d5TrulyBlockingFinish,
+      finishMarginSeconds,
+    },
     pase_o5: {
       situationalValue: o5PassValue,
       screenDelaySeconds: screenDelay,
       rollDeniedBeforeDecision,
       estimatedD3TrulyContaining: d3TrulyContainingEstimate,
-      estimatedCornerMarginSeconds: o3EstimateMargin,
     },
     pase_o3: { situationalValue: o3PassValue, marginSeconds: marginO3Direct, d3AlreadyLeft: rollDeniedBeforeDecision || scenario.startsWithHelpAlreadyCommitted },
     triple_o1: { situationalValue: tripleValue, windowD5Seconds: windowD5, t04: o1.attributes.T04, behindLine },
