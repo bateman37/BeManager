@@ -7,6 +7,14 @@
  * un único quinteto por equipo, sentido de ataque fijo, una sola cobertura
  * para quien defienda, y se detiene al cerrar cuatro posesiones, al
  * agotarse el tiempo (sin adjudicar la bocina) o por el guardián.
+ *
+ * ME-06 §3.2: este tramo no declara la segunda familia posicional (mano a
+ * mano sin balón) ni el selector de plan ofensivo — conserva los valores
+ * por defecto del motor compartido (`bloqueo_directo`/`guardar_espacio`
+ * siempre) y solo mide esa familia, tal y como permite el prompt cuando
+ * la tabla de resolución limitada del laboratorio no comparte aún el
+ * alcance real de la nueva familia. No lo etiquetes como una comparación
+ * de ME-06 si se usa este tramo.
  */
 import type { AttackDirection } from "../geometry/frame";
 import { toGlobal } from "../geometry/frame";

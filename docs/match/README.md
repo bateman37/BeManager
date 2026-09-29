@@ -5,7 +5,7 @@
 **Debe leerse cuando:** vayas a tocar cualquier código de `modules/match/` o a planificar la siguiente entrega del motor.
 **No cubre:** el razonamiento completo de diseño (ver `docs/match/reference/`) ni el orden de las diez entregas (ver `docs/match/roadmap.md`).
 **Documentos relacionados:** `docs/foundation/MATCH_CORE_PRINCIPLES.md`, `docs/architecture/MODULE_BOUNDARIES.md`.
-**Última actualización:** 2026-09-29 (ME-04B).
+**Última actualización:** 2026-09-29 (ME-06, adelantada antes de ME-05).
 
 ## Qué existe hoy (ME-01 a ME-04B)
 
@@ -51,13 +51,30 @@ emitido y separa motivo elegido de alternativas descartadas (esquema
 `ME-04B-AUDIT-1`, ver `AUDIT.md`). No cambia ninguna otra familia táctica,
 cobertura, regla de reloj/falta ni el acta.
 
+**ME-06 (adelantada antes de ME-05):** corrige dos errores acotados de
+ME-04B en la primera lectura del bloqueo directo (`finalizar` se
+descartaba por una carrera de reloj cruda en vez de la misma contención
+geométrica ya usada en el resto del árbol; `pase_o5` puntuaba una
+inversión a O3 todavía no ejecutada) e integra una **segunda familia
+posicional completa**, la mano a mano sin balón: entrada de O1 a O5 en
+el codo alto, mano a mano real de O5 a O2 (negable por D2/D5) y bloqueo
+indirecto de O4 para el corte de O3 en el lado débil (negable por D3,
+con ayuda opcional de D4 que abre a O4). Selector de plan ofensivo por
+equipo (`auto`/`bloqueo_directo`/`mano_a_mano_sin_balon`, `auto` evalúa
+la oportunidad de entrada de cada familia sin ejecutar la descartada) y
+orden fija de defensa sin balón (`negar_primera_salida`/
+`guardar_espacio`). Controles de laboratorio para restablecer un equipo
+desde el fixture o aplicar un incremento masivo de atributos. Ver
+`ACTIONS.md`, `CAPABILITIES.md` y `AUDIT.md` (esquema `ME-06-AUDIT-1`).
+
 **No implementado todavía:** dirección en vivo, fatiga, tiempos muertos,
-temporadas, más de una
-acción táctica ofensiva, coberturas de bloqueo distintas de drop/trampa,
+temporadas, coberturas de bloqueo distintas de drop/trampa,
 zonas, cualquier familia de ecosistema (ver
 `docs/foundation/COMPETITION_ECOSYSTEMS.md`), la mayoría de los 76 sucesos
-P01–P76 y 45 capacidades candidatas del estudio de atributos (27 de 45
-están activas; ver `CAPABILITIES.md`).
+P01–P76 y 45 capacidades candidatas del estudio de atributos (ahora T21
+también activo; ver `CAPABILITIES.md`). La falta sin tiro y la segunda
+entrada del bloqueo siguen siendo la decisión pendiente de
+`docs/decisions/DECISION-REQUERIDA-ME-04-alcance-natural-faltas-y-segunda-entrada.md`.
 
 ## Rutas de lectura por tarea
 
@@ -65,7 +82,7 @@ están activas; ver `CAPABILITIES.md`).
 |---|---|
 | Entender el estado/hechos del partido y la continuidad del tramo | `MODEL.md` |
 | Reglas FIBA 2026 alcanzables (incluidos relojes y saques del tramo) | `RULES.md` |
-| La acción de bloqueo directo, carga/balance y transición | `ACTIONS.md` |
+| Las dos familias ofensivas (bloqueo directo y mano a mano sin balón), carga/balance y transición | `ACTIONS.md` |
 | Capacidades activas y parámetros LAB-0.1/0.2/0.3 | `CAPABILITIES.md` |
 | Los tres escenarios, el modo «Jugar tramo», el partido completo y los casos de frontera | `SCENARIOS.md` |
 | Acta (boxscore) calculada de los hechos y su conciliación | `BOXSCORE.md` |

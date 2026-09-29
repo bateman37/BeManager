@@ -29,6 +29,7 @@ import {
   type GameSettings,
   type PlayGameAction,
 } from "./game-panel";
+import { ProfileControlsPanel, type ProfileControlsActions } from "./profile-controls-panel";
 
 const SCENARIO_LABELS: Record<ScenarioId, string> = {
   drop_con_ayuda: "Drop con ayuda",
@@ -179,6 +180,9 @@ interface LabWorkspaceActions {
   playTramo: PlayTramoAction;
   /** ME-04: partido completo. */
   playGame: PlayGameAction;
+  /** ME-06 §4: controles de perfiles de laboratorio. */
+  restoreTeamFromFixture: ProfileControlsActions["restoreTeamFromFixture"];
+  bulkIncrementAttributes: ProfileControlsActions["bulkIncrementAttributes"];
 }
 
 interface LabWorkspaceProps {
@@ -239,7 +243,7 @@ export function LabWorkspace({ initialTeams, initialWarning, actions, boundaryCa
     const reason =
       next.auditEnabled !== gameSettings.auditEnabled && next.seed === gameSettings.seed
         ? "Has cambiado si se registra auditoría"
-        : "Has cambiado la semilla, una cobertura o una prioridad del partido";
+        : "Has cambiado la semilla, una cobertura, una prioridad, un plan ofensivo o una orden de defensa sin balón del partido";
     setGameSettings(next);
     invalidateGame(reason);
   }
@@ -473,6 +477,19 @@ export function LabWorkspace({ initialTeams, initialWarning, actions, boundaryCa
           {saveMessage && <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{saveMessage}</p>}
         </div>
       </section>
+
+      <ProfileControlsPanel
+        teams={teams}
+        actions={{
+          restoreTeamFromFixture: actions.restoreTeamFromFixture,
+          bulkIncrementAttributes: actions.bulkIncrementAttributes,
+        }}
+        onTeamsChanged={setTeams}
+        onProfilesChanged={(reason) => {
+          invalidatePreviousResults();
+          invalidateGame(reason);
+        }}
+      />
 
       <section className="space-y-3 rounded-lg border border-slate-200 p-4 dark:border-slate-800">
         <h2 className="text-lg font-semibold">Escenario</h2>

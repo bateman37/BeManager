@@ -170,11 +170,17 @@ del repositorio (decisión pendiente de ME-04, actualizada).
 
 ### ME-06 — Acciones encadenadas sin balón
 
-**Alcance:** una segunda familia posicional representativa: mano a mano enlazado con corte o bloqueo indirecto, negación de la primera salida y una continuación segura. Añadir una ficha inicial de libro de jugadas con roles, situación, entrada y salida; los cinco atacantes y cinco defensores tienen ocupación y deberes. La misma acción puede desembocar en tiros distintos sin ser «jugada = porcentaje».
+**Estado: implementado, adelantada antes de ME-05** (Dennis decidió
+adelantar el orden de ejecución; los identificadores históricos no
+cambian — ver
+`docs/prompts/implementation/ME-06-ataques-variados-correccion-ME04-laboratorio.md`).
+Ver `docs/match/{ACTIONS,CAPABILITIES,AUDIT,SCENARIOS}.md`.
 
-**Interfaz y cierre:** escoger entre la entrada anterior de bloqueo directo y esta familia; cambiar deny/gap o fuente de ayuda y ver qué salida se abre o se cierra. Ver en el relato cuándo se rompe una jugada y cómo se reorganiza el ataque.
+**Alcance:** una segunda familia posicional representativa: mano a mano enlazado con corte o bloqueo indirecto, negación de la primera salida y una continuación segura. Añadir una ficha inicial de libro de jugadas con roles, situación, entrada y salida; los cinco atacantes y cinco defensores tienen ocupación y deberes. La misma acción puede desembocar en tiros distintos sin ser «jugada = porcentaje». De paso, corrige dos errores acotados de la primera lectura del bloqueo directo detectados al diagnosticar por qué dominaba una sola vía (ver `ACTIONS.md` §2 y `CAPABILITIES.md`).
 
-**Fuera:** libro completo, Spain y todas las variantes de mano a mano o bloqueo indirecto.
+**Interfaz y cierre:** escoger entre la entrada anterior de bloqueo directo y esta familia (`auto`/`bloqueo_directo`/`mano_a_mano_sin_balon`, por equipo); cambiar deny/gap (`negar_primera_salida`/`guardar_espacio`) o fuente de ayuda y ver qué salida se abre o se cierra. Ver en el relato cuándo se rompe una jugada y cómo se reorganiza el ataque. Controles de laboratorio para restablecer un equipo desde el fixture versionado o aplicar un incremento masivo de atributos, para comparar perfiles con la misma semilla.
+
+**Fuera:** libro completo, Spain y todas las variantes de mano a mano o bloqueo indirecto; sustituciones/órdenes en vivo, fatiga, tiempos muertos (siguen en ME-05); faltas sin tiro y segunda entrada del bloqueo directo, que siguen sin producirse de forma natural con el fixture (decisión pendiente de ME-04, sin resolver).
 
 ### ME-07 — Equipos y población de jugadores
 

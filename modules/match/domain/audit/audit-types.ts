@@ -26,7 +26,14 @@ export type AuditDecisionPoint =
   | "resolucion_tiro"
   | "asignacion_rebote"
   | "puerta_falta_sin_tiro"
-  | "sustitucion";
+  | "sustitucion"
+  // ME-06 §3: segunda familia posicional (mano a mano sin balón) y su
+  // selección automática entre familias.
+  | "seleccion_familia"
+  | "entrada_mano_a_mano"
+  | "transferencia_mano_a_mano"
+  | "bloqueo_indirecto_o3"
+  | "lectura_mano_a_mano";
 
 /**
  * Motivo estructurado y estable de cada opción. Uno por causa real del
@@ -69,7 +76,20 @@ export type AuditReasonCode =
   | "not_evaluated_short_circuit"
   | "situational_value_lower"
   | "tie_band_resolved_by_tendency"
-  | "not_available";
+  | "not_available"
+  // ME-06 §3.2: selección automática entre familias ofensivas.
+  | "family_opportunity_higher"
+  | "family_opportunity_lower"
+  | "family_forced_by_plan"
+  // ME-06 §3.1: mano a mano sin balón.
+  | "entry_pass_completed"
+  | "entry_pass_denied"
+  | "handoff_completed"
+  | "handoff_denied_defender_arrived"
+  | "cut_window_open"
+  | "cut_window_denied"
+  | "help_rotation_opened_o4"
+  | "help_rotation_not_available";
 
 export interface AuditOptionRecord {
   /** Identificador estable de la opción dentro de este punto (p. ej. "pase_o5", "finalizar"). */

@@ -4,6 +4,8 @@ import { PrismaLabTeamRepository } from "@match/infrastructure/db/prisma-lab-tea
 import { loadLabRoster } from "@match/application/use-cases/load-lab-roster";
 import { saveLabPlayer } from "@match/application/use-cases/save-lab-player";
 import { duplicateLabPlayer } from "@match/application/use-cases/duplicate-lab-player";
+import { restoreLabTeamFromFixture } from "@match/application/use-cases/restore-lab-team-from-fixture";
+import { bulkIncrementLabAttributes, type LabBulkIncrementAmount } from "@match/application/use-cases/bulk-increment-lab-attributes";
 import { runLabScenario } from "@match/application/use-cases/run-lab-scenario";
 import {
   compareLabScenarioBatch,
@@ -36,6 +38,20 @@ export async function duplicatePlayerAction(
 ) {
   const duplicated = duplicateLabPlayer(source, newId, newName);
   return saveLabPlayer(repository, teamId, duplicated);
+}
+
+/** ME-06 §4: restablece los doce perfiles del fixture versionado de un equipo. */
+export async function restoreTeamFromFixtureAction(teamId: string) {
+  return restoreLabTeamFromFixture(repository, teamId);
+}
+
+/** ME-06 §4: incremento masivo (+1/+3/+5) sobre los jugadores seleccionados de un equipo. */
+export async function bulkIncrementAttributesAction(
+  teamId: string,
+  playerIds: readonly string[],
+  amount: LabBulkIncrementAmount,
+) {
+  return bulkIncrementLabAttributes(repository, teamId, playerIds, amount);
 }
 
 export async function runScenarioAction(

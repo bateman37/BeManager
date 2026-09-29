@@ -5,7 +5,7 @@
 **Debe leerse cuando:** vayas a añadir o cambiar un estado terminal, una falta o una reanudación.
 **No cubre:** el reglamento completo (solo lo alcanzable por el escenario de ME-01); NBA/NCAA no están implementados.
 **Documentos relacionados:** `docs/match/reference/BeManager-estudio-baloncesto-v1.md` (capítulo 01 §§1.1, 1.4–1.5; capítulo 02 §§2.2–2.5), `MODEL.md` (continuidad del tramo), Official Basketball Rules 2026 v1.1, arts. 4, 8–12, 17, 19, 28, 29, 33–34, 41, 42, 44 y 50–51.
-**Última actualización:** 2026-09-29 (ME-04B).
+**Última actualización:** 2026-09-29 (ME-06, adelantada antes de ME-05).
 
 ## Perfil de reglas
 
@@ -112,6 +112,14 @@ pero comparadas contra dos radios distintos. El Tapón T18 es elegible con
 cualquier oposición geométrica real (0,5 o 1), sin contacto ilegal ya
 sancionado, y solo si `maxTouchHeightMeters` alcanza
 `shotReleaseHeightMeters`; C01/C04 no reciben un segundo premio.
+
+**ME-06:** la mano a mano sin balón reutiliza este mismo modelo de
+contacto/contestación sin excepción (el tiro de O2/O3/O4 se resuelve con
+el mismo `resolveShotAttempt`); no introduce una regla de falta ni de
+oposición nueva. La entrega/hand-off y el bloqueo/corte del lado débil
+usan la misma comprobación de contención geométrica (solape de radios
+corporales sobre la posición reconstruida en el instante real) para
+decidir si se niegan, no una regla de contacto distinta.
 
 ## Estadística oficial FIBA: FGA/FGM/FTA/FTM/puntos (C3, ME-02)
 

@@ -8,6 +8,8 @@ import {
   compareCoverageAction,
   playTramoAction,
   playGameAction,
+  restoreTeamFromFixtureAction,
+  bulkIncrementAttributesAction,
 } from "./actions";
 import { listRuleBoundaryCases } from "@match/application/use-cases/list-rule-boundary-cases";
 import { RULE_BOUNDARY_LABEL } from "@match/domain/game/rule-boundary-fixtures";
@@ -47,6 +49,8 @@ export default async function LabPage() {
           compareCoverage: compareCoverageAction,
           playTramo: playTramoAction,
           playGame: playGameAction,
+          restoreTeamFromFixture: restoreTeamFromFixtureAction,
+          bulkIncrementAttributes: bulkIncrementAttributesAction,
         }}
         boundaryCases={boundaryCases}
         boundaryLabel={RULE_BOUNDARY_LABEL}

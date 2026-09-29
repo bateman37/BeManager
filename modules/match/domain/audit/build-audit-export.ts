@@ -9,8 +9,10 @@ import type { GameInput, GameResult } from "../game/game-model";
 import type { PhaseEntry } from "../sequence/tramo-model";
 import { reconcileBoxScore, type ReconciliationCheck } from "../game/box-score";
 import type { AuditCoverageGap, AuditDecisionRecord } from "./audit-types";
+import { LAB_ROSTER_FIXTURE } from "../players/lab-roster-fixture";
+import type { PlayerProfile } from "../players/player-profile";
 
-export const AUDIT_SCHEMA_VERSION = "ME-04B-AUDIT-1";
+export const AUDIT_SCHEMA_VERSION = "ME-06-AUDIT-1";
 
 export interface AuditExportRun {
   readonly schemaVersion: typeof AUDIT_SCHEMA_VERSION;
@@ -27,6 +29,14 @@ export interface AuditExportRun {
   /** Fecha de exportación (navegador), separada del cálculo determinista del partido. */
   readonly exportedAt: string;
   readonly auditEnabled: boolean;
+  /**
+   * Huella estable del partido (ME-06 §5): deriva de la foto efectiva de
+   * ambos equipos y de las versiones del contrato, **excluyendo** semilla,
+   * `gameId`, `exportedAt` y `buildId` (campos volátiles o de estudio, no
+   * de la foto). Dos exportaciones con la misma huella son comparables
+   * aunque cambie la semilla o se recargue el navegador.
+   */
+  readonly matchFingerprint: string;
 }
 
 export interface AuditExportTeamPlayer {
@@ -35,6 +45,13 @@ export interface AuditExportTeamPlayer {
   readonly attributes: Readonly<Record<string, number>>;
   readonly measures: Readonly<Record<string, number>>;
   readonly pnrTendency: string;
+  /**
+   * Diferencias reales de atributos frente a `LAB_ROSTER_FIXTURE` (ME-06
+   * §5), `delta = actual - fixture`, solo los atributos que difieren.
+   * `null` cuando el ID no pertenece al fixture (jugador añadido a mano):
+   * nunca se infiere una diferencia contra un origen que no existe.
+   */
+  readonly fixtureDiff: Readonly<Record<string, number>> | null;
 }
 
 export interface AuditExportTeam {
@@ -44,7 +61,19 @@ export interface AuditExportTeam {
   readonly declaredRoles: Readonly<Record<string, readonly number[]>>;
   readonly priority: string;
   readonly coverage: string;
+  /** ME-06 §3.2: plan ofensivo previo de este equipo para todo el partido. */
+  readonly offensivePlan: string;
+  /** ME-06 §3.1: orden de defensa sin balón de este equipo. */
+  readonly offBallDefensiveCall: string;
   readonly roster: readonly AuditExportTeamPlayer[];
+  /**
+   * Huella estable de la foto efectiva de este equipo (ME-06 §5): deriva
+   * de atributos, medidas, quinteto, roles, cobertura y órdenes de todo
+   * el roster, no de campos volátiles. Se recalcula siempre desde la
+   * foto completa: una etiqueta de lote (`+3`, etc.) nunca sustituye a
+   * esta huella ni se infiere de atributos saturados en 15.
+   */
+  readonly fingerprint: string;
 }
 
 export interface AuditExportPossessionRejections {
@@ -106,6 +135,18 @@ export interface AuditExportPlayerSummary {
   readonly dnp: boolean;
 }
 
+export interface AuditExportFamilyTeamSummary {
+  readonly teamId: string;
+  /** `"bloqueo_directo"` | `"mano_a_mano_sin_balon"` (ME-06 §3). */
+  readonly family: string;
+  /** Veces que `seleccion_familia` eligió realmente esta familia para este equipo. */
+  readonly entries: number;
+  readonly fga2: number;
+  readonly fgm2: number;
+  readonly fga3: number;
+  readonly fgm3: number;
+}
+
 export interface AuditExportResult {
   readonly finalScore: Readonly<Record<string, number>>;
   readonly winnerTeamId: string | null;
@@ -117,6 +158,14 @@ export interface AuditExportResult {
   readonly summary: {
     readonly byTeam: readonly AuditExportTeamSummary[];
     readonly byPlayer: readonly AuditExportPlayerSummary[];
+    /**
+     * Entradas y tiros por familia ofensiva y equipo (ME-06 §5), a partir
+     * de hechos reales: solo cubre entradas de ataque organizado con
+     * `seleccion_familia` registrada (con auditoría activada). Los FGA de
+     * transición/segunda oportunidad/segunda entrada no se atribuyen a
+     * ninguna familia aquí; su hueco se declara en `coverageGaps`.
+     */
+    readonly byFamily: readonly AuditExportFamilyTeamSummary[] | null;
     /** Motivos de rechazo de las tres ramas hoy ausentes (§4): solo con auditoría activada. */
     readonly rejectionReasons: readonly AuditExportPossessionRejections[] | null;
   };
@@ -217,6 +266,136 @@ function buildRejectionReasons(decisions: readonly AuditDecisionRecord[]): Audit
   });
 }
 
+/** Hash estable no criptográfico (FNV-1a de 32 bits), suficiente para comparar fotos, no para seguridad. */
+function fnv1a(text: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+/** `JSON.stringify` con claves de objeto ordenadas: el mismo contenido siempre produce el mismo texto, con independencia del orden real de construcción. */
+function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v)}`).join(",")}}`;
+}
+
+function findFixturePlayer(playerId: string): PlayerProfile | null {
+  for (const team of LAB_ROSTER_FIXTURE) {
+    const player = team.players.find((p) => p.id === playerId);
+    if (player) return player;
+  }
+  return null;
+}
+
+function attributeFixtureDiff(actual: PlayerProfile): Readonly<Record<string, number>> | null {
+  const fixture = findFixturePlayer(actual.id);
+  if (!fixture) return null;
+  const diffs: Record<string, number> = {};
+  for (const key of Object.keys(actual.attributes)) {
+    const a = (actual.attributes as unknown as Record<string, number>)[key]!;
+    const f = (fixture.attributes as unknown as Record<string, number>)[key];
+    if (f !== undefined && a !== f) diffs[key] = a - f;
+  }
+  return diffs;
+}
+
+/** Huella de la foto efectiva de un equipo (ME-06 §5): sin campos volátiles. */
+function teamFingerprint(team: GameInput["teams"][number]): string {
+  return fnv1a(
+    stableStringify({
+      priority: team.priority,
+      coverage: team.coverage,
+      offensivePlan: team.offensivePlan,
+      offBallDefensiveCall: team.offBallDefensiveCall,
+      starters: [...team.starters].sort(),
+      declaredRoles: team.declaredRoles,
+      roster: team.roster
+        .map((p) => ({
+          id: p.id,
+          name: p.name,
+          age: p.age,
+          template: p.template,
+          pnrTendency: p.pnrTendency,
+          attributes: p.attributes,
+          measures: p.measures,
+        }))
+        .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
+    }),
+  );
+}
+
+function playerTeamId(input: GameInput, playerId: string): string | null {
+  for (const t of input.teams) if (t.roster.some((p) => p.id === playerId)) return t.id;
+  return null;
+}
+
+/**
+ * Entradas y tiros por familia ofensiva y equipo (ME-06 §5): agrupa
+ * `seleccion_familia` por (posesión, fase) para saber qué familia se jugó
+ * en cada ataque organizado, y atribuye los `field_goal_attempt` reales
+ * de la misma (posesión, fase) a esa familia — nunca un tiro dos veces
+ * (una sola fase por decisión) ni una magnitud inventada. Los FGA de
+ * fases sin `seleccion_familia` (transición, segunda oportunidad, segunda
+ * entrada) quedan fuera; se cuentan aparte como hueco de cobertura.
+ */
+function buildFamilySummary(
+  input: GameInput,
+  result: GameResult,
+  decisions: readonly AuditDecisionRecord[],
+): { readonly rows: AuditExportFamilyTeamSummary[]; readonly unattributedFga: number; readonly unattributedPossessions: number } {
+  const phaseFamily = new Map<string, { teamId: string; family: string }>();
+  const entries = new Map<string, number>();
+  for (const d of decisions) {
+    if (d.point !== "seleccion_familia" || d.possessionIndex === null || d.phaseIndex === null) continue;
+    if (!d.chosenOptionId) continue;
+    const teamId = d.holderId ? playerTeamId(input, d.holderId) : null;
+    if (!teamId) continue;
+    const key = `${d.possessionIndex}:${d.phaseIndex}`;
+    phaseFamily.set(key, { teamId, family: d.chosenOptionId });
+    const entryKey = `${teamId}|${d.chosenOptionId}`;
+    entries.set(entryKey, (entries.get(entryKey) ?? 0) + 1);
+  }
+
+  const shots = new Map<string, { fga2: number; fgm2: number; fga3: number; fgm3: number }>();
+  let unattributedFga = 0;
+  const unattributedPossessions = new Set<number>();
+  for (const ev of result.events) {
+    if (ev.kind !== "field_goal_attempt") continue;
+    const key = `${ev.possessionIndex}:${ev.phaseIndex}`;
+    const attribution = phaseFamily.get(key);
+    if (!attribution) {
+      unattributedFga += 1;
+      unattributedPossessions.add(ev.possessionIndex);
+      continue;
+    }
+    const shotKey = `${attribution.teamId}|${attribution.family}`;
+    const line = shots.get(shotKey) ?? { fga2: 0, fgm2: 0, fga3: 0, fgm3: 0 };
+    const three = ev.detail.shotType === "three_point";
+    const made = ev.detail.made === true;
+    if (three) {
+      line.fga3 += 1;
+      if (made) line.fgm3 += 1;
+    } else {
+      line.fga2 += 1;
+      if (made) line.fgm2 += 1;
+    }
+    shots.set(shotKey, line);
+  }
+
+  const keys = new Set<string>([...entries.keys(), ...shots.keys()]);
+  const rows = [...keys].map((key): AuditExportFamilyTeamSummary => {
+    const [teamId, family] = key.split("|") as [string, string];
+    const line = shots.get(key) ?? { fga2: 0, fgm2: 0, fga3: 0, fgm3: 0 };
+    return { teamId, family, entries: entries.get(key) ?? 0, ...line };
+  });
+  return { rows, unattributedFga, unattributedPossessions: unattributedPossessions.size };
+}
+
 function exportTeam(team: GameInput["teams"][number]): AuditExportTeam {
   return {
     id: team.id,
@@ -225,13 +404,17 @@ function exportTeam(team: GameInput["teams"][number]): AuditExportTeam {
     declaredRoles: team.declaredRoles,
     priority: team.priority,
     coverage: team.coverage,
+    offensivePlan: team.offensivePlan,
+    offBallDefensiveCall: team.offBallDefensiveCall,
     roster: team.roster.map((p) => ({
       id: p.id,
       name: p.name,
       attributes: { ...p.attributes } as unknown as Record<string, number>,
       measures: { ...p.measures } as unknown as Record<string, number>,
       pnrTendency: p.pnrTendency,
+      fixtureDiff: attributeFixtureDiff(p),
     })),
+    fingerprint: teamFingerprint(team),
   };
 }
 
@@ -253,7 +436,20 @@ export function buildAuditExport(
 ): AuditExportV1 {
   const auditEnabled = input.auditEnabled === true;
   const decisions = result.audit?.decisions ?? [];
-  const coverageGaps = result.audit?.coverageGaps ?? [];
+  const family = auditEnabled ? buildFamilySummary(input, result, decisions) : null;
+  const coverageGaps = [
+    ...(result.audit?.coverageGaps ?? []),
+    ...(family && family.unattributedFga > 0
+      ? [
+          {
+            point: "seleccion_familia",
+            reason:
+              "Los FGA de fases sin `seleccion_familia` registrada (transición/ventaja temprana, segunda oportunidad, segunda entrada del bloqueo directo) no se atribuyen a ninguna familia en result.summary.byFamily.",
+            possessionsAffected: family.unattributedPossessions,
+          },
+        ]
+      : []),
+  ];
   const teamIds = input.teams.map((t) => t.id);
   const reconciliation = reconcileBoxScore({
     box: result.box,
@@ -277,6 +473,14 @@ export function buildAuditExport(
       buildId: readBuildId(),
       exportedAt: options.exportedAt ?? new Date().toISOString(),
       auditEnabled,
+      matchFingerprint: fnv1a(
+        stableStringify({
+          rulesetVersion: input.rulesetVersion,
+          labParametersVersion: input.labParametersVersion,
+          gameVersion: input.gameVersion,
+          teams: input.teams.map((t) => teamFingerprint(t)).sort(),
+        }),
+      ),
     },
     input: {
       teams: [exportTeam(input.teams[0]), exportTeam(input.teams[1])],
@@ -304,6 +508,7 @@ export function buildAuditExport(
       effectivePlayedMs: result.effectivePlayedMs,
       summary: {
         byTeam: teamIds.map((teamId) => buildTeamSummary(input, result, teamId)),
+        byFamily: family?.rows ?? null,
         byPlayer: Object.values(result.box.players).map((line): AuditExportPlayerSummary => ({
           playerId: line.playerId,
           teamId: line.teamId,

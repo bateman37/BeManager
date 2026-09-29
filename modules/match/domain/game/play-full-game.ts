@@ -26,7 +26,7 @@ import {
 } from "../geometry/frame";
 import { truncateTrajectory } from "../geometry/trajectory";
 import { secondsToMs, type Milliseconds } from "../time/clock";
-import type { DefensiveCoverage } from "../lab/match-input";
+import type { DefensiveCoverage, OffensivePlanChoice, OffBallDefensiveCall } from "../lab/match-input";
 import { PASS_FLIGHT_SPEED_MPS } from "../lab/lab-0-1-parameters";
 import type { PlayerProfile } from "../players/player-profile";
 import { FUNCTIONAL_ROLE_LABELS, type FunctionalRole } from "../players/functional-roles";
@@ -217,6 +217,22 @@ class GameRun extends LinkedRun {
 
   protected coverageWhenDefending(teamId: string): DefensiveCoverage {
     return this.teamInputs.get(teamId)!.coverage;
+  }
+
+  protected offensivePlanWhenAttacking(teamId: string): OffensivePlanChoice {
+    // La segunda entrada del bloqueo directo (§ decisión pendiente de
+    // faltas/segunda entrada) es una continuación del propio bloqueo
+    // central, con roles y geometría reasignados para ese ángulo nuevo
+    // (`rebindFrame`): no es "iniciar cada ataque organizado" en el
+    // sentido de ME-06 §3.2, así que no vuelve a evaluar la familia — se
+    // queda en el bloqueo directo aunque el equipo tenga configurada la
+    // mano a mano o `auto`.
+    if (this.currentSetKind !== "central") return "bloqueo_directo";
+    return this.teamInputs.get(teamId)!.offensivePlan;
+  }
+
+  protected offBallCallWhenDefending(teamId: string): OffBallDefensiveCall {
+    return this.teamInputs.get(teamId)!.offBallDefensiveCall;
   }
 
   protected coreRules(): LinkedGameRules {

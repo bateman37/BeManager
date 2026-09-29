@@ -5,7 +5,7 @@
 **Debe leerse cuando:** vayas a añadir un escenario, una cobertura, o a entender por qué una rama concreta es alcanzable.
 **No cubre:** el modo rápido completo de ME-08 (aquí solo hay una aproximación limitada a este escenario).
 **Documentos relacionados:** `ACTIONS.md`, `RULES.md`.
-**Última actualización:** 2026-09-29 (ME-04B).
+**Última actualización:** 2026-09-29 (ME-06, adelantada antes de ME-05).
 
 ## Los tres escenarios (`domain/lab/scenario.ts`)
 
@@ -120,6 +120,15 @@ un aviso. El visor muestra ganador, marcador y parciales, faltas de equipo y
 bonus, sustituciones, relato por período → posesión → evento con cancha y
 quinteto en pista, y el acta con minutos, DNP y su conciliación.
 
+**ME-06:** cada equipo añade un **plan ofensivo** (`auto` por defecto,
+`bloqueo_directo` o `mano_a_mano_sin_balon`) y una **orden de defensa sin
+balón** (`guardar_espacio` por defecto o `negar_primera_salida`), junto a
+cobertura y prioridad; cambiar cualquiera de los dos también retira el
+partido anterior. El marcador muestra el plan/orden reales de cada
+equipo, no solo el resultado del tiro; el relato ya narra en prosa la
+entrada, la entrega y el bloqueo/corte de la mano a mano cuando esa
+familia se juega.
+
 **Partido natural publicado (marcador anterior a ME-04B, ver abajo):** semilla
 **82**, drop/drop, «Proteger balance» en ambos. Las semillas naturales
 útiles para casos de frontera siguen siendo válidas para su mecanismo
@@ -214,3 +223,62 @@ ME-04B se comprueban además en `domain/game/me04b.test.ts`,
 `domain/simulation/me04b.test.ts` y `domain/audit/audit-export-me04b.test.ts`,
 con el plan `docs/testing/manual/ME-04B-manual-test-plan.md`. El coste se
 perfila con `npm run profile:game` (`scripts/profile-game.ts`).
+
+## Segunda familia y selector automático (ME-06)
+
+Muestra pequeña y honesta (semilla 82, drop/drop, «Proteger balance»,
+fixture vigente del repositorio, no las ocho semillas naturales de
+ME-04B): distingue siempre fixture puro de una foto editada.
+
+- **Auto frente a familia forzada, misma semilla:** con la plantilla
+  natural, `auto` elige `bloqueo_directo` en las 219 aperturas
+  organizadas de la semilla 82 (idéntico a forzar `bloqueo_directo`
+  explícitamente: 129–145, 204 posesiones, vía `pase_o5` en las 219
+  lecturas) — D5, en `drop`, protege un aro geométricamente más cerca del
+  portador que cualquier recepción perimetral de la mano a mano en esta
+  disposición concreta, la misma causa espacial que ya explica el
+  dominio de `pase_o5` en ME-04B. `auto` **sí** elige la mano a mano en
+  casos construidos donde de verdad es mejor (`estimateHandoffOpportunity`
+  supera a `estimateBloqueoDirectoOpportunity`, ver
+  `domain/game/me06-mano-a-mano.test.ts`); no se ha forzado una
+  frecuencia de reparto.
+- **Mano a mano forzada, misma semilla:** 73–67, 182 posesiones. El
+  reparto de tiro cambia de forma marcada frente al bloqueo directo
+  (más 3PA/menos 2PA: Sierra Clara 28/87 frente a 91/18), consistente
+  con que la primera salida real de esta familia es casi siempre
+  perimetral (O3/O4), no una finalización cercana.
+- **Contraste de la orden de defensa sin balón** (misma semilla y
+  familia): `guardar_espacio` → 206 entradas, vía `continuar_o4` en 193
+  de las 206 lecturas (D4 ayuda casi siempre que D3 no deniega con
+  margen real: `reasonCode help_rotation_opened_o4`); `negar_primera_salida`
+  → 210 entradas, vía `pase_o3` en 201 de las 210 (D4 nunca ayuda:
+  `continuar_o4` queda siempre en `help_rotation_not_available`). Marcador
+  73–67 frente a 77–99: la orden desplaza de verdad quién recibe el tiro
+  y con qué oposición, causa observable en `bloqueo_indirecto_o3`, no una
+  moneda al aire.
+- **Base frente a `+3`, una sola selección de jugadores/equipo (Sierra
+  Clara), misma semilla y órdenes:** base 73–67 (28/87 2PA/3PA); Sierra
+  Clara `+3` a los 27 atributos activos de los doce inscritos → 109–68
+  (48/85 2PA/3PA), manteniendo la misma vía dominante (`continuar_o4`).
+  No se compara como una regresión de marcador (es una edición real, no
+  la misma foto): el efecto sigue una ventaja de habilidades explicable,
+  no un cambio de mecanismo.
+- **Opciones con frecuencia cero en esta muestra y su `reasonCode`:**
+  `lectura_mano_a_mano:finalizar_portador` (`lane_closed_help_ready`: D5
+  protege un aro más próximo que cualquier recepción de esta familia en
+  esta disposición, misma causa espacial que en el bloqueo directo);
+  `lectura_mano_a_mano:pase_o1`/`pase_o3` cuando no son la vía elegida
+  (`situational_value_lower`, evaluadas de verdad y perdidas por valor,
+  no cortocircuitadas); `bloqueo_indirecto_o3:ayuda_d4_abre_o4` bajo
+  `negar_primera_salida` (`help_rotation_not_available`, por diseño de
+  esa orden). Ninguna de estas ausencias es un cortocircuito: cada una
+  tiene una condición real registrada.
+
+Reproducible con `SIERRA_CLARA`/`PUERTO_AMBAR` del fixture,
+`offensivePlan`/`offBallDefensiveCall` en `buildGameInput` y
+`buildAuditExport` para extraer `decisions.records`/`result.box.teams`;
+ver los casos construidos discriminantes en
+`domain/game/me06-mano-a-mano.test.ts`,
+`domain/simulation/me06-diagnostico-me04b.test.ts` y
+`domain/audit/audit-export-me06.test.ts`, y el plan manual
+`docs/testing/manual/ME-06-manual-test-plan.md`.
