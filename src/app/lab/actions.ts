@@ -112,7 +112,14 @@ export async function playTramoAction(
  * ME-04: partido completo de laboratorio. Usa una única foto de los perfiles
  * que muestra la interfaz (guardados o de referencia si PostgreSQL no está
  * disponible); no escribe nada en la base de datos ni guarda el partido.
+ * ME-04A: `auditEnabled` activa el registro de auditoría de esa misma
+ * corrida (por defecto activado en el laboratorio, ver `game-panel.tsx`).
  */
-export async function playGameAction(seed: number, home: BuildGameTeamArgs, away: BuildGameTeamArgs) {
-  return playLabGame({ seed, home, away });
+export async function playGameAction(
+  seed: number,
+  home: BuildGameTeamArgs,
+  away: BuildGameTeamArgs,
+  auditEnabled: boolean = true,
+) {
+  return playLabGame({ seed, home, away, auditEnabled });
 }
