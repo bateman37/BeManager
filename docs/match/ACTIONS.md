@@ -1,11 +1,11 @@
-# Acción de bloqueo directo central: drop y trampa (ME-01/ME-02/ME-04B)
+# Acciones ofensivas: bloqueo directo y mano a mano sin balón (ME-01/ME-02/ME-04B/ME-06)
 
 **Estado:** ACTIVE
-**Es fuente de verdad para:** el árbol de decisión de O1/O5 y las responsabilidades de los diez jugadores ante esta única acción, en las dos coberturas implementadas.
-**Debe leerse cuando:** vayas a modificar `possession-core.ts` o a añadir una segunda acción táctica u otra cobertura.
-**No cubre:** ninguna otra familia táctica (mano a mano, poste, zonas) ni otras coberturas de bloqueo (switch, ICE/veer...): llegan en entregas posteriores (ver `docs/match/roadmap.md`). La transición de ME-03 no es una táctica nueva: solo decide si existe ventana y reutiliza las ejecuciones ya existentes (sección final).
+**Es fuente de verdad para:** el árbol de decisión de las dos familias ofensivas implementadas y las responsabilidades de los diez jugadores ante cada una, en las coberturas y órdenes defensivas implementadas.
+**Debe leerse cuando:** vayas a modificar `possession-core.ts` o a añadir una tercera acción táctica, otra cobertura u otra orden defensiva.
+**No cubre:** ninguna otra familia táctica (poste, zonas, todas las variantes de mano a mano) ni otras coberturas de bloqueo (switch, ICE/veer...): llegan en entregas posteriores (ver `docs/match/roadmap.md`). La transición de ME-03 no es una táctica nueva: solo decide si existe ventana y reutiliza las ejecuciones ya existentes (sección final).
 **Documentos relacionados:** `docs/match/reference/BeManager-capitulo-tacticas-integradas-al-motor-v1.md`, `CAPABILITIES.md`, `RULES.md`.
-**Última actualización:** 2026-09-29 (ME-04B).
+**Última actualización:** 2026-09-29 (ME-06, adelantada antes de ME-05).
 
 ## Disposición y roles fijos
 
@@ -44,14 +44,22 @@ cada vía real y las ordena por **valor de tiro situacional provisional**
 (`puntos del lanzamiento × shotProbability(base, capacidad del tirador,
 oposición prevista)`):
 
-- **Finalizar**: O1 ya tiene carril al aro antes de que D5 llegue.
+- **Finalizar** (ME-06 §2, corrige la carrera de reloj cruda de ME-04B): la
+  vía se descarta por la misma comprobación geométrica de contención real
+  que O5/D3 usan más abajo (solape de radios corporales sobre la posición
+  reconstruida en el instante real de liberación, no una comparación de
+  instantes de llegada); si D5 llega pero no llega a solapar, la vía sigue
+  viable y se puntúa contestada (oposición 1) en vez de asumirse limpia.
 - **Pasar a O5** (roll, hacia el short roll real en `(23,0; 7,5)`, ME-02
   §3/C1): bate al perseguidor por ≥0,2 s de retraso de pantalla, hay línea,
-  y D3 no ha comprometido su ayuda *antes* de la lectura de O1. Su valor
-  estima, de forma pura y sin sorteo, la mejor salida legal que la
-  geometría ya permite desde la próxima recepción de O5 (finalización
-  abierta, inversión a O3, o tiro bajo contención si ambas se niegan); O5
-  la reevalúa de verdad con el estado real del instante en que recibe
+  y D3 no ha comprometido su ayuda *antes* de la lectura de O1. Si la
+  estimación pura prevé que D3 no contendrá a O5, su valor es el de un
+  tiro cercano abierto. Si prevé que sí lo contendrá (ME-06 §2, corrige la
+  "estimación optimista de una recepción futura" de ME-04B), su valor **ya
+  no** asume una inversión a O3 todavía dependiente de la lectura real de
+  O5 y de una segunda proyección de D4: puntúa con la misma fórmula de
+  tiro contenido que usa la propia lectura real de O5 más abajo. O5
+  siempre reevalúa de verdad con el estado real del instante en que recibe
   (más abajo), no con esta estimación pregrabada.
 - **Pasar a O3** (esquina débil) directamente desde O1: viable en cuanto D3
   ya dejó su marca (antes de la decisión, o el escenario carga el estado ya
@@ -112,6 +120,58 @@ la decisión): "si O1 pasa antes de cerrarse la trampa, el ataque dispone de
 Una trampa rota nunca garantiza tiro cómodo; una trampa cerrada nunca
 garantiza robo ni canasta (ver pruebas discriminantes en
 `domain/simulation/me02.test.ts`).
+
+## Segunda familia posicional: mano a mano sin balón (ME-06 §3)
+
+Misma disposición 4-out/1-in y roles funcionales; extiende el núcleo
+compartido (`runHandoffPhase` junto a `runDropPhase`/`runTrapPhase` en
+`possession-core.ts`, ADR-0005/0006), no un módulo paralelo. Secuencia real:
+
+1. **Entrada:** O1 encuentra a O5 en el codo alto (`FREE_THROW_LINE_SPOT`,
+   reutilizado). Pase real (T09/T11), negable por D5; si se desvía o el
+   reloj no llega, sanción o balón suelto, nunca teletransporte.
+2. **Mano a mano:** O5 entrega a O2, que sube desde el lado fuerte con
+   tiempo de movimiento y recepción reales. D2 puede llegar a negar la
+   entrega; en `trampa`, D5 puede saltar a presionarla junto a D2 (deja el
+   interior expuesto, con el retraso real de coordinación M09 al
+   recuperar). Si se niega, O5 conserva el balón y su propia lectura.
+3. **Bloqueo/corte simultáneo:** O4 coloca un bloqueo indirecto legal
+   (T13/F05) para que O3 corte desde el lado débil (T21 activa por
+   primera vez su desmarque, `cutterStartTimeReductionSeconds`); D3
+   navega con el retraso real (T16), ajustado por la orden de defensa sin
+   balón (`negar_primera_salida` persigue más apretado; `guardar_espacio`
+   concede más separación). Si D3 no lo deniega, la ventana queda abierta;
+   bajo `guardar_espacio`, D4 puede ayudar a cerrarlo (O3 recibe entonces
+   contestado, no libre) y O4 se abre en su propio punto de bloqueo; bajo
+   `negar_primera_salida`, D4 nunca ayuda.
+4. **Primera lectura real** (portador: O2 si la entrega se completó; si
+   no, O5): entre finalizar (mismo modelo de contención real que el
+   bloqueo directo), pasar a O3 (si el corte quedó libre), continuar a O4
+   (si D4 ayudó) o la seguridad a O1, por el mismo valor situacional que
+   el bloqueo directo, con la misma banda de empate.
+
+**Selector de plan por equipo** (`offensivePlan`, `MatchInput`/
+`GameTeamInput`): `auto` (por defecto en partido), `bloqueo_directo` o
+`mano_a_mano_sin_balon`. En `auto`, al iniciar cada ataque organizado se
+evalúa de forma **pura** (sin RNG, sin ejecutar la vía descartada) la
+oportunidad de entrada de cada familia desde el estado real heredado
+(`estimateBloqueoDirectoOpportunity`/`estimateHandoffOpportunity`) y se
+elige la de mayor valor; empate exacto conserva el bloqueo directo. Con
+la plantilla natural del laboratorio, `auto` sigue prefiriendo el
+bloqueo directo (D5 protege un aro geométricamente más cerca del
+portador que cualquier recepción perimetral de esta familia); casos
+construidos con atributos handicapados a propósito demuestran que `auto`
+elige la mano a mano cuando de verdad es mejor
+(`domain/game/me06-mano-a-mano.test.ts`). La segunda entrada del bloqueo
+directo (kick-out) sigue siendo exclusivamente del bloqueo directo: no
+se reevalúa la familia en esa continuación.
+
+No autoriza mover D5, adelantar la ayuda de D3 del bloqueo directo, ni
+resolver la decisión pendiente de faltas sin tiro/segunda entrada
+(sigue abierta). Sin fórmulas LAB-0.1 nuevas: dos puntos de cancha
+sintéticos documentados (`WEAK_SIDE_SCREEN_SPOT`/`WEAK_SIDE_CUT_SPOT`) y
+un ajuste local de la orden de defensa sin balón sobre la navegación de
+D3, ambos en `possession-core.ts`.
 
 ## Simplificación técnica reversible: llegada analítica, no malla de navegación
 

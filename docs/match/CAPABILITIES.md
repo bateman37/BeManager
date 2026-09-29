@@ -5,7 +5,7 @@
 **Debe leerse cuando:** vayas a activar una nueva capacidad o a calibrar un coeficiente existente.
 **No cubre:** las 45 capacidades candidatas completas del catálogo (ver `docs/match/reference/BeManager-capitulo-atributos-y-motor-v2.md` §2.2–2.4).
 **Documentos relacionados:** `ACTIONS.md`, `docs/decisions/ADR-0004-detailed-engine-analytic-timing.md`.
-**Última actualización:** 2026-09-29 (ME-04B).
+**Última actualización:** 2026-09-29 (ME-06, adelantada antes de ME-05).
 
 ## 27 capacidades activas (de 45 candidatas)
 
@@ -115,6 +115,29 @@ garantiza más tapones brutos si cambian los tiros y ventanas que realmente
 se alcanzan; desde ME-04B, el tapón es elegible con cualquier oposición
 geométrica real (0,5 o 1 de `R_contest`), no solo con el defensor ya
 colocado de antes.
+
+## T21 (Desmarque), activado en ME-06
+
+T21 figuraba entre las 27 activas desde el catálogo original, pero ningún
+mecanismo del motor lo consultaba (dato ya existente en `player-profile.ts`
+y en el fixture, sin llamador). ME-06 lo conecta a la salida sin balón de
+O3 en la mano a mano: `cutterStartTimeReductionSeconds(T21) = 0,012 ×
+d(T21)` s (ya definida en LAB-0.1 desde ME-01, sin usarse hasta ahora)
+adelanta el instante en que O3 arranca su corte tras el bloqueo indirecto
+de O4. No adelanta la pantalla en sí ni concede una ventana garantizada:
+solo compite, junto al retraso real de navegación de D3, por si el corte
+queda libre o denegado.
+
+## Orden de defensa sin balón (ME-06 §3.1): ajuste local, no LAB-0.1
+
+`negar_primera_salida`/`guardar_espacio` desplaza ±0,15 s
+(`OFF_BALL_CALL_NAVIGATION_ADJUSTMENT_SECONDS`, en `possession-core.ts`,
+no en los ficheros LAB-0.1/0.2/0.3 compartidos) la navegación real de D3 al
+bloqueo/corte de O3: `negar_primera_salida` persigue más apretado (D3
+llega antes); `guardar_espacio` concede más separación (D3 llega después)
+y habilita que D4 pueda ayudar a cerrar el corte. Es una decisión técnica
+local y reversible de esta familia, no una fórmula deportiva compartida
+con el resto del motor; ninguna orden garantiza robo, tiro o falta.
 
 ## ME-03: las mismas 27, en tareas del tramo que ya las usaban
 

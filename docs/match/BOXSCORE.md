@@ -5,7 +5,7 @@
 **Debe leerse cuando:** vayas a añadir o cambiar una categoría estadística, o a leer `domain/game/box-score.ts`.
 **No cubre:** la adjudicación de las reglas (ver `RULES.md`) ni el modelo del partido (ver `MODEL.md`).
 **Documentos relacionados:** `RULES.md`, `MODEL.md`, FIBA Statisticians' Manual 2024.
-**Última actualización:** 2026-09-29.
+**Última actualización:** 2026-09-29 (ME-06).
 
 ## Principio
 
@@ -23,7 +23,7 @@ FIBA ya decidió cada hecho; el acta solo lo cuenta.
 | Puntos | 2×2FGM + 3×3FGM + FTM, también por período |
 | Rebote ofensivo/defensivo | control tras tiro o último libre fallados, y la recuperación de un tiro taponado; ofensivo si el reboteador es del equipo de la posesión |
 | Rebote de equipo | fallo sin control de jugador que acaba en saque (balón fuera); si el período termina antes del control, no hay rebote |
-| Asistencia | último pase recibido por el tirador sin otra acción entre medias (organización, lectura de transición o de segunda oportunidad, pantalla), con canasta; o con falta de tiro en fallo si convierte al menos un libre. Nunca dos por la misma jugada |
+| Asistencia | último pase recibido por el tirador sin otra acción entre medias (organización, lectura de transición o de segunda oportunidad, pantalla, mano a mano/bloqueo indirecto de ME-06), con canasta; o con falta de tiro en fallo si convierte al menos un libre. Nunca dos por la misma jugada |
 | Pérdida / robo | pérdida al último atacante con control; robo solo si el defensor obtiene el control él mismo (convención de ME-03: un balón suelto recuperado no es robo). Violación de 24 s u 8 s: pérdida de equipo; de 5 s en el saque: del sacador |
 | Tapón | `shot_blocked` |
 | Faltas cometidas / recibidas | `personal_foul` (infractor y receptor se conservan aunque luego se sustituyan) |

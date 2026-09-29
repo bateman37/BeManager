@@ -3,6 +3,75 @@
 Formato libre en español, orden cronológico inverso. Los motivos de
 decisiones duraderas viven en `docs/decisions/`, no aquí.
 
+## ME-06 — Mano a mano sin balón, correccion acotada de ME-04B y laboratorio comparativo (sin fusionar)
+
+- Prompt guardado íntegro en
+  `docs/prompts/implementation/ME-06-ataques-variados-correccion-ME04-laboratorio.md`
+  antes de modificar producto. Ejecutado en la rama `claude/new-session-p9xna7`
+  (el entorno de ejecución ya la tenía activa y sincronizada), no en la rama
+  propuesta `match/me-06-variedad-y-laboratorio` (ver `docs/prompts/README.md`).
+- **Corrección acotada de ME-04B** (`possession-core.ts`, diagnóstico de las
+  ocho auditorías `ME-04B-AUDIT-1`: 1790/1797 primeras lecturas elegían
+  `pase_o5`): `finalizar` ya no se descarta por una carrera de reloj cruda,
+  sino por la misma contención geométrica real que ya usan D3/O5 (solape de
+  radios corporales en el instante real de liberación); si D5 llega pero no
+  llega a solapar, la vía sigue viable y se puntúa contestada. `pase_o5`, en
+  el tramo donde D3 contendría de verdad la recepción, ya no puntúa una
+  inversión a O3 todavía dependiente de una segunda decisión y una segunda
+  proyección defensiva: puntúa con la misma fórmula de tiro contenido que ya
+  usa la propia lectura real de O5. Ninguna de las dos vías cambia respecto a
+  antes cuando su condición real no aplica.
+- **Segunda familia posicional: mano a mano sin balón** (`possession-core.ts`,
+  `runHandoffPhase`, extiende el mismo núcleo compartido, no un módulo
+  paralelo): O1 encuentra a O5 en el codo alto; O5 da un mano a mano real a
+  O2 (negable por D2, o por D5+D2 en trampa); O4 coloca un bloqueo indirecto
+  para que O3 corte desde el lado débil (negable por D3, con ayuda opcional
+  de D4 que abre a O4 y contesta el tiro de O3). Primera lectura real entre
+  finalizar/pase a O3/continuar a O4/seguridad a O1, por el mismo valor
+  situacional que el bloqueo directo. Activa por primera vez un mecanismo
+  para T21 (desmarque), sin fórmulas LAB-0.1 nuevas.
+- **Selector de plan ofensivo por equipo** (`offensivePlan`:
+  `auto`/`bloqueo_directo`/`mano_a_mano_sin_balon`, por defecto `auto` en
+  partido): `auto` evalúa de forma pura —sin RNG, sin ejecutar la vía
+  descartada— la oportunidad de entrada de cada familia desde el estado real
+  heredado y elige la de mayor valor; confirmado en casos construidos que
+  elige cada familia cuando de verdad es mejor. La segunda entrada del
+  bloqueo directo (kick-out) sigue siendo exclusivamente del bloqueo directo:
+  no reevalúa la familia.
+- **Orden de defensa sin balón por equipo** (`offBallDefensiveCall`:
+  `negar_primera_salida`/`guardar_espacio`, por defecto `guardar_espacio`):
+  desplaza la navegación real de D3 y decide si D4 ayuda; confirmado que
+  ambas producen decisiones distintas y estables con la misma plantilla y
+  semilla (ver muestra comparativa en `docs/match/SCENARIOS.md`).
+- **Auditoría** (`ME-04B-AUDIT-1` → `ME-06-AUDIT-1`): nuevos puntos de
+  decisión (`seleccion_familia`, `entrada_mano_a_mano`,
+  `transferencia_mano_a_mano`, `bloqueo_indirecto_o3`,
+  `lectura_mano_a_mano`); `input.teams[]` declara `offensivePlan`/
+  `offBallDefensiveCall` y el `fixtureDiff` de cada jugador frente al
+  fixture; huella estable de equipo/partido (`fingerprint`/
+  `matchFingerprint`) que excluye semilla, `gameId`, `exportedAt` y
+  `buildId`; `result.summary.byFamily` con entradas y tiros reales por
+  familia y equipo (con hueco de cobertura declarado para transición/segunda
+  oportunidad/segunda entrada). No reinterpreta los ocho archivos
+  `ME-04B-AUDIT-1` ya descargados.
+- **Controles de laboratorio** (`/lab`, `ProfileControlsPanel`): selección
+  múltiple por equipo, «Restaurar desde el seed» (atómico, con confirmación,
+  respeta jugadores manuales fuera del fixture) e incremento masivo +1/+3/+5
+  sobre los 27 atributos activos (atómico, `min(15, valor actual +
+  incremento)`, validación en servidor). Nuevo método
+  `LabTeamRepository.savePlayers` (upsert múltiple en una transacción
+  Prisma). Selectores de plan ofensivo y orden de defensa sin balón por
+  equipo en la sección de partido completo; el marcador muestra el plan/
+  orden reales de cada equipo.
+- `GAME_VERSION`: `ME-04B-GAME-1` → `ME-06-GAME-1`.
+- Documentación actualizada en `docs/match/{README,ACTIONS,CAPABILITIES,
+  RULES,SCENARIOS,BOXSCORE,AUDIT,roadmap}.md` (roadmap marca ME-06 como
+  implementada, adelantada antes de ME-05, sin cambiar identificadores
+  históricos) y plan manual nuevo en
+  `docs/testing/manual/ME-06-manual-test-plan.md`.
+- Suite completa de dominio en verde (`npm run check` sin PostgreSQL);
+  recorrido manual de `/lab` pendiente de confirmación por Dennis (ver PR).
+
 ## ME-04B — Lecturas del bloqueo, oposición real y auditoría reparada (sin fusionar)
 
 - Prompt guardado en

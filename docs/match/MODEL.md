@@ -5,7 +5,7 @@
 **Debe leerse cuando:** vayas a leer o modificar `modules/match/domain/simulation/`.
 **No cubre:** las reglas de reloj, faltas y reanudación (ver `RULES.md`) ni el acta (ver `BOXSCORE.md`).
 **Documentos relacionados:** `RULES.md`, `ACTIONS.md`, `docs/architecture/DATA_AND_PERSISTENCE.md`.
-**Última actualización:** 2026-09-29 (ME-04B).
+**Última actualización:** 2026-09-29 (ME-06, adelantada antes de ME-05).
 
 ## Entidades de estado (`MatchState`)
 
@@ -66,6 +66,15 @@ regla exacta. `MatchInput` incorpora además `coverage: "drop" | "trampa"`,
 independiente del escenario: la misma media pista, quintetos y bloqueo
 central se resuelven con cualquiera de las dos coberturas (ver
 `ACTIONS.md`).
+
+**ME-06:** `MatchInput`/`GameTeamInput` incorporan `offensivePlan`
+(`"auto" | "bloqueo_directo" | "mano_a_mano_sin_balon"`, opcional en
+`MatchInput` con valor por defecto `bloqueo_directo`, y siempre presente
+en `GameTeamInput` con valor por defecto `auto`) y
+`offBallDefensiveCall` (`"negar_primera_salida" | "guardar_espacio"`,
+por defecto `guardar_espacio`), ambos independientes de `coverage` y del
+escenario: la misma disposición admite las dos familias ofensivas y
+cualquier combinación de cobertura/orden (ver `ACTIONS.md`).
 
 ## Continuidad entre posesiones: el tramo de ME-03
 

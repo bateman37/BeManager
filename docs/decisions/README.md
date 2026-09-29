@@ -24,6 +24,7 @@
 - `ADR-0005-shared-possession-core.md` — el árbol de decisión y las fórmulas LAB-0.1 viven en un núcleo compartido (`possession-core.ts`), separado de la construcción de relato; sustituye la relación motor detallado/aproximación rápida descrita en ADR-0004.
 - `ADR-0006-linked-possessions-local-frame.md` — tramos de posesiones enlazadas sobre el núcleo compartido: marco local de ataque por giro de 180°, roles canónicos asignados a jugadores reales y modo enlazado opcional del núcleo (ME-03).
 - `ADR-0007-shared-continuity-engine-and-game-rules-profile.md` — motor de continuidad compartido `LinkedRun` (tramo y partido), reglas de partido opcionales en el núcleo y perfil de reglas FIBA 2026 puro, separado del acta (ME-04).
+- `ADR-0008-second-offensive-family-auto-selection.md` — segunda familia ofensiva (mano a mano sin balón) sobre el mismo núcleo compartido, y selección automática por una estimación pura de oportunidad en vez de un dry-run de ambos árboles (ME-06).
 
 ## Decisiones requeridas pendientes
 

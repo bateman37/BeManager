@@ -11,9 +11,9 @@ hechos (ver `MODEL.md`) ni el acta (ver `BOXSCORE.md`): este documento solo
 describe cómo se observa y se exporta lo que esos documentos ya definen.
 **Documentos relacionados:** `MODEL.md`, `ACTIONS.md`, `BOXSCORE.md`,
 `docs/decisions/DECISION-REQUERIDA-ME-04-alcance-natural-faltas-y-segunda-entrada.md`.
-**Última actualización:** 2026-09-29 (ME-04B: esquema `ME-04B-AUDIT-1`,
-IDs reales, `factLink` saneado y `rejectionReasons` separado por
-elegida/alternativas — ver más abajo).
+**Última actualización:** 2026-09-29 (ME-06: esquema `ME-06-AUDIT-1`,
+selección de familia y mano a mano, resumen por familia/equipo, huella
+estable y diferencias frente al fixture — ver más abajo).
 
 ## Qué es y qué no es
 
@@ -40,7 +40,42 @@ que ON y OFF producen el mismo marcador, acta, hechos, sustituciones,
 relojes y estados del generador de números aleatorios, con la única
 diferencia del registro.
 
-## Esquema (`schemaVersion: "ME-04B-AUDIT-1"`)
+## ME-06: selección de familia, mano a mano y comparación entre fotos
+
+Esquema versionado a `"ME-06-AUDIT-1"` (contrato cambiado: nuevos campos
+de equipo y nueva sección de resumen; no reinterpreta ni sobrescribe los
+archivos `ME-04B-AUDIT-1` ya descargados, que siguen siendo evidencia de
+otra versión).
+
+- **Nuevos puntos de `decisions.records`:** `seleccion_familia` (elección
+  pura entre `bloqueo_directo`/`mano_a_mano_sin_balon`, con
+  `family_opportunity_higher/lower` cuando fue `auto`, o
+  `family_forced_by_plan` cuando el equipo fijó una familia), y para la
+  mano a mano: `entrada_mano_a_mano`, `transferencia_mano_a_mano`,
+  `bloqueo_indirecto_o3` y `lectura_mano_a_mano` — mismas reglas de
+  `status`/`reasonCode`/`factLink` que el resto del árbol.
+- **`input.teams[]`** ahora declara también `offensivePlan` y
+  `offBallDefensiveCall` (la foto de cada equipo para todo el partido), y
+  cada jugador del roster lleva `fixtureDiff`: diferencias reales por
+  atributo frente a `LAB_ROSTER_FIXTURE` (`delta = actual − fixture`),
+  `null` cuando el ID no pertenece al fixture (jugador añadido a mano).
+- **Huella estable:** `run.matchFingerprint` e `input.teams[].fingerprint`
+  (hash FNV-1a sobre la foto efectiva — atributos, medidas, quinteto,
+  roles, cobertura, plan y orden — **excluyendo** semilla, `gameId`,
+  `exportedAt` y `buildId`). Dos exportaciones con la misma foto y
+  distinta semilla comparten huella; una edición real de un solo
+  atributo la cambia. Se recalcula siempre desde la foto completa: nunca
+  se infiere de una etiqueta de lote ni de atributos saturados en 15.
+- **`result.summary.byFamily`:** entradas y tiros reales por familia y
+  equipo, agrupando `seleccion_familia` por (posesión, fase) y
+  atribuyendo los `field_goal_attempt` reales de esa misma fase. Los FGA
+  de fases sin `seleccion_familia` (transición/ventaja temprana, segunda
+  oportunidad, segunda entrada del bloqueo directo) quedan fuera de
+  propósito; su hueco se declara en `coverageGaps` con
+  `possessionsAffected`. `null` cuando la auditoría no estaba activada
+  (mismo coste cero que el resto de `decisions`).
+
+## Esquema (`schemaVersion: "ME-06-AUDIT-1"`)
 
 | Sección | Contenido |
 |---|---|
@@ -58,7 +93,9 @@ instante absoluto en ms, punto de observación (`point`, uno de
 `entrada_fase_transicion`, `organizacion_creador`, `lectura_bloqueo_o1`,
 `lectura_segunda_o5`, `lectura_trampa`, `segunda_entrada`,
 `resolucion_tiro`, `asignacion_rebote`, `puerta_falta_sin_tiro`,
-`sustitucion`), posesión/fase si existía, poseedor, participantes, las
+`sustitucion`, y desde ME-06 `seleccion_familia`, `entrada_mano_a_mano`,
+`transferencia_mano_a_mano`, `bloqueo_indirecto_o3`,
+`lectura_mano_a_mano`), posesión/fase si existía, poseedor, participantes, las
 opciones realmente evaluadas y cuál se eligió. Cada opción lleva:
 
 - `status`: `elegida`, `descartada_por_condicion` (se evaluó y perdió) o
