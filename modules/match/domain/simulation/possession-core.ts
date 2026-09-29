@@ -1940,7 +1940,7 @@ function runHandoffPhase(ctx: CoreContext): PossessionCoreResult {
     options: [
       handoffDenied
         ? { id: "entrega_negada", status: "elegida", reasonCode: "handoff_denied_defender_arrived", values: { d2ArrivalSeconds: d2Arrival, tHandoffReady, d5CommittedToHandoffTrap } }
-        : { id: "entrega_completada", status: "elegida", reasonCode: "handoff_completed", values: { d2ArrivalSeconds: d2Arrival, tHandoffReady } },
+        : { id: "entrega_completada", status: "elegida", reasonCode: "handoff_completed", values: { d2ArrivalSeconds: d2Arrival, tHandoffReady, d5CommittedToHandoffTrap } },
     ],
   });
 
