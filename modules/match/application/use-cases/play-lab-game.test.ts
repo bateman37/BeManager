@@ -16,7 +16,11 @@ describe("playLabGame (caso de uso de ME-04)", () => {
     expect(a.game.gameId).toBe(b.game.gameId);
     expect(a.game.finalScore).toEqual(b.game.finalScore);
     expect(a.game.reconciliation.every((c) => c.ok)).toBe(true);
-    expect("responsibilities" in a.game).toBe(false);
+    // ME-04A: `responsibilities` viaja a la vista (aunque el visor del
+    // partido no la muestre) porque la exportación de auditoría la necesita
+    // para `continuity`, sin volver a jugar el partido.
+    expect("responsibilities" in a.game).toBe(true);
+    expect(a.game.audit).toBeUndefined();
   });
 
   it("un quinteto incompleto se traduce en un error comprensible, sin excepción", async () => {

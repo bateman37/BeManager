@@ -69,6 +69,9 @@ import {
   awardFreeThrowsForShootingFoul,
   evaluateContainmentContact,
 } from "./resolvers/foul-resolver";
+import { shotProbability, blockDeflectionProbability, CLOSE_FINISH_BASE_PROBABILITY, THREE_POINT_BASE_PROBABILITY } from "../lab/lab-0-1-parameters";
+import { createNoopAuditCollector, type AuditCollector } from "../audit/audit-collector";
+import type { AuditDecisionPoint, AuditOptionRecord, AuditReasonCode } from "../audit/audit-types";
 
 const WEAK_CORNER_SPOT: Point2D = { x: 24.0, y: 13.9 };
 /**
@@ -125,6 +128,13 @@ export interface ComputePossessionCoreOptions {
    * comportamiento es exactamente el de ME-01/ME-02.
    */
   readonly linked?: LinkedSegmentOptions;
+  /**
+   * Colector opcional de auditoría (ME-04A §3): registra, en el punto
+   * exacto en que ya se decidió, las opciones evaluadas y su motivo. Con
+   * el colector nulo (por defecto) el coste y el comportamiento son
+   * exactamente los de antes de ME-04A.
+   */
+  readonly audit?: AuditCollector;
 }
 
 /** Prioridad tras tiro elegida por cada equipo antes del tramo (ME-03 §4). */
@@ -209,6 +219,10 @@ export interface LinkedSegmentOptions {
   readonly attackingPriority: ReboundPriority;
   readonly entry: LinkedEntry;
   readonly rules?: LinkedGameRules;
+  /** Instante absoluto (partido/tramo) del inicio de este tramo de cálculo, para fechar la auditoría. */
+  readonly t0?: Milliseconds;
+  readonly possessionIndex?: number | null;
+  readonly phaseIndex?: number | null;
 }
 
 /**
@@ -250,6 +264,70 @@ interface CoreContext {
   readonly shotClockMs: Milliseconds;
   possessionPhase: number;
   readonly linked: LinkedState | null;
+  readonly audit: AuditCollector;
+  readonly auditMeta: { readonly t0: Milliseconds; readonly possessionIndex: number | null; readonly phaseIndex: number | null } | null;
+}
+
+/**
+ * Registra un punto de decisión ya evaluado (ME-04A §3). No hace nada
+ * (coste cero) cuando el colector está desactivado. `atSeconds` es local al
+ * tramo de cálculo; se fecha con `auditMeta.t0` para quedar en el reloj
+ * absoluto del partido, igual que hace `runCore` con los hechos.
+ */
+function auditDecision(
+  ctx: CoreContext,
+  atSeconds: number,
+  input: {
+    readonly point: AuditDecisionPoint;
+    readonly holderId: string | null;
+    readonly participants: readonly string[];
+    readonly options: readonly AuditOptionRecord[];
+    readonly chosenOptionId: string | null;
+    readonly factLinkKind?: string;
+    readonly rngStateBefore?: number | null;
+    readonly rngStateAfter?: number | null;
+    readonly note?: string;
+  },
+): void {
+  if (!ctx.audit.enabled) return;
+  const atMs = (ctx.auditMeta?.t0 ?? 0) + secondsToMs(atSeconds);
+  ctx.audit.recordDecision({
+    atMs,
+    point: input.point,
+    possessionIndex: ctx.auditMeta?.possessionIndex ?? null,
+    phaseIndex: ctx.auditMeta?.phaseIndex ?? null,
+    holderId: input.holderId,
+    participants: input.participants,
+    options: input.options,
+    chosenOptionId: input.chosenOptionId,
+    factLink: input.factLinkKind ? { atMs, kind: input.factLinkKind } : null,
+    rngStateBefore: input.rngStateBefore ?? null,
+    rngStateAfter: input.rngStateAfter ?? null,
+    note: input.note,
+  });
+}
+
+/** Estado del generador si es reanudable (modo enlazado); `null` si no aplica. */
+function rngStateOf(rng: SeededRandom): number | null {
+  return "state" in rng && typeof rng.state === "function" ? rng.state() : null;
+}
+
+/** Opción no alcanzada porque el árbol ya había decidido antes (ME-04A §3). */
+function shortCircuited(id: string): AuditOptionRecord {
+  return { id, status: "no_evaluada_por_cortocircuito", reasonCode: "not_evaluated_short_circuit" };
+}
+
+/**
+ * Clasifica el motivo de rechazo de `planSecondEntry` (4 plantillas fijas
+ * de `second-entry-read.ts`, no lenguaje libre de usuario) en un código
+ * estable. El texto original se conserva en `reasonNote` como referencia.
+ */
+function secondEntryRejectionCode(reason: string): AuditReasonCode {
+  if (reason.includes("posición exterior") || reason.includes("no es un exterior")) return "second_entry_not_exterior_frontcourt";
+  if (reason.includes("línea de pase")) return "second_entry_pass_line_blocked";
+  if (reason.includes("fuera de la pista delantera")) return "second_entry_screen_spot_illegal";
+  if (reason.includes("recolocar el bloqueo")) return "second_entry_shot_clock_insufficient";
+  return "not_available";
 }
 
 function player(ctx: CoreContext, id: string): PlayerProfile {
@@ -409,6 +487,10 @@ export function computePossessionCore(
           containment: null,
           firstGestureSeconds: Infinity,
         }
+      : null,
+    audit: options.audit ?? createNoopAuditCollector(),
+    auditMeta: linked
+      ? { t0: linked.t0 ?? 0, possessionIndex: linked.possessionIndex ?? null, phaseIndex: linked.phaseIndex ?? null }
       : null,
   };
 
@@ -665,6 +747,25 @@ function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition): Possessio
   };
 
   if (option1Available && shotClockRemainingSeconds > 2) {
+    auditDecision(ctx, tDecision, {
+      point: "lectura_bloqueo_o1",
+      holderId: "O1",
+      participants: ["O1", "D5"],
+      chosenOptionId: "finalizar",
+      options: [
+        {
+          id: "finalizar",
+          status: "elegida",
+          reasonCode: "lane_open_before_help",
+          reasonNote: "O1 llega al aro antes que D5.",
+          values: { o1TimeToHoopSeconds: o1TimeToHoop, d5TimeToHoopSeconds: d5TimeToHoop, shotClockRemainingSeconds },
+        },
+        shortCircuited("pase_o5"),
+        shortCircuited("pase_o3"),
+        shortCircuited("triple_o1"),
+        shortCircuited("salida_segura"),
+      ],
+    });
     return resolveShotAttempt(ctx, {
       shooterId: "O1",
       shooterSkill: o1.attributes.T01,
@@ -677,6 +778,13 @@ function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition): Possessio
       contesterGeometry: d5HoopGeometry,
     });
   }
+  const option1Rejected: AuditOptionRecord = {
+    id: "finalizar",
+    status: "descartada_por_condicion",
+    reasonCode: "lane_closed_help_ready",
+    reasonNote: preferSecondOption ? "O1 explora segunda opción por tendencia." : "D5 llega antes o igual que O1 al aro.",
+    values: { o1TimeToHoopSeconds: o1TimeToHoop, d5TimeToHoopSeconds: d5TimeToHoop, shotClockRemainingSeconds },
+  };
 
   // Opción 2: pasar a O5 si gana al perseguidor >=0.2s, hay línea y D3 no
   // negó el roll *antes* de que O1 decidiera (si D3 ya lo negó antes de la
@@ -686,6 +794,12 @@ function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition): Possessio
   // como la segunda lectura real de O5, no como un descarte prematuro.
   const rollDeniedBeforeDecision = scenario.d3HelpsRoller && tD3ArriveHelp <= tDecision;
   const option2Available = screenDelay >= 0.2 && !rollDeniedBeforeDecision;
+  const option2Rejected: AuditOptionRecord = {
+    id: "pase_o5",
+    status: "descartada_por_condicion",
+    reasonCode: rollDeniedBeforeDecision ? "roll_denied_before_decision" : "screen_delay_insufficient",
+    values: { screenDelaySeconds: screenDelay, rollDeniedBeforeDecision },
+  };
 
   if (option2Available) {
     const tPassArrival = Math.max(
@@ -701,6 +815,26 @@ function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition): Possessio
       ctx.rng,
     );
     event(ctx, tPassArrival, "ejecutado", "pass_released", ["O1", "O5"], "O1 pasa al continuador O5.");
+    auditDecision(ctx, tDecision, {
+      point: "lectura_bloqueo_o1",
+      holderId: "O1",
+      participants: ["O1", "O5", "D3"],
+      chosenOptionId: "pase_o5",
+      factLinkKind: "pass_released",
+      options: [
+        option1Rejected,
+        {
+          id: "pase_o5",
+          status: "elegida",
+          reasonCode: "screen_delay_sufficient",
+          reasonNote: "Retraso de pantalla suficiente y D3 no negó el roll antes de la decisión.",
+          values: { screenDelaySeconds: screenDelay, rollDeniedBeforeDecision, tD3ArriveHelpSeconds: scenario.d3HelpsRoller ? tD3ArriveHelp : null },
+        },
+        shortCircuited("pase_o3"),
+        shortCircuited("triple_o1"),
+        shortCircuited("salida_segura"),
+      ],
+    });
 
     if (passOutcome.kind === "deflected_loose_ball") {
       return resolveLooseBallAfterPass(ctx, tPassArrival, "O1", "D1");
@@ -741,6 +875,18 @@ function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition): Possessio
         };
         const invertOutcome = resolvePass(o5.attributes.T09, o3.attributes.T11, true, d3.attributes.T17, 1, ctx.rng);
         event(ctx, tPassArrivalO3, "ejecutado", "pass_released", ["O5", "O3"], "O5 invierte hacia O3 en la esquina débil.");
+        auditDecision(ctx, tO5Ready, {
+          point: "lectura_segunda_o5",
+          holderId: "O5",
+          participants: ["O5", "O3", "D3", "D4"],
+          chosenOptionId: "invertir_o3",
+          factLinkKind: "pass_released",
+          options: [
+            { id: "invertir_o3", status: "elegida", reasonCode: "corner_window_open", values: { marginO3Seconds: marginO3, tD4ArriveAtCornerSeconds: tD4ArriveAtCorner } },
+            { id: "finalizar_bajo_contencion", status: "descartada_por_condicion", reasonCode: "corner_window_open", reasonNote: "La esquina estaba libre: no hizo falta forzar el tiro contenido.", values: { marginO3Seconds: marginO3 } },
+            shortCircuited("segunda_entrada"),
+          ],
+        });
 
         if (invertOutcome.kind === "deflected_loose_ball") {
           return resolveLooseBallAfterPass(ctx, tPassArrivalO3, "O5", "D3");
@@ -766,7 +912,31 @@ function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition): Possessio
     if (d3TrulyContaining) {
       // Primera lectura negada: O5 contenido y la inversión cerrada (ME-04 §5).
       const kickOut = tryLinkedKickOut(ctx, tO5Ready, "D3");
-      if (kickOut) return kickOut;
+      if (kickOut) {
+        auditDecision(ctx, tO5Ready, {
+          point: "lectura_segunda_o5",
+          holderId: "O5",
+          participants: ["O5", "D3"],
+          chosenOptionId: "segunda_entrada",
+          options: [
+            { id: "invertir_o3", status: "descartada_por_condicion", reasonCode: "corner_window_closed", reasonNote: "D4 cierra la esquina a tiempo: sin ventana para invertir." },
+            shortCircuited("finalizar_bajo_contencion"),
+            { id: "segunda_entrada", status: "elegida", reasonCode: "second_entry_viable_shortest_pass" },
+          ],
+        });
+        return kickOut;
+      }
+      auditDecision(ctx, tO5Ready, {
+        point: "lectura_segunda_o5",
+        holderId: "O5",
+        participants: ["O5", "D3"],
+        chosenOptionId: "finalizar_bajo_contencion",
+        options: [
+          { id: "invertir_o3", status: "descartada_por_condicion", reasonCode: "corner_window_closed", reasonNote: "D4 cierra la esquina a tiempo: sin ventana para invertir." },
+          { id: "segunda_entrada", status: "descartada_por_condicion", reasonCode: "second_entry_pass_line_blocked", reasonNote: "Ningún exterior fue viable; el detalle por candidato está en la decisión «segunda_entrada» del mismo instante." },
+          { id: "finalizar_bajo_contencion", status: "elegida", reasonCode: "second_read_contained" },
+        ],
+      });
     }
 
     return resolveShotAttempt(ctx, {
@@ -805,6 +975,14 @@ function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition): Possessio
     if (margin >= 0.25 || scenario.startsWithHelpAlreadyCommitted) {
       const passOutcome = resolvePass(o1.attributes.T09, o3.attributes.T11, true, d4.attributes.T17, 1, ctx.rng);
       event(ctx, tPassArrivalO3, "ejecutado", "pass_released", ["O1", "O3"], "O1 encuentra a O3 en la esquina débil.");
+      auditDecision(ctx, tDecision, {
+        point: "lectura_bloqueo_o1",
+        holderId: "O1",
+        participants: ["O1", "O3", "D4"],
+        chosenOptionId: "pase_o3",
+        factLinkKind: "pass_released",
+        options: [option1Rejected, option2Rejected, { id: "pase_o3", status: "elegida", reasonCode: "corner_window_open", values: { marginSeconds: margin } }, shortCircuited("triple_o1"), shortCircuited("salida_segura")],
+      });
 
       if (passOutcome.kind === "deflected_loose_ball") {
         return resolveLooseBallAfterPass(ctx, tPassArrivalO3, "O1", "D4");
@@ -835,7 +1013,21 @@ function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition): Possessio
   const tD5Contest = Math.max(0, tDecision + d5RawContestTime - perimeterArrivalAdjustmentSeconds(d5.attributes.T22));
   const windowD5 = tD5Contest - tShotReadyO1;
 
+  const option3Rejected: AuditOptionRecord = {
+    id: "pase_o3",
+    status: scenario.d3HelpsRoller ? "descartada_por_condicion" : "no_evaluada_por_cortocircuito",
+    reasonCode: scenario.d3HelpsRoller ? "corner_window_closed" : "not_available",
+    reasonNote: scenario.d3HelpsRoller ? undefined : "D3 no ayuda en este escenario: no hay esquina débil liberada que pasar.",
+  };
+
   if (behindLine && windowD5 >= 0.25 && o1.attributes.T04 >= 9) {
+    auditDecision(ctx, tDecision, {
+      point: "lectura_bloqueo_o1",
+      holderId: "O1",
+      participants: ["O1", "D5"],
+      chosenOptionId: "triple_o1",
+      options: [option1Rejected, option2Rejected, option3Rejected, { id: "triple_o1", status: "elegida", reasonCode: "three_point_eligible", values: { windowD5Seconds: windowD5, t04: o1.attributes.T04 } }, shortCircuited("salida_segura")],
+    });
     return resolveShotAttempt(ctx, {
       shooterId: "O1",
       shooterSkill: o1.attributes.T04,
@@ -863,6 +1055,20 @@ function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition): Possessio
     ["O1", outletTarget],
     `O1 elige la salida segura hacia ${outletTarget}; el ataque conserva el control y se reorganiza.`,
   );
+  auditDecision(ctx, tDecision, {
+    point: "lectura_bloqueo_o1",
+    holderId: "O1",
+    participants: ["O1", outletTarget],
+    chosenOptionId: "salida_segura",
+    factLinkKind: "possession_continues",
+    options: [
+      option1Rejected,
+      option2Rejected,
+      option3Rejected,
+      { id: "triple_o1", status: "descartada_por_condicion", reasonCode: !behindLine ? "three_point_window_closed" : windowD5 < 0.25 ? "three_point_window_closed" : "three_point_ineligible_skill", values: { behindLine, windowD5Seconds: windowD5, t04: o1.attributes.T04 } },
+      { id: "salida_segura", status: "elegida", reasonCode: "safe_outlet_default" },
+    ],
+  });
 
   return finalize(
     ctx,
@@ -1028,7 +1234,21 @@ function runTrapPhase(ctx: CoreContext): PossessionCoreResult {
     // los dos comprometidos): reutiliza el mecanismo de presión ya vigente,
     // no un robo global nuevo. Una trampa cerrada no garantiza robo.
     const worstT15 = Math.min(d1.attributes.T15, d5.attributes.T15);
+    const rngBeforeSteal = rngStateOf(ctx.rng);
     const isStripped = resolvesTurnoverUnderPressure(o1.attributes.T07, worstT15, ctx.rng);
+    auditDecision(ctx, tDecision, {
+      point: "lectura_trampa",
+      holderId: "O1",
+      participants: ["O1", "D1", "D5"],
+      chosenOptionId: isStripped ? "perdida_bajo_presion" : "pase_o5",
+      rngStateBefore: rngBeforeSteal,
+      rngStateAfter: rngStateOf(ctx.rng),
+      options: [
+        { id: "trampa_cerrada", status: "elegida", reasonCode: "trap_closed_before_pass", values: { tD5TrapArrivalSeconds: tD5TrapArrival, tPassArrivalToO5Seconds: tPassArrivalToO5 } },
+        { id: "perdida_bajo_presion", status: isStripped ? "elegida" : "descartada_por_condicion", reasonCode: "not_available", values: { t07: o1.attributes.T07, worstT15 } },
+        { id: "pase_o5", status: isStripped ? "no_evaluada_por_cortocircuito" : "elegida", reasonCode: "not_available" },
+      ],
+    });
     if (isStripped) {
       event(
         ctx,
@@ -1059,6 +1279,17 @@ function runTrapPhase(ctx: CoreContext): PossessionCoreResult {
     if (tD3LowManArrival > tO5Ready) {
       const tPassArrivalO4 = tO5Ready + PASS_RELEASE_SECONDS + distanceSeconds(SHORT_ROLL_SPOT, ctx.positions.O4!);
       const tPrepReadyO4 = tPassArrivalO4 + CATCH_AND_SHOOT_PREP_SECONDS;
+      auditDecision(ctx, tO5Ready, {
+        point: "lectura_trampa",
+        holderId: "O5",
+        participants: ["O5", "D3", "O4"],
+        chosenOptionId: "trap_broken_o4",
+        options: [
+          { id: "trap_broken_o4", status: "elegida", reasonCode: "trap_broken_lane_open", values: { tD3LowManArrivalSeconds: tD3LowManArrival, tO5ReadySeconds: tO5Ready } },
+          { id: "invertir_o3", status: "no_evaluada_por_cortocircuito", reasonCode: "not_evaluated_short_circuit" },
+          shortCircuited("finalizar_bajo_contencion"),
+        ],
+      });
       event(
         ctx,
         tO5Ready,
@@ -1099,6 +1330,19 @@ function runTrapPhase(ctx: CoreContext): PossessionCoreResult {
     if (marginO3 >= 0.25) {
       const invertOutcome = resolvePass(o5.attributes.T09, o3.attributes.T11, true, d3.attributes.T17, 1, ctx.rng);
       event(ctx, tPassArrivalO3, "ejecutado", "pass_released", ["O5", "O3"], "O5 invierte hacia O3 en la esquina débil.");
+      auditDecision(ctx, tO5Ready, {
+        point: "lectura_trampa",
+        holderId: "O5",
+        participants: ["O5", "O3", "D3", "D4"],
+        chosenOptionId: "invertir_o3",
+        factLinkKind: "pass_released",
+        options: [
+          { id: "trap_broken_o4", status: "descartada_por_condicion", reasonCode: "trap_broken_lane_open", reasonNote: "D3 (low man) sí llegó a tiempo a contener el short roll." },
+          { id: "invertir_o3", status: "elegida", reasonCode: "corner_window_open", values: { marginO3Seconds: marginO3 } },
+          shortCircuited("finalizar_bajo_contencion"),
+          shortCircuited("segunda_entrada"),
+        ],
+      });
       if (invertOutcome.kind === "deflected_loose_ball") {
         return resolveLooseBallAfterPass(ctx, tPassArrivalO3, "O5", "D3");
       }
@@ -1119,7 +1363,32 @@ function runTrapPhase(ctx: CoreContext): PossessionCoreResult {
 
     // Primera lectura negada: D3 contiene el short roll y la inversión está cerrada (ME-04 §5).
     const kickOut = tryLinkedKickOut(ctx, tO5Ready, "D3");
-    if (kickOut) return kickOut;
+    if (kickOut) {
+      auditDecision(ctx, tO5Ready, {
+        point: "lectura_trampa",
+        holderId: "O5",
+        participants: ["O5", "D3"],
+        chosenOptionId: "segunda_entrada",
+        options: [
+          { id: "trap_broken_o4", status: "descartada_por_condicion", reasonCode: "trap_broken_lane_open", reasonNote: "D3 sí llegó a tiempo." },
+          { id: "invertir_o3", status: "descartada_por_condicion", reasonCode: "corner_window_closed", values: { marginO3Seconds: marginO3 } },
+          { id: "segunda_entrada", status: "elegida", reasonCode: "second_entry_viable_shortest_pass" },
+        ],
+      });
+      return kickOut;
+    }
+    auditDecision(ctx, tO5Ready, {
+      point: "lectura_trampa",
+      holderId: "O5",
+      participants: ["O5", "D3"],
+      chosenOptionId: "finalizar_bajo_contencion",
+      options: [
+        { id: "trap_broken_o4", status: "descartada_por_condicion", reasonCode: "trap_broken_lane_open", reasonNote: "D3 sí llegó a tiempo." },
+        { id: "invertir_o3", status: "descartada_por_condicion", reasonCode: "corner_window_closed", values: { marginO3Seconds: marginO3 } },
+        { id: "segunda_entrada", status: "descartada_por_condicion", reasonCode: "second_entry_pass_line_blocked", reasonNote: "Ningún exterior fue viable; el detalle por candidato está en la decisión «segunda_entrada» del mismo instante." },
+        { id: "finalizar_bajo_contencion", status: "elegida", reasonCode: "second_read_contained" },
+      ],
+    });
 
     return resolveShotAttempt(ctx, {
       shooterId: "O5",
@@ -1150,6 +1419,17 @@ function runTrapPhase(ctx: CoreContext): PossessionCoreResult {
   const laneOpen = shotClockRemainingSeconds > 2;
 
   if (laneOpen) {
+    auditDecision(ctx, tDecision, {
+      point: "lectura_trampa",
+      holderId: "O1",
+      participants: ["O1", "D5"],
+      chosenOptionId: "carril_o1",
+      options: [
+        { id: "trampa_cerrada", status: "descartada_por_condicion", reasonCode: "trap_broken_lane_open", values: { tD5TrapArrivalSeconds: tD5TrapArrival, tPassArrivalToO5Seconds: tPassArrivalToO5 } },
+        { id: "carril_o1", status: "elegida", reasonCode: "trap_broken_lane_open", values: { shotClockRemainingSeconds, o1TimeToHoopSeconds: o1TimeToHoop } },
+        shortCircuited("salida_segura"),
+      ],
+    });
     return resolveShotAttempt(ctx, {
       shooterId: "O1",
       shooterSkill: o1.attributes.T01,
@@ -1177,6 +1457,18 @@ function runTrapPhase(ctx: CoreContext): PossessionCoreResult {
     ["D1", "D5"],
     "D1 y D5 recuperan su posición de trampa por trayecto; O1 no encontró carril a tiempo.",
   );
+  auditDecision(ctx, tDecision, {
+    point: "lectura_trampa",
+    holderId: "O1",
+    participants: ["O1", "D1", "D5", "O2"],
+    chosenOptionId: "salida_segura",
+    factLinkKind: "trap_recovered",
+    options: [
+      { id: "trampa_cerrada", status: "descartada_por_condicion", reasonCode: "trap_broken_lane_open", values: { tD5TrapArrivalSeconds: tD5TrapArrival } },
+      { id: "carril_o1", status: "descartada_por_condicion", reasonCode: "trap_broken_no_lane_recovered", values: { shotClockRemainingSeconds } },
+      { id: "salida_segura", status: "elegida", reasonCode: "safe_outlet_default" },
+    ],
+  });
   const tOutlet = tDecision + PASS_RELEASE_SECONDS + distanceSeconds(ctx.positions.O1!, ctx.positions.O2!);
   event(
     ctx,
@@ -1304,6 +1596,44 @@ function resolveShotAttempt(ctx: CoreContext, args: ShotAttemptArgs): Possession
   const maxTouch = maxTouchHeightMeters(contester.measures.standingReachCm, contesterJump);
   const shotTouchable = maxTouch >= releaseHeight;
   const blockEligible = legality === "legal_contest" && shotTouchable;
+
+  // Auditoría (ME-04A §3, punto 4): la probabilidad y la elegibilidad de
+  // tapón que la regla realmente usó, recalculadas de forma pura (mismas
+  // funciones LAB-0.1, sin consumir sorteo) solo para dejar constancia; el
+  // sorteo real lo consume `resolveShot` más abajo, con su propio rng.
+  if (ctx.audit.enabled) {
+    const base = args.shotType === "close_finish" ? CLOSE_FINISH_BASE_PROBABILITY : THREE_POINT_BASE_PROBABILITY;
+    const shotProb = shotProbability(base, args.shooterSkill, opposition);
+    const blockProb = blockEligible ? blockDeflectionProbability(contester.attributes.T18) : null;
+    auditDecision(ctx, args.tReady, {
+      point: "resolucion_tiro",
+      holderId: args.shooterId,
+      participants: [args.shooterId, args.contesterId],
+      chosenOptionId: legality,
+      factLinkKind: "shot_prepared",
+      options: [
+        {
+          id: "no_contest",
+          status: legality === "no_contest" ? "elegida" : "descartada_por_condicion",
+          reasonCode: "shot_contact_no_overlap",
+          values: { bodyOverlap, arrivalMarginSeconds: arrivalMargin },
+        },
+        {
+          id: "legal_contest",
+          status: legality === "legal_contest" ? "elegida" : "descartada_por_condicion",
+          reasonCode: "shot_contact_legal",
+          values: { arrivalMarginSeconds: arrivalMargin, brakingExtraSeconds: args.contesterGeometry.brakingExtraSeconds },
+        },
+        {
+          id: "late_illegal_contact",
+          status: legality === "late_illegal_contact" ? "elegida" : "descartada_por_condicion",
+          reasonCode: "shot_contact_late_illegal",
+          values: { arrivalMarginSeconds: arrivalMargin },
+        },
+      ],
+      note: `Probabilidad de conversión usada: ${shotProb.toFixed(3)}. Tapón elegible: ${blockEligible ? `sí (probabilidad ${blockProb!.toFixed(3)})` : "no (" + (legality !== "legal_contest" ? "contestación no legal" : "no llega a la altura de liberación") + ")"}.`,
+    });
+  }
 
   event(
     ctx,
@@ -1457,6 +1787,19 @@ function assignReboundDuties(ctx: CoreContext, shooterSlot: string, tGesture: nu
     redirect(ctx, b.slot, tGesture, tGesture + timeToReach(b.position, target, b.speed), target);
   }
   linked.balancers = new Set(balancers.map((b) => b.slot));
+
+  auditDecision(ctx, tGesture, {
+    point: "asignacion_rebote",
+    holderId: shooterSlot,
+    participants: ranked.map((r) => r.slot),
+    chosenOptionId: crashers.map((c) => c.slot).join("+") || null,
+    factLinkKind: "rebound_duties_assigned",
+    options: [
+      ...crashers.map((c): AuditOptionRecord => ({ id: c.slot, status: "elegida", reasonCode: "rebound_duty_crash_fastest", values: { arrivalSeconds: c.arrival } })),
+      ...balancers.map((b): AuditOptionRecord => ({ id: b.slot, status: "descartada_por_condicion", reasonCode: "rebound_duty_balance_return", values: { arrivalSeconds: b.arrival } })),
+    ],
+    note: `Prioridad «${linked.priority}»: mejor acceso al aro por tiempo de llegada real, sin mirar dónde caerá el rebote.`,
+  });
 
   const planLabel = linked.priority === "cargar_rebote" ? "Cargar rebote" : "Proteger balance";
   const crashText = crashers.map((c) => `${c.slot} (llegada prevista al aro ${c.arrival.toFixed(2)} s)`).join(" y ");
@@ -1907,7 +2250,24 @@ function adjudicatePendingContainment(ctx: CoreContext): PossessionCoreResult | 
     defenderArrivalSeconds: c.defenderArrivalSeconds,
     brakingExtraSeconds: c.brakingExtraSeconds,
   });
-  if (legality === "sin_contacto" || contactSeconds === null) return null;
+  if (legality === "sin_contacto" || contactSeconds === null) {
+    auditDecision(ctx, end, {
+      point: "puerta_falta_sin_tiro",
+      holderId: c.attackerSlot,
+      participants: [c.defenderSlot, c.attackerSlot],
+      chosenOptionId: "no_evaluada",
+      options: [
+        {
+          id: "no_evaluada",
+          status: "elegida",
+          reasonCode: "containment_gate_not_reached",
+          reasonNote: "No hubo solape corporal entre el defensor y el continuador antes de que la acción dejara de estar en movimiento (gesto de tiro u otra acción).",
+          values: { startSeconds: start, endSeconds: end, defenderArrivalSeconds: c.defenderArrivalSeconds },
+        },
+      ],
+    });
+    return null;
+  }
 
   const defenderPos = historyPositionAt(ctx, c.defenderSlot, contactSeconds);
   const attackerPos = historyPositionAt(ctx, c.attackerSlot, contactSeconds);
@@ -1924,6 +2284,28 @@ function adjudicatePendingContainment(ctx: CoreContext): PossessionCoreResult | 
     foulerId: c.defenderSlot,
     fouledId: c.attackerSlot,
   };
+
+  auditDecision(ctx, contactSeconds, {
+    point: "puerta_falta_sin_tiro",
+    holderId: c.attackerSlot,
+    participants: [c.defenderSlot, c.attackerSlot],
+    chosenOptionId: legality === "contencion_legal" ? "legal" : "ilegal",
+    factLinkKind: legality === "contencion_legal" ? "legal_containment" : "non_shooting_foul",
+    options: [
+      {
+        id: "legal",
+        status: legality === "contencion_legal" ? "elegida" : "descartada_por_condicion",
+        reasonCode: "containment_gate_legal",
+        values: { contactMs: secondsToMs(contactSeconds), defenderArrivalMs: secondsToMs(c.defenderArrivalSeconds), brakingExtraMs: secondsToMs(c.brakingExtraSeconds) },
+      },
+      {
+        id: "ilegal",
+        status: legality === "contencion_legal" ? "descartada_por_condicion" : "elegida",
+        reasonCode: "containment_gate_illegal",
+        values: { contactMs: secondsToMs(contactSeconds), defenderArrivalMs: secondsToMs(c.defenderArrivalSeconds) },
+      },
+    ],
+  });
 
   if (legality === "contencion_legal") {
     event(
@@ -2015,6 +2397,19 @@ function tryLinkedKickOut(ctx: CoreContext, tRead: number, containerSlot: string
     .filter((o) => o.plan.viable)
     .sort((a, b) => a.passSeconds - b.passSeconds || (a.realId < b.realId ? -1 : a.realId > b.realId ? 1 : 0));
   const choice = viable[0];
+  auditDecision(ctx, tRead, {
+    point: "segunda_entrada",
+    holderId: "O5",
+    participants: ["O5", ...options.map((o) => o.creatorSlot)],
+    chosenOptionId: choice ? choice.creatorSlot : null,
+    options: options.map((o) => ({
+      id: o.creatorSlot,
+      status: choice && o.creatorSlot === choice.creatorSlot ? "elegida" : "descartada_por_condicion",
+      reasonCode: o.plan.viable ? "second_entry_viable_shortest_pass" : secondEntryRejectionCode(o.plan.reason),
+      reasonNote: o.plan.reason,
+      values: { passSeconds: o.passSeconds },
+    })),
+  });
   if (!choice || !choice.plan.viable) {
     event(
       ctx,

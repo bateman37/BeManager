@@ -218,7 +218,7 @@ export function LabWorkspace({ initialTeams, initialWarning, actions, boundaryCa
   const [tramoError, setTramoError] = useState<string | null>(null);
   const [playingTramo, setPlayingTramo] = useState(false);
   const [tramoRunId, setTramoRunId] = useState(0);
-  const [gameSettings, setGameSettings] = useState<GameSettings>({ seed: 82, teams: {} });
+  const [gameSettings, setGameSettings] = useState<GameSettings>({ seed: 82, teams: {}, auditEnabled: true });
   const [gameResult, setGameResult] = useState<LabGameView | null>(null);
   const [gameError, setGameError] = useState<string | null>(null);
   const [gameStale, setGameStale] = useState<string | null>(null);
@@ -236,8 +236,12 @@ export function LabWorkspace({ initialTeams, initialWarning, actions, boundaryCa
   }
 
   function handleGameSettingsChange(next: GameSettings) {
+    const reason =
+      next.auditEnabled !== gameSettings.auditEnabled && next.seed === gameSettings.seed
+        ? "Has cambiado si se registra auditoría"
+        : "Has cambiado la semilla, una cobertura o una prioridad del partido";
     setGameSettings(next);
-    invalidateGame("Has cambiado la semilla, una cobertura o una prioridad del partido");
+    invalidateGame(reason);
   }
 
   async function handlePlayGame() {
@@ -250,6 +254,7 @@ export function LabWorkspace({ initialTeams, initialWarning, actions, boundaryCa
         gameSettings.seed,
         toGameTeam(offenseTeam, teamSettings(gameSettings, offenseTeam.id)),
         toGameTeam(defenseTeam, teamSettings(gameSettings, defenseTeam.id)),
+        gameSettings.auditEnabled,
       );
       if (outcome.status === "played") {
         setGameResult(outcome.game);

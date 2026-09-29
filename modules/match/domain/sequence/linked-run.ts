@@ -83,6 +83,7 @@ import {
   type TramoBallState,
   type TramoEvent,
 } from "./tramo-model";
+import { createNoopAuditCollector, type AuditCollector } from "../audit/audit-collector";
 
 export interface LinkedLimits {
   /** Fases (rebotes ofensivos, salidas, recuperaciones) máximas en una posesión. */
@@ -110,6 +111,8 @@ export interface LinkedRunSettings {
   /** Todos los perfiles inscritos (copia estable), con su equipo. */
   readonly roster: readonly { readonly teamId: string; readonly profile: PlayerProfile }[];
   readonly limits: LinkedLimits;
+  /** Colector de auditoría (ME-04A); por defecto no hace nada (mismo coste que antes). */
+  readonly audit?: AuditCollector;
 }
 
 export const OFFENSE_SLOTS = ["O1", "O2", "O3", "O4", "O5"] as const;
@@ -261,6 +264,7 @@ export abstract class LinkedRun {
   protected readonly currentResponsibility = new Map<string, Responsibility>();
   protected readonly rngStates: { atMs: Milliseconds; state: number }[] = [];
   protected readonly score: Record<string, number> = {};
+  protected readonly audit: AuditCollector;
 
   protected game: { ms: Milliseconds; running: boolean; ref: Milliseconds };
   protected shot: { ms: Milliseconds; running: boolean; ref: Milliseconds } | null;
@@ -277,6 +281,7 @@ export abstract class LinkedRun {
   constructor(settings: LinkedRunSettings) {
     this.settings = settings;
     this.limits = settings.limits;
+    this.audit = settings.audit ?? createNoopAuditCollector();
     this.rng = createResumableRandom(settings.seed);
     for (const team of settings.teams) {
       this.teams.set(team.id, team);
@@ -403,6 +408,41 @@ export abstract class LinkedRun {
     }
     this.currentResponsibility.set(id, responsibility);
     this.responsibilities.push({ atMs, playerId: id, teamId: this.teamOf.get(id)!, responsibility, reason });
+  }
+
+  /**
+   * Registra un punto de decisión propio del motor de continuidad (fuera
+   * del núcleo del bloqueo): entrada de fase/transición, organización del
+   * creador. Sin efecto si el colector está desactivado (ME-04A §3).
+   */
+  protected auditDecision(
+    atMs: Milliseconds,
+    input: {
+      readonly point: import("../audit/audit-types").AuditDecisionPoint;
+      readonly holderId: string | null;
+      readonly participants: readonly string[];
+      readonly options: readonly import("../audit/audit-types").AuditOptionRecord[];
+      readonly chosenOptionId: string | null;
+      readonly factLinkKind?: string;
+      readonly note?: string;
+    },
+  ): void {
+    if (!this.audit.enabled) return;
+    const possession = this.possessionRef();
+    this.audit.recordDecision({
+      atMs,
+      point: input.point,
+      possessionIndex: possession ? possession.index : null,
+      phaseIndex: possession ? possession.phases.length - 1 : null,
+      holderId: input.holderId,
+      participants: input.participants,
+      options: input.options,
+      chosenOptionId: input.chosenOptionId,
+      factLink: input.factLinkKind ? { atMs, kind: input.factLinkKind } : null,
+      rngStateBefore: null,
+      rngStateAfter: null,
+      note: input.note,
+    });
   }
 
   protected translateText(frame: Frame, text: string): string {
@@ -709,7 +749,9 @@ export abstract class LinkedRun {
       defensePlayers: frame.defending.players,
     };
     const rules = this.coreRules();
+    const possession = this.possessionRef();
     return computePossessionCore(matchInput, {
+      audit: this.audit,
       linked: {
         binding: frame.slotToId,
         startPositions: local,
@@ -719,6 +761,9 @@ export abstract class LinkedRun {
         rng: this.rng,
         attackingPriority: frame.attacking.priority,
         entry,
+        t0,
+        possessionIndex: possession ? possession.index : null,
+        phaseIndex: possession ? possession.phases.length - 1 : null,
         ...(rules ? { rules } : {}),
       },
     });
@@ -1106,6 +1151,20 @@ export abstract class LinkedRun {
     const attackerIds = OFFENSE_SLOTS.map((slot) => frame.slotToId[slot]!);
     const tAllSet = Math.max(t0, ...attackerIds.map((id) => arrivals[id]!));
     const handlerId = frame.slotToId.O1!;
+    this.auditDecision(t0, {
+      point: "organizacion_creador",
+      holderId,
+      participants: [handlerId],
+      chosenOptionId: handlerId,
+      options: [
+        {
+          id: handlerId,
+          status: "elegida",
+          reasonCode: "role_fixed_no_ranking",
+          reasonNote: "El manejador es el rol fijo O1 del quinteto vigente; no se compara contra otros candidatos.",
+        },
+      ],
+    });
 
     // Cuenta de 8 s si el control empezó en pista trasera (art. 28).
     if (this.backcourt) {
@@ -1316,6 +1375,20 @@ export abstract class LinkedRun {
     if (read.kind === "sin_ventaja") {
       const reason = `Sin ventaja: ataque organizado. Primer defensor en el aro: ${read.firstDefender.id} (${formatSeconds(read.firstDefender.arrivalSeconds)}); atacante más rápido: ${read.fastestAttacker.id} (${formatSeconds(read.fastestAttacker.arrivalSeconds)}); ${read.reason}.`;
       this.setPhaseEntry("ataque_organizado", reason);
+      this.auditDecision(t1, {
+        point: "entrada_fase_transicion",
+        holderId: carrierId,
+        participants: [carrierId, read.firstDefender.id, read.fastestAttacker.id],
+        chosenOptionId: "sin_ventaja",
+        factLinkKind: "transition_read",
+        options: [
+          { id: "sin_ventaja", status: "elegida", reasonCode: "not_available", reasonNote: read.reason, values: { firstDefenderArrivalSeconds: read.firstDefender.arrivalSeconds, fastestAttackerArrivalSeconds: read.fastestAttacker.arrivalSeconds } },
+          { id: "penetracion", status: "no_evaluada_por_cortocircuito", reasonCode: "not_evaluated_short_circuit" },
+          { id: "pase_adelantado", status: "no_evaluada_por_cortocircuito", reasonCode: "not_evaluated_short_circuit" },
+          { id: "superioridad_2x1", status: "no_evaluada_por_cortocircuito", reasonCode: "not_evaluated_short_circuit" },
+          { id: "superioridad_3x2", status: "no_evaluada_por_cortocircuito", reasonCode: "not_evaluated_short_circuit" },
+        ],
+      });
       if (!this.emit({ atMs: t1, phase: "reconocido", kind: "transition_read", actors: [carrierId], text: reason, detail: { advantage: false } }))
         return null;
       return { kind: "organize", frame, atMs: t1, holderId: carrierId };
@@ -1353,6 +1426,19 @@ export abstract class LinkedRun {
 
     this.setPhaseEntry("ventaja_temprana", reason);
     this.assignResponsibility(t1, shooterId, "carril_transicion", "Ataca el aro antes de que llegue su defensor.");
+    this.auditDecision(t1, {
+      point: "entrada_fase_transicion",
+      holderId: carrierId,
+      participants: [carrierId, shooterId, read.firstDefender.id],
+      chosenOptionId: read.kind === "superioridad" ? "superioridad_2x1" : read.kind === "superioridad_3x2" ? "superioridad_3x2" : read.kind,
+      factLinkKind: "transition_read",
+      options: [
+        { id: read.kind === "superioridad" ? "superioridad_2x1" : read.kind === "superioridad_3x2" ? "superioridad_3x2" : read.kind, status: "elegida", reasonCode: "transition_advantage_found", reasonNote: reason },
+        ...(["penetracion", "pase_adelantado", "superioridad_2x1", "superioridad_3x2", "sin_ventaja"] as const)
+          .filter((id) => id !== (read.kind === "superioridad" ? "superioridad_2x1" : read.kind === "superioridad_3x2" ? "superioridad_3x2" : read.kind))
+          .map((id) => ({ id, status: "no_evaluada_por_cortocircuito" as const, reasonCode: "not_evaluated_short_circuit" as const })),
+      ],
+    });
     if (!this.emit({ atMs: t1, phase: "reconocido", kind: "transition_read", actors: [carrierId, shooterId], text: reason, detail: { advantage: true, kind: read.kind } }))
       return null;
 

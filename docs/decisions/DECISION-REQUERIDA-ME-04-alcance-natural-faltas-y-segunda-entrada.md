@@ -1,7 +1,8 @@
 # DECISIÓN REQUERIDA — ME-04: alcance natural de las faltas y de la segunda entrada con el fixture
 
-**Estado:** PENDIENTE (no bloquea ME-04).
-**Última actualización:** 2026-09-29.
+**Estado:** PENDIENTE (no bloquea ME-04 ni ME-04A).
+**Última actualización:** 2026-09-29 (ME-04A: mejor evidencia trazable, sin
+cambiar el reparto; ver `docs/match/AUDIT.md`).
 
 ## Contexto exacto
 

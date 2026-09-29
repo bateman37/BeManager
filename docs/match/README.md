@@ -33,6 +33,12 @@ rotación automática fija, segunda entrada del bloqueo directo, relato y acta
 calculados de los hechos, y casos de frontera reglamentarios en `/lab` (ver
 `docs/decisions/ADR-0007-shared-continuity-engine-and-game-rules-profile.md`).
 
+**ME-04A:** auditoría exportable de ese mismo partido (`domain/audit/`):
+interruptor «Registrar auditoría» y descarga de un `.json` versionado por
+partido con la entrada, los hechos, los puntos de decisión observados del
+árbol de drop/trampa/segunda entrada/tiro/rebote/falta sin tiro y el
+resultado, sin cambiar la simulación (ver `AUDIT.md`).
+
 **No implementado todavía:** dirección en vivo, fatiga, tiempos muertos,
 temporadas, más de una
 acción táctica ofensiva, coberturas de bloqueo distintas de drop/trampa,
@@ -51,6 +57,7 @@ están activas; ver `CAPABILITIES.md`).
 | Capacidades activas y parámetros LAB-0.1 | `CAPABILITIES.md` |
 | Los tres escenarios, el modo «Jugar tramo», el partido completo y los casos de frontera | `SCENARIOS.md` |
 | Acta (boxscore) calculada de los hechos y su conciliación | `BOXSCORE.md` |
+| Auditoría exportable del partido detallado (esquema, colector, cobertura) | `AUDIT.md` |
 | Diseño completo (no solo lo aprobado) | `reference/README.md` |
 | Próximas entregas | `roadmap.md` |
 
@@ -65,6 +72,7 @@ modules/match/
     simulation/                   # núcleo compartido (modo enlazado ME-03), hechos, resolvers
     sequence/                     # motor de continuidad compartido, tramo, reglas de reloj, transición (ME-03/ME-04)
     game/                         # partido completo: reglas FIBA 2026 puras, rotación, acta, casos de frontera (ME-04)
+    audit/                        # colector y exportador de auditoría del partido (ME-04A)
     fast/                         # aproximación rápida por lotes
   application/
     ports/ use-cases/             # casos de uso de laboratorio

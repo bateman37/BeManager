@@ -17,6 +17,7 @@ import type { PhaseEntry, PossessionRecord, ResponsibilityChange, TramoEvent } f
 import { JUMP_BALL_APPROXIMATION_VERSION, type DeadBallCause, type FoulSanction, type DefensiveFoulType } from "./fiba-2026-rules";
 import { SUBSTITUTION_POLICY_VERSION, type SubstitutionReason } from "./substitution-policy";
 import type { BoxScore } from "./box-score";
+import type { RawAuditLog } from "../audit/audit-types";
 
 export const GAME_VERSION = "ME-04-GAME-1";
 export const MAX_ROSTER_SIZE = 12;
@@ -44,6 +45,12 @@ export interface GameInput {
   readonly substitutionPolicyVersion: typeof SUBSTITUTION_POLICY_VERSION;
   /** `[0]` ataca hacia x creciente en la primera mitad. */
   readonly teams: readonly [GameTeamInput, GameTeamInput];
+  /**
+   * Registrar auditoría (ME-04A §2), desactivado por defecto a nivel de
+   * tipo: la UI de `/lab` lo activa por defecto. Sin esto, `GameResult.audit`
+   * queda ausente y el coste/comportamiento son los de antes de ME-04A.
+   */
+  readonly auditEnabled?: boolean;
 }
 
 export interface BuildGameTeamArgs {
@@ -88,6 +95,7 @@ export function buildGameInput(args: {
   readonly seed: number;
   readonly home: BuildGameTeamArgs;
   readonly away: BuildGameTeamArgs;
+  readonly auditEnabled?: boolean;
 }): GameInput {
   const home = buildTeam(args.home);
   const away = buildTeam(args.away);
@@ -101,6 +109,7 @@ export function buildGameInput(args: {
     jumpBallVersion: JUMP_BALL_APPROXIMATION_VERSION,
     substitutionPolicyVersion: SUBSTITUTION_POLICY_VERSION,
     teams: [home, away],
+    auditEnabled: args.auditEnabled ?? false,
   };
 }
 
@@ -179,4 +188,6 @@ export interface GameResult {
   readonly effectivePlayedMs: Milliseconds;
   readonly entryCounts: Readonly<Record<PhaseEntry, number>>;
   readonly rngStateAtBoundaries: readonly { readonly atMs: Milliseconds; readonly state: number }[];
+  /** Registro crudo de auditoría (ME-04A), solo presente cuando `input.auditEnabled` fue `true`. */
+  readonly audit?: RawAuditLog;
 }

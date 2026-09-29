@@ -10,6 +10,7 @@ import type { DefensiveCoverage } from "@match/domain/lab/match-input";
 import type { PhaseEntry, ReboundPriority, TramoEvent } from "@match/domain/sequence/tramo-model";
 import { LAB_DECLARED_ROLES, FUNCTIONAL_ROLE_LABELS, type FunctionalRole } from "@match/domain/players/functional-roles";
 import { LAB_STARTER_IDS } from "@match/domain/players/lab-roster-fixture";
+import { buildAuditExport } from "@match/domain/audit/build-audit-export";
 import { TramoCourt } from "./tramo-panel";
 
 /**
@@ -29,9 +30,16 @@ export interface GameTeamSettings {
 export interface GameSettings {
   readonly seed: number;
   readonly teams: Readonly<Record<string, GameTeamSettings>>;
+  /** «Registrar auditoría» (ME-04A §2): activado por defecto en este laboratorio. */
+  readonly auditEnabled: boolean;
 }
 
-export type PlayGameAction = (seed: number, home: BuildGameTeamArgs, away: BuildGameTeamArgs) => Promise<PlayLabGameResult>;
+export type PlayGameAction = (
+  seed: number,
+  home: BuildGameTeamArgs,
+  away: BuildGameTeamArgs,
+  auditEnabled: boolean,
+) => Promise<PlayLabGameResult>;
 
 const DEFAULT_TEAM_SETTINGS: GameTeamSettings = { coverage: "drop", priority: "proteger_balance" };
 
@@ -489,10 +497,97 @@ function BoxScoreTables({ game }: { readonly game: LabGameView }) {
   );
 }
 
+function sanitizeFileNamePart(value: string): string {
+  return value.replace(/[^A-Za-z0-9_-]/g, "-");
+}
+
+/**
+ * Comprime a gzip en el propio navegador (`CompressionStream`, ME-04A §5):
+ * medido con el fixture natural completo (doce inscritos por equipo), el
+ * `.json` indentado pesa del orden de 14 MB, incómodo de adjuntar; gzip lo
+ * deja en torno a 0,6 MB sin perder ni un campo (ver `docs/match/AUDIT.md`).
+ * Un único archivo `.json.gz`, nunca varios por partido.
+ */
+async function gzipJson(json: string): Promise<Blob> {
+  const bytes = new TextEncoder().encode(json);
+  const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream("gzip"));
+  const buffer = await new Response(stream).arrayBuffer();
+  return new Blob([buffer], { type: "application/gzip" });
+}
+
+/**
+ * Botón «Descargar auditoría (.json)» (ME-04A §2, §5): construye el archivo
+ * con `buildAuditExport` a partir del `GameResult` ya sostenido en memoria
+ * (el mismo `game` que ya pinta el visor) — sin volver a jugar el partido,
+ * sin red y sin escribir en PostgreSQL — y lo entrega como descarga del
+ * navegador. Si la corrida no activó el registro, explica por qué las
+ * decisiones no se pueden reconstruir después y qué hacer.
+ */
+function AuditDownloadPanel({ game }: { readonly game: LabGameView }) {
+  const [state, setState] = useState<{ readonly sizeBytes: number; readonly fileName: string } | null>(null);
+  const [preparing, setPreparing] = useState(false);
+  const auditOn = game.audit !== undefined;
+
+  async function download() {
+    setPreparing(true);
+    try {
+      const exported = buildAuditExport(game.input, game);
+      const json = JSON.stringify(exported, null, 2);
+      const blob = await gzipJson(json);
+      const fileName = `bemanager-auditoria-semilla-${sanitizeFileNamePart(String(game.input.seed))}-${sanitizeFileNamePart(game.gameId)}.json.gz`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setState({ sizeBytes: blob.size, fileName });
+    } finally {
+      setPreparing(false);
+    }
+  }
+
+  return (
+    <div className="rounded border border-slate-200 p-3 text-sm dark:border-slate-800">
+      <p className="mb-1 font-semibold">Auditoría exportable (ME-04A)</p>
+      <p className="text-xs text-slate-600 dark:text-slate-300">
+        Semilla {game.input.seed} · Partido {game.gameId} · Registro de auditoría {auditOn ? "activado" : "desactivado"} en esta corrida.
+      </p>
+      {auditOn ? (
+        <>
+          <button
+            type="button"
+            disabled={preparing}
+            className="mt-2 rounded bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+            onClick={() => void download()}
+          >
+            {preparing ? "Preparando archivo…" : "Descargar auditoría (.json.gz)"}
+          </button>
+          {state && (
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              Descargado <span className="font-mono">{state.fileName}</span> · {(state.sizeBytes / 1024).toFixed(1)} KB comprimido (gzip, sin
+              perder información: descomprímelo para leer el `.json`). Un archivo autónomo de esta misma ejecución: no se ha vuelto a simular el
+              partido ni se ha enviado nada fuera del equipo.
+            </p>
+          )}
+        </>
+      ) : (
+        <p className="mt-1 rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300">
+          El registro de auditoría estaba apagado al jugar este partido: los motivos de cada decisión no se pueden reconstruir a posteriori con
+          el acta. Activa «Registrar auditoría» y vuelve a jugar esta misma semilla para poder descargarla.
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function GameViewer({ game }: { readonly game: LabGameView }) {
   return (
     <div className="space-y-4">
       <Scoreboard game={game} />
+      <AuditDownloadPanel game={game} />
       <FoulsSummary game={game} />
       <SubstitutionsList game={game} />
       <PlayByPlay game={game} />
@@ -662,6 +757,14 @@ export function GameSection(props: GameSectionProps) {
             value={props.settings.seed}
             onChange={(e) => props.onSettingsChange({ ...props.settings, seed: Number(e.target.value) })}
           />
+        </label>
+        <label className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={props.settings.auditEnabled}
+            onChange={(e) => props.onSettingsChange({ ...props.settings, auditEnabled: e.target.checked })}
+          />
+          Registrar auditoría
         </label>
         <button
           type="button"

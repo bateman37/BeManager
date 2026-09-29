@@ -7,11 +7,13 @@ import type { Point2D } from "../../domain/geometry/point";
  * Vista de un partido ya resuelto para la interfaz de laboratorio: los
  * mismos hechos, acta y registros del dominio, con las posiciones
  * redondeadas al centímetro solo para el transporte (la foto de cancha no
- * necesita más), sin el registro de encargos (no se muestra en el visor
- * del partido) y con las comprobaciones de conciliación calculadas sobre el
- * resultado exacto antes de redondear.
+ * necesita más) y con las comprobaciones de conciliación calculadas sobre
+ * el resultado exacto antes de redondear. `responsibilities` viaja aunque el
+ * visor del partido no la muestre: la exportación de auditoría (ME-04A) la
+ * necesita para `continuity` y solo dispone del resultado ya enviado al
+ * navegador, sin volver a jugar el partido.
  */
-export type LabGameView = Omit<GameResult, "responsibilities"> & {
+export type LabGameView = GameResult & {
   readonly reconciliation: readonly ReconciliationCheck[];
 };
 
@@ -31,10 +33,8 @@ export function toLabGameView(result: GameResult): LabGameView {
     engineMinutesMs: result.engineMinutesMs,
     teamIds: result.input.teams.map((t) => t.id),
   });
-  const { responsibilities: _omitted, ...rest } = result;
-  void _omitted;
   return {
-    ...rest,
+    ...result,
     events: result.events.map((e) => ({
       ...e,
       positions: e.positions.map((p) => ({ playerId: p.playerId, position: round(p.position) })),
@@ -54,6 +54,8 @@ export async function playLabGame(args: {
   readonly seed: number;
   readonly home: BuildGameTeamArgs;
   readonly away: BuildGameTeamArgs;
+  /** Registrar auditoría (ME-04A): activado por defecto en el laboratorio. */
+  readonly auditEnabled?: boolean;
 }): Promise<PlayLabGameResult> {
   try {
     return { status: "played", game: toLabGameView(playFullGame(buildGameInput(args))) };
