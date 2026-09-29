@@ -502,6 +502,20 @@ function sanitizeFileNamePart(value: string): string {
 }
 
 /**
+ * Comprime a gzip en el propio navegador (`CompressionStream`, ME-04A §5):
+ * medido con el fixture natural completo (doce inscritos por equipo), el
+ * `.json` indentado pesa del orden de 14 MB, incómodo de adjuntar; gzip lo
+ * deja en torno a 0,6 MB sin perder ni un campo (ver `docs/match/AUDIT.md`).
+ * Un único archivo `.json.gz`, nunca varios por partido.
+ */
+async function gzipJson(json: string): Promise<Blob> {
+  const bytes = new TextEncoder().encode(json);
+  const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream("gzip"));
+  const buffer = await new Response(stream).arrayBuffer();
+  return new Blob([buffer], { type: "application/gzip" });
+}
+
+/**
  * Botón «Descargar auditoría (.json)» (ME-04A §2, §5): construye el archivo
  * con `buildAuditExport` a partir del `GameResult` ya sostenido en memoria
  * (el mismo `game` que ya pinta el visor) — sin volver a jugar el partido,
@@ -511,22 +525,28 @@ function sanitizeFileNamePart(value: string): string {
  */
 function AuditDownloadPanel({ game }: { readonly game: LabGameView }) {
   const [state, setState] = useState<{ readonly sizeBytes: number; readonly fileName: string } | null>(null);
+  const [preparing, setPreparing] = useState(false);
   const auditOn = game.audit !== undefined;
 
-  function download() {
-    const exported = buildAuditExport(game.input, game);
-    const json = JSON.stringify(exported, null, 2);
-    const blob = new Blob([json], { type: "application/json" });
-    const fileName = `bemanager-auditoria-semilla-${sanitizeFileNamePart(String(game.input.seed))}-${sanitizeFileNamePart(game.gameId)}.json`;
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = fileName;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-    setState({ sizeBytes: blob.size, fileName });
+  async function download() {
+    setPreparing(true);
+    try {
+      const exported = buildAuditExport(game.input, game);
+      const json = JSON.stringify(exported, null, 2);
+      const blob = await gzipJson(json);
+      const fileName = `bemanager-auditoria-semilla-${sanitizeFileNamePart(String(game.input.seed))}-${sanitizeFileNamePart(game.gameId)}.json.gz`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setState({ sizeBytes: blob.size, fileName });
+    } finally {
+      setPreparing(false);
+    }
   }
 
   return (
@@ -537,13 +557,19 @@ function AuditDownloadPanel({ game }: { readonly game: LabGameView }) {
       </p>
       {auditOn ? (
         <>
-          <button type="button" className="mt-2 rounded bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white" onClick={download}>
-            Descargar auditoría (.json)
+          <button
+            type="button"
+            disabled={preparing}
+            className="mt-2 rounded bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+            onClick={() => void download()}
+          >
+            {preparing ? "Preparando archivo…" : "Descargar auditoría (.json.gz)"}
           </button>
           {state && (
             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-              Descargado <span className="font-mono">{state.fileName}</span> · {(state.sizeBytes / 1024).toFixed(1)} KB. Un archivo autónomo de
-              esta misma ejecución: no se ha vuelto a simular el partido ni se ha enviado nada fuera del equipo.
+              Descargado <span className="font-mono">{state.fileName}</span> · {(state.sizeBytes / 1024).toFixed(1)} KB comprimido (gzip, sin
+              perder información: descomprímelo para leer el `.json`). Un archivo autónomo de esta misma ejecución: no se ha vuelto a simular el
+              partido ni se ha enviado nada fuera del equipo.
             </p>
           )}
         </>

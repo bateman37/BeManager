@@ -105,6 +105,29 @@ Ver `docs/match/{MODEL,RULES,ACTIONS,SCENARIOS,BOXSCORE}.md`.
 
 **Fuera:** dirigir toda la rotación manualmente, catálogo completo de faltas raras y temporadas.
 
+### ME-04A — Auditoría exportable de partidos detallados
+
+**Estado: implementado** (auditoría opcional del partido detallado, sin
+cambiar la simulación; ver `docs/match/AUDIT.md`).
+
+**Alcance:** interruptor «Registrar auditoría» (activado por defecto) y
+descarga de un `.json` versionado por partido con la entrada, los hechos,
+las decisiones observadas del árbol de drop/trampa/segunda entrada/tiro/
+rebote/falta sin tiro y el resultado, para investigar fuera de la
+aplicación por qué se reparten así los protagonistas. No añade ni cambia
+ninguna probabilidad, atributo, táctica o regla; solo observa y expone lo
+que el motor ya decide.
+
+**Interfaz y cierre:** activar/desactivar el registro antes de jugar,
+descargar el archivo de una corrida ya resuelta (incluida una detenida por
+el guardián), y comprobar que invalida su descarga al cambiar semilla,
+plan o el propio interruptor.
+
+**Fuera:** cambiar el reparto de faltas/segunda entrada/ventaja temprana
+que documenta la decisión pendiente de ME-04 (sigue pendiente), lotes
+automáticos, persistencia entre recargas (ME-09) y cualquier ajuste de
+motor, tácticas o atributos.
+
 ### ME-05 — Dirigir en vivo
 
 **Alcance:** controles efectivos para sustituciones, tiempos muertos y ajustes de ataque/defensa dentro de lo ya soportado. Registrar cuándo se envía, recibe y aplica una instrucción. Estados de esfuerzo, descanso y fatiga con efecto sobre tareas concretas y capacidad de recuperación, no un castigo global misterioso. Roles se reasignan al cambiar quinteto; acciones comprometidas terminan o se interrumpen por una causa definida.

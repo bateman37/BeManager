@@ -3,6 +3,32 @@
 Formato libre en español, orden cronológico inverso. Los motivos de
 decisiones duraderas viven en `docs/decisions/`, no aquí.
 
+## ME-04A — Auditoría exportable de partidos detallados (sin fusionar)
+
+- Prompt guardado en
+  `docs/prompts/implementation/ME-04A-auditoria-exportable-partidos.md`
+  antes de modificar producto.
+- **Colector de auditoría** (`modules/match/domain/audit/`): opcional y
+  enhebrado por `playFullGame` → `LinkedRun` → `computePossessionCore` y los
+  resolutores de drop/trampa, segunda entrada, tiro/rebote y falta sin tiro.
+  Colector nulo por defecto (coste y comportamiento idénticos a antes de
+  ME-04A, verificado en `audit-export.test.ts`); colector real solo cuando
+  `GameInput.auditEnabled` está activo.
+- **`buildAuditExport`** (`domain/audit/build-audit-export.ts`): función
+  pura que ensambla el `.json` versionado (`ME-04A-AUDIT-1`) desde el
+  `GameInput`/`GameResult` ya calculados, sin recalcular ni volver a jugar
+  el partido.
+- **`/lab`**: interruptor «Registrar auditoría» (activado por defecto) antes
+  de «Jugar partido» y botón «Descargar auditoría (.json)» tras un partido
+  resuelto (incluida una parada de guardián, sin ganador inventado); cambiar
+  semilla, cobertura, prioridad o el interruptor invalida la descarga
+  anterior.
+- Documentación nueva `docs/match/AUDIT.md`; `docs/match/README.md`,
+  `docs/match/roadmap.md` (ME-04A implementado, sin desplazar ME-05) y
+  `docs/testing/manual/ME-04A-manual-test-plan.md` actualizados. La
+  decisión pendiente de ME-04 sobre el alcance natural de faltas y segunda
+  entrada sigue **pendiente**, ahora con mejor evidencia trazable.
+
 ## ME-04 — Primer partido reglamentario FIBA (sin fusionar)
 
 - Prompt guardado en `docs/prompts/implementation/ME-04-primer-partido-fiba.md`
