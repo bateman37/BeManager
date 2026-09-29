@@ -76,6 +76,7 @@ import {
   type PlannedSubstitution,
 } from "./substitution-policy";
 import { projectBoxScore } from "./box-score";
+import { createRecordingAuditCollector } from "../audit/audit-collector";
 import type {
   FoulRecord,
   GameInput,
@@ -182,6 +183,7 @@ class GameRun extends LinkedRun {
       ],
       roster: input.teams.flatMap((t) => t.roster.map((profile) => ({ teamId: t.id, profile }))),
       limits: { ...DEFAULT_GAME_LIMITS, ...options.limits },
+      ...(input.auditEnabled ? { audit: createRecordingAuditCollector() } : {}),
     });
     this.input = input;
     this.maxOvertimes = options.maxOvertimes ?? DEFAULT_MAX_OVERTIMES;
@@ -923,6 +925,16 @@ class GameRun extends LinkedRun {
       pendiente: 0,
     };
     for (const p of this.possessions) for (const ph of p.phases) entryCounts[ph.entry] += 1;
+    if (this.input.auditEnabled && this.subs.length > 0) {
+      // ME-04A §3: la sustitución registra el cambio elegido y su motivo,
+      // pero no la comparación completa de candidatos elegibles descartados
+      // (elegibilidad, rol, minutos) en este bloque. Declarado, no silencioso.
+      this.audit.recordCoverageGap(
+        "sustitucion",
+        "Se registra el cambio realmente aplicado (rol, motivo, minutos) pero no la comparación completa frente a los demás candidatos elegibles del quinteto.",
+        this.subs.length,
+      );
+    }
     return {
       gameId: `lab-${this.input.seed}-${fnv1a(JSON.stringify(this.input))}`,
       input: this.input,
@@ -940,6 +952,7 @@ class GameRun extends LinkedRun {
       effectivePlayedMs: this.playedMs,
       entryCounts,
       rngStateAtBoundaries: this.rngStates,
+      ...(this.input.auditEnabled ? { audit: this.audit.snapshot() } : {}),
     };
   }
 }
