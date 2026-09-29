@@ -6,7 +6,7 @@ import type { LabGameView, PlayLabGameResult } from "@match/application/use-case
 import type { BuildGameTeamArgs } from "@match/domain/game/game-model";
 import type { PlayerBoxLine, TeamBoxTotals } from "@match/domain/game/box-score";
 import type { RuleBoundaryCase } from "@match/domain/game/rule-boundary-fixtures";
-import type { DefensiveCoverage } from "@match/domain/lab/match-input";
+import type { DefensiveCoverage, OffensivePlanChoice, OffBallDefensiveCall } from "@match/domain/lab/match-input";
 import type { PhaseEntry, ReboundPriority, TramoEvent } from "@match/domain/sequence/tramo-model";
 import { LAB_DECLARED_ROLES, FUNCTIONAL_ROLE_LABELS, type FunctionalRole } from "@match/domain/players/functional-roles";
 import { LAB_STARTER_IDS } from "@match/domain/players/lab-roster-fixture";
@@ -25,6 +25,10 @@ import { TramoCourt } from "./tramo-panel";
 export interface GameTeamSettings {
   readonly coverage: DefensiveCoverage;
   readonly priority: ReboundPriority;
+  /** ME-06 §3.2: plan ofensivo previo de este equipo para todo el partido. */
+  readonly offensivePlan: OffensivePlanChoice;
+  /** ME-06 §3.1: orden de defensa sin balón de este equipo ante la mano a mano. */
+  readonly offBallDefensiveCall: OffBallDefensiveCall;
 }
 
 export interface GameSettings {
@@ -41,7 +45,12 @@ export type PlayGameAction = (
   auditEnabled: boolean,
 ) => Promise<PlayLabGameResult>;
 
-const DEFAULT_TEAM_SETTINGS: GameTeamSettings = { coverage: "drop", priority: "proteger_balance" };
+const DEFAULT_TEAM_SETTINGS: GameTeamSettings = {
+  coverage: "drop",
+  priority: "proteger_balance",
+  offensivePlan: "auto",
+  offBallDefensiveCall: "guardar_espacio",
+};
 
 export function teamSettings(settings: GameSettings, teamId: string): GameTeamSettings {
   return settings.teams[teamId] ?? DEFAULT_TEAM_SETTINGS;
@@ -49,13 +58,30 @@ export function teamSettings(settings: GameSettings, teamId: string): GameTeamSe
 
 /** Datos mínimos que el caso de uso necesita de cada equipo. */
 export function toGameTeam(team: LabTeamRecord, s: GameTeamSettings): BuildGameTeamArgs {
-  return { id: team.id, name: team.name, players: team.players, priority: s.priority, coverage: s.coverage };
+  return {
+    id: team.id,
+    name: team.name,
+    players: team.players,
+    priority: s.priority,
+    coverage: s.coverage,
+    offensivePlan: s.offensivePlan,
+    offBallDefensiveCall: s.offBallDefensiveCall,
+  };
 }
 
 const COVERAGE_LABELS: Record<DefensiveCoverage, string> = { drop: "Drop", trampa: "Trampa" };
 const PRIORITY_LABELS: Record<ReboundPriority, string> = {
   proteger_balance: "Proteger balance",
   cargar_rebote: "Cargar rebote",
+};
+const OFFENSIVE_PLAN_LABELS: Record<OffensivePlanChoice, string> = {
+  auto: "Auto (elige el motor)",
+  bloqueo_directo: "Bloqueo directo",
+  mano_a_mano_sin_balon: "Mano a mano sin balón",
+};
+const OFF_BALL_CALL_LABELS: Record<OffBallDefensiveCall, string> = {
+  guardar_espacio: "Guardar espacio (protege carril y ayuda)",
+  negar_primera_salida: "Negar primera salida (sigue y niega)",
 };
 const ENTRY_LABELS: Record<PhaseEntry, string> = {
   ataque_organizado: "ataque organizado",
@@ -739,6 +765,34 @@ export function GameSection(props: GameSectionProps) {
                       {(Object.keys(PRIORITY_LABELS) as ReboundPriority[]).map((p) => (
                         <option key={p} value={p}>
                           {PRIORITY_LABELS[p]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex items-center gap-1">
+                    Plan ofensivo
+                    <select
+                      className="rounded border border-slate-300 bg-transparent px-1 py-0.5 dark:border-slate-700"
+                      value={teamSettings(props.settings, team.id).offensivePlan}
+                      onChange={(e) => setTeam(team.id, { offensivePlan: e.target.value as OffensivePlanChoice })}
+                    >
+                      {(Object.keys(OFFENSIVE_PLAN_LABELS) as OffensivePlanChoice[]).map((p) => (
+                        <option key={p} value={p}>
+                          {OFFENSIVE_PLAN_LABELS[p]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex items-center gap-1">
+                    Defensa sin balón
+                    <select
+                      className="rounded border border-slate-300 bg-transparent px-1 py-0.5 dark:border-slate-700"
+                      value={teamSettings(props.settings, team.id).offBallDefensiveCall}
+                      onChange={(e) => setTeam(team.id, { offBallDefensiveCall: e.target.value as OffBallDefensiveCall })}
+                    >
+                      {(Object.keys(OFF_BALL_CALL_LABELS) as OffBallDefensiveCall[]).map((c) => (
+                        <option key={c} value={c}>
+                          {OFF_BALL_CALL_LABELS[c]}
                         </option>
                       ))}
                     </select>

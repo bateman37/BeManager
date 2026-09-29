@@ -16,6 +16,8 @@ export type BulkIncrementLabAttributesResult =
       readonly attributesAlreadyAtMax: number;
       /** De los que cambiaron, cuántos quedaron limitados a 15 por el tope. */
       readonly attributesClampedToMax: number;
+      /** Los perfiles ya persistidos, para refrescar la interfaz sin recalcular en el navegador. */
+      readonly updatedPlayers: readonly PlayerProfile[];
     }
   | { readonly status: "error"; readonly message: string };
 
@@ -86,7 +88,14 @@ export async function bulkIncrementLabAttributes(
 
   try {
     await repository.savePlayers(teamId, updated);
-    return { status: "applied", playersChanged: updated.length, attributesChanged, attributesAlreadyAtMax, attributesClampedToMax };
+    return {
+      status: "applied",
+      playersChanged: updated.length,
+      attributesChanged,
+      attributesAlreadyAtMax,
+      attributesClampedToMax,
+      updatedPlayers: updated,
+    };
   } catch {
     return {
       status: "error",
