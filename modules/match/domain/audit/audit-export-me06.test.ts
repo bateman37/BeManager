@@ -88,6 +88,50 @@ describe("ME-06 (5): result.summary.byFamily agrega entradas y tiros reales por 
   });
 });
 
+describe("ME-06 (5): huella estable de equipo/partido y diferencias frente al fixture", () => {
+  it("la misma foto produce la misma huella con distinta semilla; una edición real de atributos cambia la huella del equipo", () => {
+    const seed1 = playFullGame(input(10, ["bloqueo_directo", "bloqueo_directo"]));
+    const seed2 = playFullGame(input(11, ["bloqueo_directo", "bloqueo_directo"]));
+    const audit1 = buildAuditExport(input(10, ["bloqueo_directo", "bloqueo_directo"]), seed1, { exportedAt: "2020-01-01T00:00:00.000Z" });
+    const audit2 = buildAuditExport(input(11, ["bloqueo_directo", "bloqueo_directo"]), seed2, { exportedAt: "2099-01-01T00:00:00.000Z" });
+    expect(audit1.run.matchFingerprint).toBe(audit2.run.matchFingerprint);
+    expect(audit1.input.teams[0]!.fingerprint).toBe(audit2.input.teams[0]!.fingerprint);
+
+    const editedHome = { ...SIERRA_CLARA.players[0]!, attributes: { ...SIERRA_CLARA.players[0]!.attributes, T01: 15 } };
+    const editedRoster = [editedHome, ...SIERRA_CLARA.players.slice(1)];
+    const editedGameInput = buildGameInput({
+      seed: 10,
+      home: { id: SC, name: SIERRA_CLARA.name, players: editedRoster, priority: "proteger_balance", coverage: "drop" },
+      away: { id: PA, name: PUERTO_AMBAR.name, players: PUERTO_AMBAR.players, priority: "proteger_balance", coverage: "drop" },
+      auditEnabled: true,
+    });
+    const editedResult = playFullGame(editedGameInput);
+    const editedAudit = buildAuditExport(editedGameInput, editedResult, { exportedAt: "2020-01-01T00:00:00.000Z" });
+    expect(editedAudit.input.teams[0]!.fingerprint).not.toBe(audit1.input.teams[0]!.fingerprint);
+    expect(editedAudit.run.matchFingerprint).not.toBe(audit1.run.matchFingerprint);
+  });
+
+  it("fixtureDiff refleja la edición real frente al fixture, y es null para un jugador manual fuera del fixture", () => {
+    const editedHome = { ...SIERRA_CLARA.players[0]!, attributes: { ...SIERRA_CLARA.players[0]!.attributes, T01: 15 } };
+    const manualPlayer = { ...SIERRA_CLARA.players[SIERRA_CLARA.players.length - 1]!, id: "manual-01" };
+    const editedRoster = [editedHome, ...SIERRA_CLARA.players.slice(1, -1), manualPlayer];
+    const gameInput = buildGameInput({
+      seed: 10,
+      home: { id: SC, name: SIERRA_CLARA.name, players: editedRoster, priority: "proteger_balance", coverage: "drop" },
+      away: { id: PA, name: PUERTO_AMBAR.name, players: PUERTO_AMBAR.players, priority: "proteger_balance", coverage: "drop" },
+      auditEnabled: true,
+    });
+    const result = playFullGame(gameInput);
+    const audit = buildAuditExport(gameInput, result, { exportedAt: "2020-01-01T00:00:00.000Z" });
+    const home = audit.input.teams.find((t) => t.id === SC)!;
+    const editedExport = home.roster.find((p) => p.id === editedHome.id)!;
+    expect(editedExport.fixtureDiff).not.toBeNull();
+    expect(editedExport.fixtureDiff!.T01).toBeGreaterThan(0);
+    const manualExport = home.roster.find((p) => p.id === "manual-01")!;
+    expect(manualExport.fixtureDiff).toBeNull();
+  });
+});
+
 describe("ME-06: la observación ON/OFF de auditoría no cambia hechos, marcador ni RNG", () => {
   it("mismo partido con y sin auditoría produce el mismo marcador final", () => {
     const withAudit = playFullGame(input(3, ["auto", "mano_a_mano_sin_balon"]));

@@ -9,6 +9,8 @@ import type { GameInput, GameResult } from "../game/game-model";
 import type { PhaseEntry } from "../sequence/tramo-model";
 import { reconcileBoxScore, type ReconciliationCheck } from "../game/box-score";
 import type { AuditCoverageGap, AuditDecisionRecord } from "./audit-types";
+import { LAB_ROSTER_FIXTURE } from "../players/lab-roster-fixture";
+import type { PlayerProfile } from "../players/player-profile";
 
 export const AUDIT_SCHEMA_VERSION = "ME-06-AUDIT-1";
 
@@ -27,6 +29,14 @@ export interface AuditExportRun {
   /** Fecha de exportación (navegador), separada del cálculo determinista del partido. */
   readonly exportedAt: string;
   readonly auditEnabled: boolean;
+  /**
+   * Huella estable del partido (ME-06 §5): deriva de la foto efectiva de
+   * ambos equipos y de las versiones del contrato, **excluyendo** semilla,
+   * `gameId`, `exportedAt` y `buildId` (campos volátiles o de estudio, no
+   * de la foto). Dos exportaciones con la misma huella son comparables
+   * aunque cambie la semilla o se recargue el navegador.
+   */
+  readonly matchFingerprint: string;
 }
 
 export interface AuditExportTeamPlayer {
@@ -35,6 +45,13 @@ export interface AuditExportTeamPlayer {
   readonly attributes: Readonly<Record<string, number>>;
   readonly measures: Readonly<Record<string, number>>;
   readonly pnrTendency: string;
+  /**
+   * Diferencias reales de atributos frente a `LAB_ROSTER_FIXTURE` (ME-06
+   * §5), `delta = actual - fixture`, solo los atributos que difieren.
+   * `null` cuando el ID no pertenece al fixture (jugador añadido a mano):
+   * nunca se infiere una diferencia contra un origen que no existe.
+   */
+  readonly fixtureDiff: Readonly<Record<string, number>> | null;
 }
 
 export interface AuditExportTeam {
@@ -49,6 +66,14 @@ export interface AuditExportTeam {
   /** ME-06 §3.1: orden de defensa sin balón de este equipo. */
   readonly offBallDefensiveCall: string;
   readonly roster: readonly AuditExportTeamPlayer[];
+  /**
+   * Huella estable de la foto efectiva de este equipo (ME-06 §5): deriva
+   * de atributos, medidas, quinteto, roles, cobertura y órdenes de todo
+   * el roster, no de campos volátiles. Se recalcula siempre desde la
+   * foto completa: una etiqueta de lote (`+3`, etc.) nunca sustituye a
+   * esta huella ni se infiere de atributos saturados en 15.
+   */
+  readonly fingerprint: string;
 }
 
 export interface AuditExportPossessionRejections {
@@ -241,6 +266,69 @@ function buildRejectionReasons(decisions: readonly AuditDecisionRecord[]): Audit
   });
 }
 
+/** Hash estable no criptográfico (FNV-1a de 32 bits), suficiente para comparar fotos, no para seguridad. */
+function fnv1a(text: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+/** `JSON.stringify` con claves de objeto ordenadas: el mismo contenido siempre produce el mismo texto, con independencia del orden real de construcción. */
+function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v)}`).join(",")}}`;
+}
+
+function findFixturePlayer(playerId: string): PlayerProfile | null {
+  for (const team of LAB_ROSTER_FIXTURE) {
+    const player = team.players.find((p) => p.id === playerId);
+    if (player) return player;
+  }
+  return null;
+}
+
+function attributeFixtureDiff(actual: PlayerProfile): Readonly<Record<string, number>> | null {
+  const fixture = findFixturePlayer(actual.id);
+  if (!fixture) return null;
+  const diffs: Record<string, number> = {};
+  for (const key of Object.keys(actual.attributes)) {
+    const a = (actual.attributes as unknown as Record<string, number>)[key]!;
+    const f = (fixture.attributes as unknown as Record<string, number>)[key];
+    if (f !== undefined && a !== f) diffs[key] = a - f;
+  }
+  return diffs;
+}
+
+/** Huella de la foto efectiva de un equipo (ME-06 §5): sin campos volátiles. */
+function teamFingerprint(team: GameInput["teams"][number]): string {
+  return fnv1a(
+    stableStringify({
+      priority: team.priority,
+      coverage: team.coverage,
+      offensivePlan: team.offensivePlan,
+      offBallDefensiveCall: team.offBallDefensiveCall,
+      starters: [...team.starters].sort(),
+      declaredRoles: team.declaredRoles,
+      roster: team.roster
+        .map((p) => ({
+          id: p.id,
+          name: p.name,
+          age: p.age,
+          template: p.template,
+          pnrTendency: p.pnrTendency,
+          attributes: p.attributes,
+          measures: p.measures,
+        }))
+        .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
+    }),
+  );
+}
+
 function playerTeamId(input: GameInput, playerId: string): string | null {
   for (const t of input.teams) if (t.roster.some((p) => p.id === playerId)) return t.id;
   return null;
@@ -324,7 +412,9 @@ function exportTeam(team: GameInput["teams"][number]): AuditExportTeam {
       attributes: { ...p.attributes } as unknown as Record<string, number>,
       measures: { ...p.measures } as unknown as Record<string, number>,
       pnrTendency: p.pnrTendency,
+      fixtureDiff: attributeFixtureDiff(p),
     })),
+    fingerprint: teamFingerprint(team),
   };
 }
 
@@ -383,6 +473,14 @@ export function buildAuditExport(
       buildId: readBuildId(),
       exportedAt: options.exportedAt ?? new Date().toISOString(),
       auditEnabled,
+      matchFingerprint: fnv1a(
+        stableStringify({
+          rulesetVersion: input.rulesetVersion,
+          labParametersVersion: input.labParametersVersion,
+          gameVersion: input.gameVersion,
+          teams: input.teams.map((t) => teamFingerprint(t)).sort(),
+        }),
+      ),
     },
     input: {
       teams: [exportTeam(input.teams[0]), exportTeam(input.teams[1])],
