@@ -59,3 +59,16 @@ export function timeToReach(
   if (speedMetersPerSecond <= 0) return Infinity;
   return d / speedMetersPerSecond;
 }
+
+/**
+ * Punto sobre el segmento `from`→`to`, a `standoffMeters` de distancia antes
+ * de llegar a `to` (ME-04B §3.1): dos jugadores no ocupan el mismo punto, así
+ * que "usar la pantalla" es llegar junto al bloqueador, no sobre su posición
+ * exacta. Si el segmento ya es más corto que el margen, devuelve `from`.
+ */
+export function pointShortOfTarget(from: Point2D, to: Point2D, standoffMeters: number): Point2D {
+  const total = distance(from, to);
+  if (total <= standoffMeters) return from;
+  const t = (total - standoffMeters) / total;
+  return { x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t };
+}

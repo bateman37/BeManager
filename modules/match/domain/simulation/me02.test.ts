@@ -221,6 +221,13 @@ describe("ME-02 (6): C3, estadística conciliada con los hechos", () => {
         (f) => f.kind === "shooting_foul" && f.detail.madeShot === true,
       );
       if (!foulFact) continue;
+      // El and-one concede un único libre adicional (HF-002 §2); si ese
+      // libre también falla, queda vivo y el terminal final ya no es
+      // `shooting_foul` sino el que decida esa disputa (el hecho
+      // `shooting_foul` sigue dejando constancia de que hubo falta). Esta
+      // prueba exige además que el libre entrara, para comprobar el terminal
+      // `shooting_foul` con `basketCounted`.
+      if (state.terminal!.kind !== "shooting_foul") continue;
       const fga = state.facts.find((f) => f.kind === "field_goal_attempt" && f.atMs === foulFact.atMs);
       expect(fga).toBeDefined();
       expect(fga!.detail.made).toBe(true);

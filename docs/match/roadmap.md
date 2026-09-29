@@ -128,6 +128,38 @@ que documenta la decisión pendiente de ME-04 (sigue pendiente), lotes
 automáticos, persistencia entre recargas (ME-09) y cualquier ajuste de
 motor, tácticas o atributos.
 
+### ME-04B — Corregir las lecturas del bloqueo, la oposición y su auditoría
+
+**Estado: implementado** (entrega correctiva, no archivada como HF-003 por
+ampliar decisiones deportivas visibles; ver
+`docs/prompts/implementation/ME-04B-lecturas-oposicion-y-auditoria.md`).
+
+**Alcance:** Dennis revisó nueve auditorías de ME-04A y detectó que O1/D1
+permanecían congelados en su posición de partida durante toda la posesión,
+que la primera lectura del bloqueo se cortaba siempre en `pase_o5`
+(1 984/1 984), que la oposición al tiro casi nunca se atribuía a un
+defensor real (96,7 % `no_contest`) y que la auditoría tenía IDs de rol sin
+resolver, enlaces a hechos que nunca ocurrieron y motivos de rechazo vacíos.
+Corrige los cuatro problemas sobre **la misma** interacción del bloqueo
+directo ya existente: O1/D1 se desplazan de verdad hasta el punto de uso de
+la pantalla; la primera lectura compara varias vías reales por un valor de
+tiro situacional (LAB-0.3); la oposición usa el modelo geométrico
+`R_contest`, separado del contacto/falta; y la auditoría resuelve IDs
+reales, enlaza al hecho emitido y separa motivo elegido de alternativas
+(esquema `ME-04B-AUDIT-1`). No añade tácticas, coberturas, familias
+ofensivas ni recalibra el resto del boxscore FIBA.
+
+**Interfaz y cierre:** mismo `/lab`, sin cambios de interfaz; el relato, la
+cancha y la descarga de auditoría reflejan la vía elegida y a quién dejó
+libre la defensa con datos reales. Ver
+`docs/testing/manual/ME-04B-manual-test-plan.md`.
+
+**Fuera:** DHO/poste/zonas, más coberturas, selector táctico, sustituciones
+manuales/fatiga/tiempos muertos (ME-05), calibración completa del boxscore
+FIBA, transición y rebote rediseñados. La falta ordinaria sin tiro y la
+segunda entrada siguen sin producirse en partidos naturales con el fixture
+del repositorio (decisión pendiente de ME-04, actualizada).
+
 ### ME-05 — Dirigir en vivo
 
 **Alcance:** controles efectivos para sustituciones, tiempos muertos y ajustes de ataque/defensa dentro de lo ya soportado. Registrar cuándo se envía, recibe y aplica una instrucción. Estados de esfuerzo, descanso y fatiga con efecto sobre tareas concretas y capacidad de recuperación, no un castigo global misterioso. Roles se reasignan al cambiar quinteto; acciones comprometidas terminan o se interrumpen por una causa definida.

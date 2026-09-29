@@ -54,6 +54,25 @@ const OFFENSE_SLOTS: readonly ScenarioPlayerSlot[] = [
   { playerId: "O5", role: "screener", initialPosition: { x: 20.2, y: 8.6 } },
 ];
 
+/**
+ * Solo para `closeout_tardio_con_contacto` (ME-04B, tras corregir el
+ * desplazamiento real de O1 hasta el punto de uso de la pantalla, §3.1): el
+ * estado se carga ya avanzado (D3 comprometido, O3 disponible), así que O1
+ * también parte algo más adentro que en los otros dos escenarios — sigue
+ * detrás del perímetro real, pero no deja disponible un triple genuinamente
+ * competitivo con el pase a la esquina que este escenario existe para
+ * comprobar. Es una condición geométrica propia de este escenario sintético
+ * (igual que `LATE_CLOSEOUT_D4_START`), no una fórmula LAB-0.1/LAB-0.3
+ * compartida ni un cambio de las posiciones reales de `drop_con_ayuda`.
+ */
+const CLOSEOUT_OFFENSE_SLOTS: readonly ScenarioPlayerSlot[] = [
+  { playerId: "O1", role: "handler", initialPosition: { x: 19.3, y: 7.6 } },
+  { playerId: "O2", role: "strong_side_corner", initialPosition: { x: 24.0, y: 1.1 } },
+  { playerId: "O3", role: "weak_side_corner", initialPosition: { x: 24.0, y: 13.9 } },
+  { playerId: "O4", role: "weak_side_wing", initialPosition: { x: 18.0, y: 12.5 } },
+  { playerId: "O5", role: "screener", initialPosition: { x: 20.2, y: 8.6 } },
+];
+
 const DEFENSE_SLOTS: readonly ScenarioPlayerSlot[] = [
   { playerId: "D1", role: "on_ball_chaser", initialPosition: { x: 19.1, y: 7.5 } },
   {
@@ -106,7 +125,7 @@ export const SCENARIOS: Readonly<Record<ScenarioId, ScenarioDefinition>> = {
       "Carga el estado después de que D3 ya comprometió su ayuda y O3 está disponible; permite alcanzar la rama de falta ordinaria sobre el tiro.",
     d3HelpsRoller: true,
     startsWithHelpAlreadyCommitted: true,
-    offense: OFFENSE_SLOTS,
+    offense: CLOSEOUT_OFFENSE_SLOTS,
     defense: DEFENSE_SLOTS,
     initialGameClockMs: INITIAL_GAME_CLOCK_MS,
     initialShotClockMs: INITIAL_SHOT_CLOCK_MS,

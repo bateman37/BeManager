@@ -2,6 +2,7 @@ import type { PlayerProfile } from "../players/player-profile";
 import type { ScenarioId } from "./scenario";
 import { LAB_PARAMETERS_VERSION } from "./lab-0-1-parameters";
 import { LAB_0_2_PARAMETERS_VERSION } from "./lab-0-2-parameters";
+import { LAB_0_3_PARAMETERS_VERSION } from "./lab-0-3-parameters";
 
 /**
  * Cobertura defensiva ante el bloqueo directo (ME-02 §3): `drop` conserva el
@@ -25,7 +26,10 @@ export interface MatchInput {
   readonly coverage: DefensiveCoverage;
   readonly seed: number;
   readonly rulesetVersion: "FIBA-2026";
-  readonly labParametersVersion: typeof LAB_PARAMETERS_VERSION | typeof LAB_0_2_PARAMETERS_VERSION;
+  readonly labParametersVersion:
+    | typeof LAB_PARAMETERS_VERSION
+    | typeof LAB_0_2_PARAMETERS_VERSION
+    | typeof LAB_0_3_PARAMETERS_VERSION;
   /** Snapshot de los diez perfiles usados por esta corrida concreta. */
   readonly offensePlayers: readonly PlayerProfile[];
   readonly defensePlayers: readonly PlayerProfile[];

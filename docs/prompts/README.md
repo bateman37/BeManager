@@ -26,6 +26,13 @@
 - `implementation/ME-03-aclaracion-ventaja-temprana.md` — decisión de Dennis (opción B) sobre cuándo existe ventana de ventaja temprana.
 - `implementation/ME-04-primer-partido-fiba.md`
 - `implementation/ME-04A-auditoria-exportable-partidos.md`
+- `implementation/ME-04B-lecturas-oposicion-y-auditoria.md` — corrige
+  desplazamiento, primera lectura, oposición al tiro y trazabilidad de
+  auditoría del bloqueo directo de ME-04A. El prompt propone la rama
+  `match/me-04b-lecturas-oposicion`; el entorno de ejecución ya tenía
+  activa y sincronizada `claude/new-session-p9xna7`, así que la entrega
+  se hizo ahí (una sola rama, una sola PR), conforme al punto 0.3 del
+  prompt.
 
 ## Hotfixes existentes
 

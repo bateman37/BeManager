@@ -5,7 +5,7 @@
 **Debe leerse cuando:** vayas a añadir o cambiar un estado terminal, una falta o una reanudación.
 **No cubre:** el reglamento completo (solo lo alcanzable por el escenario de ME-01); NBA/NCAA no están implementados.
 **Documentos relacionados:** `docs/match/reference/BeManager-estudio-baloncesto-v1.md` (capítulo 01 §§1.1, 1.4–1.5; capítulo 02 §§2.2–2.5), `MODEL.md` (continuidad del tramo), Official Basketball Rules 2026 v1.1, arts. 4, 8–12, 17, 19, 28, 29, 33–34, 41, 42, 44 y 50–51.
-**Última actualización:** 2026-09-29 (ME-04).
+**Última actualización:** 2026-09-29 (ME-04B).
 
 ## Perfil de reglas
 
@@ -61,12 +61,14 @@ solo el terminal de la corrida completa.
   (`missed_shot_defensive_rebound`, una continuación ofensiva, etc.); el
   hecho `shooting_foul` en el relato deja constancia de que hubo falta.
 
-## Legalidad del cierre (`evaluateCloseoutLegality`), corregida en ME-02 (C1)
+## Legalidad del cierre (`evaluateCloseoutLegality`) y oposición real (C1, ME-02; R_contest, ME-04B §3.3)
 
-La adjudicación de una falta de tiro se decide **una vez, por hecho de
-contacto y posición/legalidad** (estudio §5.6, §9.6), no como una
-probabilidad repartida en cada actualización temporal, y **ya no se decide
-comparando solo dos marcas de reloj**:
+Dos preguntas separadas, cada una con su propio modelo geométrico:
+
+**¿Hubo contacto sancionable?** Se decide **una vez, por hecho de contacto y
+posición/legalidad** (estudio §5.6, §9.6), no como una probabilidad
+repartida en cada actualización temporal, y **no comparando solo dos marcas
+de reloj**:
 
 1. Se reconstruye la posición real del defensor en el instante exacto de
    liberación del tiro (`positionAtInstant`, en `possession-core.ts`), a
@@ -74,18 +76,42 @@ comparando solo dos marcas de reloj**:
    referencia ("llegar a la ayuda") que puede estar lejos del tirador real.
 2. Solo si el espacio corporal del defensor y el del tirador se solapan
    (radio LAB-0.2 de 0,35 m por jugador, 0,7 m combinados) puede haber
-   contacto u oposición atribuible a ese defensor. Si no se solapan, es
-   `no_contest`, con independencia de cuán "tarde" llegue por el reloj.
+   contacto atribuible a ese defensor. Si no se solapan, no hay contacto,
+   con independencia de cuán "tarde" llegue por el reloj.
 3. Solo cuando sí hay solape se aplica la regla de frenada existente:
-   - Llega con margen suficiente para frenar (`F03`) → contestación legal.
+   - Llega con margen suficiente para frenar (`F03`) → contacto legal.
    - Llega en el margen intermedio, sin tiempo de frenar, invadiendo la
      posición de lanzamiento → contacto tardío ilegal → falta ordinaria de
      tiro.
 
 El escenario `closeout_tardio_con_contacto` está construido para que esta
-última rama siga siendo alcanzable de verdad (ver `SCENARIOS.md` y
-`domain/simulation/me02.test.ts`, prueba (2)). Frenar tarde por sí solo,
-sin invadir el espacio corporal del tirador, no es una falta.
+última rama siga siendo alcanzable de verdad (recalibrado en ME-04B tras
+corregir el desplazamiento real de O1, ver `SCENARIOS.md` y
+`domain/simulation/me02.test.ts`, prueba (2)). Frenar tarde por sí solo, sin
+invadir el espacio corporal del tirador, no es una falta.
+
+**¿Puede un defensor oponerse al tiro sin tocar al tirador?** Es una
+pregunta distinta, con un alcance mayor que el radio de contacto: el modelo
+geométrico `R_contest` (LAB-0.3, `domain/lab/lab-0-3-parameters.ts`) —
+`0,35 m + C03 (envergadura, cm) / 200` — desde la posición real del defensor
+al liberar el tiro:
+
+- No alcanza el punto de liberación dentro de `R_contest` antes de soltar →
+  oposición 0 (`no_contest` a efectos de probabilidad de acierto), aunque
+  haya solape corporal posterior.
+- Alcanza esa ventana durante el gesto de tiro (entre el inicio del gesto y
+  la liberación) sin estar aún colocado → oposición 0,5.
+- Ya estaba dentro de `R_contest` y colocado (llegada + frenada F03) al
+  **empezar el gesto de tiro** → oposición 1.
+
+Nunca se suman varios defensores ni T22 y T23 en una sola intervención. Un
+cierre dentro del alcance de brazos pero fuera del radio corporal de
+contacto puede contestar (oposición 0,5 o 1) sin que exista ninguna falta:
+son preguntas independientes, decididas con la misma foto de posiciones
+pero comparadas contra dos radios distintos. El Tapón T18 es elegible con
+cualquier oposición geométrica real (0,5 o 1), sin contacto ilegal ya
+sancionado, y solo si `maxTouchHeightMeters` alcanza
+`shotReleaseHeightMeters`; C01/C04 no reciben un segundo premio.
 
 ## Estadística oficial FIBA: FGA/FGM/FTA/FTM/puntos (C3, ME-02)
 
@@ -177,8 +203,11 @@ continuador aún se desplaza y el defensor no había llegado **y frenado**
 gesto de tiro (art. 33.5: el tiempo y la distancia protegen a un oponente en
 movimiento). Si el continuador ya estaba parado, la contención es legal. El
 hecho lleva actor, receptor, posiciones, instante, distancia, llegada,
-frenada y legalidad. Sin cuotas: con el fixture no se produce ninguna (ver
-`DECISION-REQUERIDA-ME-04-alcance-natural-faltas-y-segunda-entrada.md`).
+frenada y legalidad. Sin cuotas: con el fixture natural sigue sin producirse
+ninguna tras ME-04B (ver
+`DECISION-REQUERIDA-ME-04-alcance-natural-faltas-y-segunda-entrada.md`,
+actualizada); el mecanismo en sí es alcanzable de verdad con geometría
+construida a mano (`domain/game/me04b.test.ts`).
 
 **Sustituciones (art. 19, política `ME-04-ROT-1`).** Oportunidades: falta
 (ambos equipos; se conserva al tirador de los libres), último libre

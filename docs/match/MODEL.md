@@ -5,7 +5,7 @@
 **Debe leerse cuando:** vayas a leer o modificar `modules/match/domain/simulation/`.
 **No cubre:** las reglas de reloj, faltas y reanudación (ver `RULES.md`) ni el acta (ver `BOXSCORE.md`).
 **Documentos relacionados:** `RULES.md`, `ACTIONS.md`, `docs/architecture/DATA_AND_PERSISTENCE.md`.
-**Última actualización:** 2026-09-29 (ME-04).
+**Última actualización:** 2026-09-29 (ME-04B).
 
 ## Entidades de estado (`MatchState`)
 

@@ -185,7 +185,10 @@ describe("ME-04 (2): bocina, tiro en el aire, reset del reloj de lanzamiento y r
   });
 
   it("partido natural: un triple soltado 0,04 s antes de la bocina entra y cuenta; después solo se resuelve ese tiro", () => {
-    const r = game(PUBLISHED_SEED);
+    // Semilla recalculada en ME-04B (§§3.1-3.3): sigue siendo un tiro
+    // soltado antes de la bocina final del partido que entra y solo se
+    // resuelve ese tiro.
+    const r = game(125);
     const i = r.events.findIndex((e) => e.kind === "buzzer" && e.detail.shotInFlight === true);
     expect(i).toBeGreaterThan(0);
     const buzzer = r.events[i]!;
@@ -200,7 +203,8 @@ describe("ME-04 (2): bocina, tiro en el aire, reset del reloj de lanzamiento y r
   });
 
   it("partido natural: un fallo soltado a tiempo no inventa rebote tras la bocina", () => {
-    const r = game(121);
+    // Semilla recalculada en ME-04B (§§3.1-3.3).
+    const r = game(14);
     const i = r.events.findIndex((e) => e.kind === "buzzer" && e.detail.shotInFlight === true);
     const next = r.events.slice(i + 1, i + 4).map((e) => e.kind);
     expect(next).toEqual(["field_goal_attempt", "possession_ended", "period_ended"]);
@@ -536,7 +540,9 @@ describe("ME-04 (6): empate → prórroga, empate en prórroga → otra; guardi�
   });
 
   it("partido natural con dos prórrogas: 5:00 cada una, faltas contadas en C4, canastas de C4 y final sin empate", () => {
-    const r = game(13, TRAP_CRASH);
+    // Semilla recalculada en ME-04B (§§3.1-3.3): sigue siendo un partido
+    // natural con dos prórrogas bajo trampa/trampa y «cargar rebote».
+    const r = game(7, TRAP_CRASH);
     expect(r.periods.map((p) => p.label)).toEqual(["C1", "C2", "C3", "C4", "Prórroga 1", "Prórroga 2"]);
     const endOf = (period: number) => r.events.find((e) => e.kind === "period_ended" && e.period === period)!;
     expect(endOf(4).score[SC]).toBe(endOf(4).score[PA]);
@@ -554,7 +560,7 @@ describe("ME-04 (6): empate → prórroga, empate en prórroga → otra; guardi�
   });
 
   it("el guardián de prórrogas señala la anomalía sin cerrar el empate ni inventar ganador", () => {
-    const r = game(13, TRAP_CRASH, { maxOvertimes: 1 });
+    const r = game(7, TRAP_CRASH, { maxOvertimes: 1 });
     expect(r.stop.cause).toBe("guardian");
     expect(r.winnerTeamId).toBeNull();
     expect(r.finalScore[SC]).toBe(r.finalScore[PA]);
@@ -600,7 +606,10 @@ describe("ME-04 (7): regresión de ME-01/02/03 y segunda entrada del bloqueo", (
         );
         out.push([t.events.map((e) => [e.kind, e.atMs, e.actors, e.text, e.positions, e.gameClockMs, e.shotClockMs, e.score]), t.stop, t.box]);
       }
-    // Huella calculada sobre main tras ME-03 (a9b8644), antes de ME-04.
+    // Huella recalculada en ME-04B (desplazamiento real de O1/D1, primera
+    // lectura ponderada por valor y modelo R_contest de oposición, §§3.1-
+    // 3.3): un cambio intencional de la mecánica compartida, no una
+    // regresión. Antes: calculada sobre main tras ME-03 (a9b8644).
     expect(hash(out)).toBe(TRAMO_FINGERPRINT);
   });
 
@@ -616,6 +625,15 @@ describe("ME-04 (7): regresión de ME-01/02/03 y segunda entrada del bloqueo", (
     start.D3 = { x: 23.3, y: 10.5 };
     start.D4 = { x: 23.6, y: 13.2 };
     start.D5 = { x: 25.2, y: 6.4 };
+    // ME-04B (§3.1): O1 ya no permanece congelado en su posición de partida,
+    // así que D1 también navega de verdad hasta el punto de uso de la
+    // pantalla y se queda ahí — con la posición de O4 aprobada en
+    // `scenario.ts`, D1 termina sobre la línea de pase de la segunda
+    // entrada y la vuelve inviable por una interferencia que antes no
+    // existía por el propio error que corrige esta entrega. Se abre algo
+    // más la posición de O4 (sigue detrás de línea, en pista delantera)
+    // para que la línea de pase vuelva a quedar limpia.
+    start.O4 = { x: 19.0, y: 14.5 };
     const binding = Object.fromEntries([...scenario.offense, ...scenario.defense].map((s) => [s.playerId, s.playerId]));
     let seen = 0;
     for (let seed = 1; seed <= 10 && seen === 0; seed++) {
@@ -670,4 +688,4 @@ describe("ME-04 (7): regresión de ME-01/02/03 y segunda entrada del bloqueo", (
   });
 });
 
-const TRAMO_FINGERPRINT = "ccf51e78417ac4aa0f9493466d5e6addebb2de899f8087306be2841418294ab0";
+const TRAMO_FINGERPRINT = "dfef8023c66f36df1cc3b703bc68a7502a640f58316a92cdeaa2821854e8987b";

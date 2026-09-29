@@ -139,22 +139,25 @@ describe("runPossession: escenario closeout tardío", () => {
 });
 
 describe("runPossession: HF-002 bug 2 (balón vivo hasta control real)", () => {
+  // ME-04B recalibra el árbol de decisión y el modelo de oposición (§§3.1-
+  // 3.3): las semillas concretas que alcanzaban cada rama cambian, pero la
+  // rama en sí sigue siendo alcanzable (recalculadas aquí, no eliminadas).
   it("un tapón deja el balón suelto, no muerto en el aro", () => {
-    const state = runPossession(buildInput("drop_con_ayuda", 232));
+    const state = runPossession(buildInput("drop_con_ayuda", 10));
     expect(state.terminal!.kind).toBe("blocked_shot_live_ball");
     expect(state.ball.status).toBe("loose");
     expect(state.ball.holderId).toBeNull();
   });
 
   it("una pérdida en balón vivo deja el balón suelto sin dueño", () => {
-    const state = runPossession(buildInput("drop_con_ayuda", 1));
+    const state = runPossession(buildInput("drop_con_ayuda", 3));
     expect(state.terminal!.kind).toBe("live_turnover");
     expect(state.ball.status).toBe("loose");
     expect(state.ball.holderId).toBeNull();
   });
 
   it("un robo da el control real al defensor, no un balón muerto", () => {
-    const state = runPossession(buildInput("drop_con_ayuda", 27));
+    const state = runPossession(buildInput("drop_con_ayuda", 158));
     expect(state.terminal!.kind).toBe("steal_by_defense");
     expect(state.ball.status).toBe("held");
     expect(state.ball.holderId).toBe("D1");
@@ -231,7 +234,9 @@ describe("runPossession: HF-002 bug 5 (T22/T23 afectan mecanismos reales)", () =
   });
 
   it("subir T22 del cierre exterior D4 cambia el desenlace del cierre manteniendo todo lo demás fijo", () => {
-    const base = buildInput("closeout_tardio_con_contacto", 484);
+    // Semilla recalculada en ME-04B (§3.1: O1 real hasta el punto de uso de
+    // la pantalla; §3.3: R_contest) — el mecanismo sigue siendo el mismo.
+    const base = buildInput("closeout_tardio_con_contacto", 1);
     const lowResult = runPossession({
       ...base,
       defensePlayers: base.defensePlayers.map((p) => (p.id === "D4" ? { ...p, attributes: { ...p.attributes, T22: 1 } } : p)),
@@ -246,7 +251,9 @@ describe("runPossession: HF-002 bug 5 (T22/T23 afectan mecanismos reales)", () =
 
 describe("runPossession: HF-002 bug 6 (libres ejecutados de verdad)", () => {
   it("una falta con canasta válida ejecuta el libre adicional y suma los puntos totales", () => {
-    const state = runPossession(buildInput("closeout_tardio_con_contacto", 4));
+    // Semilla recalculada en ME-04B (§§3.1, 3.3): sigue siendo un and-one
+    // real de tres puntos con falta tardía ilegal sobre O3 en la esquina.
+    const state = runPossession(buildInput("closeout_tardio_con_contacto", 6));
     expect(state.terminal!.kind).toBe("shooting_foul");
     const terminal = state.terminal as Extract<typeof state.terminal, { kind: "shooting_foul" }>;
     expect(terminal.basketCounted).toBe(true);

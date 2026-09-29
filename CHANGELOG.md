@@ -3,6 +3,55 @@
 Formato libre en español, orden cronológico inverso. Los motivos de
 decisiones duraderas viven en `docs/decisions/`, no aquí.
 
+## ME-04B — Lecturas del bloqueo, oposición real y auditoría reparada (sin fusionar)
+
+- Prompt guardado en
+  `docs/prompts/implementation/ME-04B-lecturas-oposicion-y-auditoria.md`
+  antes de modificar producto. Ejecutado en la rama `claude/new-session-p9xna7`
+  (el entorno de ejecución ya la tenía activa y sincronizada; ver
+  `docs/prompts/README.md`), no en la rama propuesta `match/me-04b-lecturas-oposicion`.
+- **Desplazamiento real de O1/D1 en la pantalla** (`possession-core.ts`):
+  ambos se desplazan de verdad hasta el punto de uso de la pantalla —junto
+  a O5, con el margen de 0,70 m del radio corporal combinado— en vez de
+  permanecer congelados en su posición de partida durante el resto de la
+  posesión (diagnóstico de la auditoría 210 A). D1 lo sigue con el retraso
+  real de `screenDelay`.
+- **Primera lectura del bloqueo ponderada por valor** (`possession-core.ts`,
+  §3.2): las cinco vías (finalizar, pase a O5, pase a O3, triple de O1,
+  salida segura) se evalúan de verdad con un valor de tiro situacional
+  (`puntos × shotProbability`) en vez de cortarse siempre en `pase_o5`; una
+  banda de empate de 0,15 puntos esperados (`FIRST_READ_TIE_BAND_POINTS`,
+  LAB-0.3) se resuelve por la tendencia del jugador.
+- **Modelo geométrico `R_contest`** (`domain/lab/lab-0-3-parameters.ts`,
+  §3.3): separa «¿puede un defensor oponerse al tiro sin tocar al tirador?»
+  (alcance de brazos, C03/200 + radio corporal) de «¿hubo contacto
+  sancionable?» (0,70 m combinados, sin cambios). El tapón vuelve a ser
+  elegible con cualquier oposición geométrica real, no solo con el defensor
+  ya colocado de antes.
+- **Auditoría** (`ME-04A-AUDIT-1` → `ME-04B-AUDIT-1`): `holderId`/
+  `participants` resuelven a IDs reales de pista en un único punto;
+  `factLink` busca el hecho realmente emitido en vez de reutilizar el
+  instante de la decisión, y se sanea contra la línea de tiempo final del
+  partido (`sanitizeAuditFactLinks`) para que un hecho calculado que no
+  llega a ocurrir (bocina, guardián) deje un enlace ausente explícito;
+  `rejectionReasons` separa `chosenByReasonCode` de
+  `alternativesByReasonCode`.
+- Recalibrado `closeout_tardio_con_contacto` (posición de partida de O1 y
+  de D4) para que la falta ordinaria de tiro tardía siga siendo alcanzable
+  con la nueva geometría de O1.
+- Pruebas nuevas: `domain/simulation/me04b.test.ts`, `domain/game/me04b.test.ts`,
+  `domain/audit/audit-export-me04b.test.ts` (casos construidos: pantalla y
+  persecución real, primera lectura con varias vías, oposición sin contacto,
+  ayuda/cierre que libera a O4, negar salida y segunda entrada). Semillas y
+  huellas de regresión de ME-01..ME-04A recalculadas donde el mecanismo
+  cambia intencionadamente, documentado en cada prueba.
+- Documentación actualizada: `docs/match/{ACTIONS,CAPABILITIES,RULES,
+  SCENARIOS,AUDIT,README}.md`, `docs/match/roadmap.md` (bloque ME-04B entre
+  ME-04A y ME-05), la decisión pendiente de ME-04 (ventaja temprana resuelta
+  en parte; faltas sin tiro y segunda entrada siguen sin producirse de forma
+  natural), y `docs/testing/manual/ME-04B-manual-test-plan.md`.
+- `npm run check` en verde sin PostgreSQL.
+
 ## ME-04A — Auditoría exportable de partidos detallados (sin fusionar)
 
 - Prompt guardado en

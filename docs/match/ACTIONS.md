@@ -1,11 +1,11 @@
-# Acción de bloqueo directo central: drop y trampa (ME-01/ME-02)
+# Acción de bloqueo directo central: drop y trampa (ME-01/ME-02/ME-04B)
 
 **Estado:** ACTIVE
 **Es fuente de verdad para:** el árbol de decisión de O1/O5 y las responsabilidades de los diez jugadores ante esta única acción, en las dos coberturas implementadas.
 **Debe leerse cuando:** vayas a modificar `possession-core.ts` o a añadir una segunda acción táctica u otra cobertura.
 **No cubre:** ninguna otra familia táctica (mano a mano, poste, zonas) ni otras coberturas de bloqueo (switch, ICE/veer...): llegan en entregas posteriores (ver `docs/match/roadmap.md`). La transición de ME-03 no es una táctica nueva: solo decide si existe ventana y reutiliza las ejecuciones ya existentes (sección final).
 **Documentos relacionados:** `docs/match/reference/BeManager-capitulo-tacticas-integradas-al-motor-v1.md`, `CAPABILITIES.md`, `RULES.md`.
-**Última actualización:** 2026-09-29 (ME-04).
+**Última actualización:** 2026-09-29 (ME-04B).
 
 ## Disposición y roles fijos
 
@@ -17,31 +17,66 @@ asignaciones según la cobertura). Un parámetro de la corrida (`coverage:
 entrada de media pista, quintetos y bloqueo central. Las posiciones
 iniciales exactas están en `domain/lab/scenario.ts`.
 
-## Cobertura `drop`: árbol de decisión de O1/O5, en orden de prioridad
+## Desplazamiento real de O1/D1 en la pantalla (ME-04B §3.1)
+
+O1 se desplaza de verdad desde su posición real hasta el punto de uso de la
+pantalla — junto a O5, a un margen de 0,70 m (el mismo radio corporal
+combinado de contacto, LAB-0.2/`pointShortOfTarget`), nunca sobre su
+posición exacta ni teletransportado a un punto de referencia hipotético. D1
+lo sigue con el retraso real de navegación (`screenDelay`, T13/F05/T16/C02),
+saliendo desde el mismo instante que O1 para no implicar una velocidad
+imposible. Antes de esta corrección, ambos permanecían inmóviles en su
+posición de partida durante el resto de la posesión (auditoría ME-04A 210 A:
+`organized_entry` → `pass_released` sin desplazamiento real), lo que
+alteraba en cascada distancias de pase, tiempos de finalización y geometría
+de oposición. Detalle técnico reversible: el punto de uso exacto y el
+margen de separación son datos locales de esta acción, no un parámetro
+deportivo nuevo.
+
+## Cobertura `drop`: primera lectura ponderada por valor (ME-04B §3.2)
 
 Instrucción defensiva editable por escenario: **D3 ayuda al continuador:
-sí/no**. Drop permanece fijo en D5.
+sí/no**. Drop permanece fijo en D5. La ventana de la pantalla
+(`screenDelay >= 0,2 s`) habilita una posibilidad, **no ordena
+automáticamente pasar a O5**: el árbol calcula de forma pura, sin consumir
+sorteo ni ejecutar ramas alternativas, la viabilidad espacial y temporal de
+cada vía real y las ordena por **valor de tiro situacional provisional**
+(`puntos del lanzamiento × shotProbability(base, capacidad del tirador,
+oposición prevista)`):
 
-1. **Finalizar** si O1 ya tiene carril al aro antes de que D5 llegue.
-2. **Pasar a O5** (roll, hacia el short roll real en `(23,0; 7,5)`, ME-02
-   §3/C1) si bate al perseguidor por ≥0,2 s de retraso de pantalla, hay
-   línea, y D3 no ha comprometido su ayuda *antes* de la lectura de O1. Si
-   O5 recibe y, para entonces, el espacio corporal de D3 sí se solapa de
-   verdad con el suyo (C1: `positionAtInstant` + radio de 0,35 m por
-   jugador), O5 activa su **segunda lectura** (C2) e invierte hacia O3 en
-   la esquina débil si D4 todavía no ha cerrado esa ventana, sin reiniciar
-   el reloj de la posesión.
-3. **Pasar a O3** (esquina débil) directamente desde O1, solo cuando la
-   opción 2 no estuvo disponible (bloqueo bien defendido), si D3 dejó la
-   marca *antes* de la decisión y la recepción + preparación anticipan el
-   cierre por ≥0,25 s.
-4. **Triple de O1** si está detrás de la línea FIBA, el drop concede ≥0,25 s
-   de ventana y su capacidad de triple (T04) ≥9.
-5. **Salida segura** a O4/O2: termina en `possession_reorganized_control_kept`.
+- **Finalizar**: O1 ya tiene carril al aro antes de que D5 llegue.
+- **Pasar a O5** (roll, hacia el short roll real en `(23,0; 7,5)`, ME-02
+  §3/C1): bate al perseguidor por ≥0,2 s de retraso de pantalla, hay línea,
+  y D3 no ha comprometido su ayuda *antes* de la lectura de O1. Su valor
+  estima, de forma pura y sin sorteo, la mejor salida legal que la
+  geometría ya permite desde la próxima recepción de O5 (finalización
+  abierta, inversión a O3, o tiro bajo contención si ambas se niegan); O5
+  la reevalúa de verdad con el estado real del instante en que recibe
+  (más abajo), no con esta estimación pregrabada.
+- **Pasar a O3** (esquina débil) directamente desde O1: viable en cuanto D3
+  ya dejó su marca (antes de la decisión, o el escenario carga el estado ya
+  comprometido) — ya no depende de que la vía de O5 esté cerrada, compiten
+  de verdad por valor.
+- **Triple de O1**: detrás de la línea FIBA, el drop concede ≥0,25 s de
+  ventana y su capacidad de triple (T04) ≥9.
+- **Salida segura** a O4/O2: último recurso, sin puntos esperados, siempre
+  viable; termina en `possession_reorganized_control_kept`.
 
-Si una opción se frustra, se conserva el tiempo consumido y se evalúa la
-siguiente sin reiniciar posiciones (implementado como una única línea de
-tiempo por posesión, no como reinicios). Con ≤2 s de reloj de lanzamiento,
+Una vía inviable (condición geométrica no cumplida) no entra en la
+comparación de valor. Entre vías viables que difieran en ≤0,15 puntos
+esperados (`FIRST_READ_TIE_BAND_POINTS`, LAB-0.3), la tendencia del jugador
+decide: `priorizar_primera_opcion` escoge la mejor vía de manejador/
+continuador (finalizar o pase a O5) de la banda; `explorar_segunda_opcion`
+tira una sola vez `secondOptionProbability(M03)` para escoger la mejor vía
+exterior (pase a O3 o triple) de la banda, o el valor mayor si la tirada
+falla o no hay vía exterior en banda. Fuera de la banda gana el valor mayor
+sin tirada de preferencia. La conversión y el pase siguen resolviéndose con
+sus capacidades y sorteos ya existentes: el valor solo ordena las vías, no
+es un bonus de puntos ni una cuota de uso.
+
+Si una opción se frustra tras elegirse (pase interceptado, recepción
+incómoda), se conserva el tiempo consumido y se resuelve con el estado real
+de ese instante, sin reiniciar posiciones. Con ≤2 s de reloj de lanzamiento,
 solo se lanza si un tipo de tiro implementado es legal/preparable.
 
 ## Cobertura `trampa`: responsabilidades y lectura de O1/O5 (ME-02 §3)

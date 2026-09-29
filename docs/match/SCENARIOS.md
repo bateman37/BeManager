@@ -1,11 +1,11 @@
-# Escenarios, cobertura y validación (ME-01 a ME-04)
+# Escenarios, cobertura y validación (ME-01 a ME-04B)
 
 **Estado:** ACTIVE
 **Es fuente de verdad para:** los tres escenarios cargables, la cobertura defensiva (`drop`/`trampa`), el modo «Jugar tramo», el partido completo, los casos de frontera y cómo se comprueban.
 **Debe leerse cuando:** vayas a añadir un escenario, una cobertura, o a entender por qué una rama concreta es alcanzable.
 **No cubre:** el modo rápido completo de ME-08 (aquí solo hay una aproximación limitada a este escenario).
 **Documentos relacionados:** `ACTIONS.md`, `RULES.md`.
-**Última actualización:** 2026-09-29 (ME-04).
+**Última actualización:** 2026-09-29 (ME-04B).
 
 ## Los tres escenarios (`domain/lab/scenario.ts`)
 
@@ -14,6 +14,15 @@
 | `drop_con_ayuda` | Sí | D3 deja a O3; posible pase a la esquina liberada |
 | `drop_sin_ayuda` | No | D3 conserva la marca; sin esa liberación |
 | `closeout_tardio_con_contacto` | Sí, ya comprometida al cargar el estado | Alcanza la rama de falta ordinaria de tiro por cierre tardío |
+
+**Recalibrado en ME-04B:** tras corregir el desplazamiento real de O1/D1
+(§3.1), este escenario usa una posición de partida de O1 propia
+(`CLOSEOUT_OFFENSE_SLOTS`, ligeramente más adentro que en los otros dos) y
+un nuevo punto de partida de D4 (`LATE_CLOSEOUT_D4_START`), para que la
+primera lectura siga compitiendo de verdad entre el pase a la esquina y las
+demás vías y la falta de cierre tardío siga siendo alcanzable con la nueva
+geometría. Es una condición geométrica propia de este escenario sintético,
+no un cambio de las posiciones reales de `drop_con_ayuda`/`drop_sin_ayuda`.
 
 ## Cobertura defensiva (`coverage`, ME-02)
 
@@ -111,23 +120,82 @@ un aviso. El visor muestra ganador, marcador y parciales, faltas de equipo y
 bonus, sustituciones, relato por período → posesión → evento con cancha y
 quinteto en pista, y el acta con minutos, DNP y su conciliación.
 
-**Partido natural publicado:** semilla **82**, drop/drop, «Proteger balance»
-en ambos, perfiles del fixture: final Sierra Clara 138 – 141 Puerto Ámbar
-(C1 33–43, C2 34–37, C3 31–28, C4 40–33), 209 posesiones, 40 sustituciones
-de ambos banquillos, un and-one (PA09 sobre SC12) y un tiro de PA12 soltado
-0,04 s antes de la bocina final que entra. Otras semillas naturales
-útiles: 3 (una prórroga), 121 (fallo soltado a tiempo sin rebote tras la
-bocina) y 13 con trampa/trampa y «Cargar rebote» (dos prórrogas).
+**Partido natural publicado (marcador anterior a ME-04B, ver abajo):** semilla
+**82**, drop/drop, «Proteger balance» en ambos. Las semillas naturales
+útiles para casos de frontera siguen siendo válidas para su mecanismo
+(reloj, bocina, prórroga), aunque el marcador exacto que citaban cambia con
+el árbol de decisión corregido: 3 (prórroga), 121 (fallo soltado a tiempo
+sin rebote tras la bocina), 13 con trampa/trampa y «Cargar rebote» (más de
+una prórroga; ver ME-04B (6) en `me04.test.ts`, semilla 7 recalculada).
 
-**Barrido reproducible** (semillas 1–20 × drop/drop, trampa/trampa y
-drop/trampa con prioridades mezcladas; 60 partidos): 60 finales, 3 con
-prórroga; ~185 posesiones y ~50 sustituciones por partido; entradas de
-ataque: organizado 12 011, segunda oportunidad 2 780, ventaja temprana 0,
-segunda entrada 0; 63 faltas (todas de tiro), 0 sin tiro, 0 bonus, 0
-exclusiones. En 450 partidos (semillas 1–150 × las tres configuraciones)
-aparecen 8 tiros soltados antes de la bocina aún en el aire, 23 partidos
-con prórroga (17 con una, 5 con dos, 1 con tres) y ninguna parada del
-guardián.
+**Barrido reproducible pre-ME-04B** (semillas 1–20 × drop/drop, trampa/
+trampa y drop/trampa con prioridades mezcladas; 60 partidos): 60 finales, 3
+con prórroga; entradas de ataque: organizado 12 011, segunda oportunidad
+2 780, ventaja temprana 0, segunda entrada 0; 63 faltas (todas de tiro), 0
+sin tiro, 0 bonus, 0 exclusiones. Estas cifras motivaron el diagnóstico de
+ME-04B (ver abajo y `docs/match/ACTIONS.md`); no se han vuelto a barrer a
+esta escala tras la corrección por no convertir la auditoría de aceptación
+en una campaña enorme (prompt ME-04B §5).
+
+## Corrección de lecturas y oposición (ME-04B)
+
+Con el árbol de decisión y el modelo de oposición corregidos (§3.1-§3.3 del
+prompt ME-04B, ver `docs/match/ACTIONS.md` y `RULES.md`), una muestra
+pequeña y representativa de ocho semillas naturales (1, 37, 82, 156, 190,
+199, 210, 367; drop/drop, «Proteger balance», perfiles del fixture del
+repositorio) da:
+
+- **Primera lectura:** de 1 799 lecturas evaluadas de verdad, 1 798 siguen
+  eligiendo `pase_o5` y solo 1 elige `triple_o1` (semilla 210). Ya no es un
+  cortocircuito (cada vía tiene un valor comparable registrado en la
+  auditoría), pero con este fixture concreto O5 sigue siendo, en la
+  inmensa mayoría de los casos, la vía de mayor valor esperado: es un buen
+  finalizador cercano (T01) que rara vez queda realmente contenido por D3
+  (`d3TrulyContaining` ya no es automático: la segunda lectura invierte a
+  O3 solo entre 29 y 57 veces por partido de las ~220 recepciones, antes
+  era exactamente el 100 %). Los perfiles editados del grupo B de los
+  archivos adjuntos (T04 y T16/T17 de O1 más altos) sí desplazan el reparto
+  de forma observable hacia el triple y el pase directo a O3 (ver más
+  abajo, fotos A/B de la semilla 210); los casos construidos de
+  `domain/simulation/me04b.test.ts` demuestran que O1 elige el triple de
+  verdad cuando su valor lo supera.
+- **Transición:** `entrada_fase_transicion` deja de ser 100 % `sin_ventaja`:
+  aparece `penetracion` entre 6 y 15 veces por partido (de ~190-200
+  lecturas). El desplazamiento real de O1/D1 (§3.1) altera las posiciones
+  que hereda la siguiente posesión, incluida la de D1 como protector
+  potencial; no se ha investigado más a fondo el mecanismo exacto porque
+  la transición no es el objeto de esta entrega (`transition.ts` no se
+  tocó). Sigue sin verse `superioridad_2x1`/`3x2` con este fixture.
+- **Oposición al tiro:** de 2 042 resoluciones de tiro, ~93,5 % siguen
+  siendo `no_contest`, ~5,3 % `legal_contest` y ~1,1 % contacto tardío
+  ilegal (antes del ajuste, el diagnóstico documentaba ~96,7 % `no_contest`
+  producido por un modelo de contacto roto, no por una defensa creíble). La
+  falta ordinaria sin tiro sigue sin producirse de forma natural con este
+  fixture y la segunda entrada tampoco (ver la decisión pendiente de ME-04,
+  actualizada); ambos mecanismos se demuestran alcanzables con geometría
+  construida a mano en `domain/game/me04b.test.ts`.
+- **Fotos A/B de la semilla 210** (perfiles y planes de los archivos
+  adjuntos, motor corregido): foto A (perfiles ME-04A) 92–145 con 3
+  `triple_o1` y 22 3PA de Sierra Clara; foto B (O1/O4/O5 de Sierra Clara
+  editados) 103–160 con 2 `triple_o1` pero 43 3PA (16 anotados) — el cambio
+  de perfil desplaza de verdad el volumen y acierto de tres puntos, visible
+  en la auditoría, aunque la vía elegida en la primera lectura casi no
+  cambie con este fixture. Una tercera foto con el fixture del repositorio
+  a la misma semilla da 130–160 con 1 `triple_o1` y 39 3PA: las tres fotos
+  son comparables entre sí (mismo motor, ME-04B-GAME-1) pero no frente al
+  marcador antiguo (`ME-04-GAME-1`, ME-04A), que queda como evidencia
+  histórica del motor anterior.
+- **Drop/drop frente a trampa/trampa (contraste, no un experimento
+  exhaustivo):** en la misma semilla 1, trampa/trampa con «Cargar rebote»
+  no genera ninguna `resolucion_tiro` fuera de `no_contest` en la muestra
+  observada (la trampa resuelve por vías distintas — robo bajo presión,
+  salida a O4/O2, inversión — con su propia geometría de contacto, no
+  comparada aquí en detalle). No se afirma un efecto general de la
+  cobertura sobre la oposición a partir de un solo partido.
+- **Coste:** los ocho partidos naturales tardan entre 255 y 431 ms en jugarse
+  (mismo equipo, sin base de datos), el mismo orden de magnitud que el
+  coste de simulación ya documentado en `AUDIT.md` para ME-04A; no se
+  observa una regresión grande.
 
 **Casos de frontera** (sección con borde discontinuo, etiquetada «Caso de
 frontera reglamentario (fixture de prueba, no es un partido)»,
@@ -141,5 +209,8 @@ hechos de entrada, la función pura del partido que lo adjudica y su
 resultado; nada se inserta en un acta real.
 
 Se comprueba en `domain/game/me04.test.ts` (prompt §8, puntos 1–7) y con el
-plan `docs/testing/manual/ME-04-manual-test-plan.md`. El coste se perfila
-con `npm run profile:game` (`scripts/profile-game.ts`).
+plan `docs/testing/manual/ME-04-manual-test-plan.md`; las correcciones de
+ME-04B se comprueban además en `domain/game/me04b.test.ts`,
+`domain/simulation/me04b.test.ts` y `domain/audit/audit-export-me04b.test.ts`,
+con el plan `docs/testing/manual/ME-04B-manual-test-plan.md`. El coste se
+perfila con `npm run profile:game` (`scripts/profile-game.ts`).

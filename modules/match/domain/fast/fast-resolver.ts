@@ -11,6 +11,7 @@
 import { computePossessionCore } from "../simulation/possession-core";
 import { LAB_PARAMETERS_VERSION } from "../lab/lab-0-1-parameters";
 import { LAB_0_2_PARAMETERS_VERSION } from "../lab/lab-0-2-parameters";
+import { LAB_0_3_PARAMETERS_VERSION } from "../lab/lab-0-3-parameters";
 import type { MatchInput, DefensiveCoverage } from "../lab/match-input";
 import type { ScenarioId } from "../lab/scenario";
 
@@ -59,7 +60,10 @@ export interface ScenarioBatchResult {
   readonly seedStart: number;
   readonly seedEnd: number;
   readonly rulesetVersion: MatchInput["rulesetVersion"];
-  readonly labParametersVersion: typeof LAB_PARAMETERS_VERSION | typeof LAB_0_2_PARAMETERS_VERSION;
+  readonly labParametersVersion:
+    | typeof LAB_PARAMETERS_VERSION
+    | typeof LAB_0_2_PARAMETERS_VERSION
+    | typeof LAB_0_3_PARAMETERS_VERSION;
   readonly categories: ScenarioBatchCategories;
 }
 

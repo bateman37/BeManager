@@ -158,9 +158,16 @@ describe("ME-03 (3): rebote ofensivo, rebote defensivo, tapón y balón suelto",
   });
 
   it("rebote defensivo: nueva posesión del rival, 24 s", () => {
-    const r = findTramo((t) =>
-      t.events.some((e) => e.kind === "rebound_secured" && TEAM_OF[e.actors[0]!] !== e.possessionTeamId),
-    );
+    // ME-04B (§3.2): el árbol de decisión ya no fuerza siempre la misma vía,
+    // así que un rebote defensivo puede caer en la última posesión
+    // estadística del tramo (sin frontera siguiente que observar); el caso
+    // que esta prueba necesita exige además que exista un `possession_started`
+    // real después del rebote.
+    const r = findTramo((t) => {
+      const idx = t.events.findIndex((e) => e.kind === "rebound_secured" && TEAM_OF[e.actors[0]!] !== e.possessionTeamId);
+      if (idx === -1) return false;
+      return t.events.slice(idx).some((e) => e.kind === "possession_started");
+    });
     const idx = r.events.findIndex((e) => e.kind === "rebound_secured" && TEAM_OF[e.actors[0]!] !== e.possessionTeamId);
     const rebound = r.events[idx]!;
     const started = r.events.slice(idx).find((e) => e.kind === "possession_started")!;
@@ -502,7 +509,7 @@ describe("ME-03 (7): posesión individual y lotes rápidos conservan su recorrid
             coverage,
             seed,
             rulesetVersion: "FIBA-2026",
-            labParametersVersion: "LAB-0.2",
+            labParametersVersion: "LAB-0.3",
             offensePlayers: LAB_ROSTER_FIXTURE[0]!.players,
             defensePlayers: LAB_ROSTER_FIXTURE[1]!.players,
           });
@@ -511,14 +518,19 @@ describe("ME-03 (7): posesión individual y lotes rápidos conservan su recorrid
     const base = {
       seed: 1,
       rulesetVersion: "FIBA-2026" as const,
-      labParametersVersion: "LAB-0.2" as const,
+      labParametersVersion: "LAB-0.3" as const,
       offensePlayers: LAB_ROSTER_FIXTURE[0]!.players,
       defensePlayers: LAB_ROSTER_FIXTURE[1]!.players,
     };
     out.push(compareHelpToggle(base, 200), compareCoverageBatch(base, 200));
-    // Huella calculada sobre el commit anterior a ME-03 (b2cd38e).
+    // Huella de regresión del núcleo detallado y del resolvedor rápido,
+    // recalculada en ME-04B (desplazamiento real de O1/D1, primera lectura
+    // ponderada por valor y modelo R_contest de oposición, §§3.1-3.3): un
+    // cambio intencional de la mecánica deportiva, no una regresión. Si un
+    // futuro bloque cambia de nuevo el árbol de decisión o las fórmulas de
+    // contacto/oposición, esta huella debe recalcularse otra vez aquí mismo.
     expect(createHash("sha256").update(JSON.stringify(out)).digest("hex")).toBe(
-      "b98a9ed176897fcb2a96836770bd87c4467077ae2bf88eadcdd453e89c56d1bc",
+      "1792a9e38a1bbc7a729afa4525c3bcb31fb39bd0dc43c0b1661844773b9f2494",
     );
   });
 

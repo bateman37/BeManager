@@ -5,9 +5,9 @@
 **Debe leerse cuando:** vayas a tocar cualquier código de `modules/match/` o a planificar la siguiente entrega del motor.
 **No cubre:** el razonamiento completo de diseño (ver `docs/match/reference/`) ni el orden de las diez entregas (ver `docs/match/roadmap.md`).
 **Documentos relacionados:** `docs/foundation/MATCH_CORE_PRINCIPLES.md`, `docs/architecture/MODULE_BOUNDARIES.md`.
-**Última actualización:** 2026-09-29.
+**Última actualización:** 2026-09-29 (ME-04B).
 
-## Qué existe hoy (ME-01 a ME-04)
+## Qué existe hoy (ME-01 a ME-04B)
 
 Un Laboratorio de Partido con un único bloqueo directo central 5×5, ante el
 que la defensa puede responder con **drop** (con o sin ayuda de D3) o con
@@ -39,6 +39,18 @@ partido con la entrada, los hechos, los puntos de decisión observados del
 árbol de drop/trampa/segunda entrada/tiro/rebote/falta sin tiro y el
 resultado, sin cambiar la simulación (ver `AUDIT.md`).
 
+**ME-04B:** corrige el diagnóstico de las nueve auditorías de ME-04A sobre
+el bloqueo directo: O1 y D1 ya se desplazan de verdad hasta el punto de uso
+de la pantalla (antes permanecían congelados en su posición de partida); la
+primera lectura del bloqueo evalúa de verdad varias vías (finalizar, pase a
+O5, pase a O3, triple de O1, salida segura) por un valor de tiro
+situacional en vez de cortarse siempre en `pase_o5`; la oposición al tiro
+usa un modelo geométrico `R_contest` separado del contacto/falta (LAB-0.3);
+y la auditoría resuelve IDs reales de pista, enlaza al hecho realmente
+emitido y separa motivo elegido de alternativas descartadas (esquema
+`ME-04B-AUDIT-1`, ver `AUDIT.md`). No cambia ninguna otra familia táctica,
+cobertura, regla de reloj/falta ni el acta.
+
 **No implementado todavía:** dirección en vivo, fatiga, tiempos muertos,
 temporadas, más de una
 acción táctica ofensiva, coberturas de bloqueo distintas de drop/trampa,
@@ -54,7 +66,7 @@ están activas; ver `CAPABILITIES.md`).
 | Entender el estado/hechos del partido y la continuidad del tramo | `MODEL.md` |
 | Reglas FIBA 2026 alcanzables (incluidos relojes y saques del tramo) | `RULES.md` |
 | La acción de bloqueo directo, carga/balance y transición | `ACTIONS.md` |
-| Capacidades activas y parámetros LAB-0.1 | `CAPABILITIES.md` |
+| Capacidades activas y parámetros LAB-0.1/0.2/0.3 | `CAPABILITIES.md` |
 | Los tres escenarios, el modo «Jugar tramo», el partido completo y los casos de frontera | `SCENARIOS.md` |
 | Acta (boxscore) calculada de los hechos y su conciliación | `BOXSCORE.md` |
 | Auditoría exportable del partido detallado (esquema, colector, cobertura) | `AUDIT.md` |
@@ -68,11 +80,11 @@ modules/match/
   domain/
     geometry/ time/ random/       # primitivas puras (y marco local de ataque, trayectorias: ME-03)
     players/                      # atributos, perfiles, fixture, validación
-    lab/                          # parámetros LAB-0.1, escenarios, MatchInput
+    lab/                          # parámetros LAB-0.1/0.2/0.3, escenarios, MatchInput
     simulation/                   # núcleo compartido (modo enlazado ME-03), hechos, resolvers
     sequence/                     # motor de continuidad compartido, tramo, reglas de reloj, transición (ME-03/ME-04)
     game/                         # partido completo: reglas FIBA 2026 puras, rotación, acta, casos de frontera (ME-04)
-    audit/                        # colector y exportador de auditoría del partido (ME-04A)
+    audit/                        # colector y exportador de auditoría del partido (ME-04A/ME-04B)
     fast/                         # aproximación rápida por lotes
   application/
     ports/ use-cases/             # casos de uso de laboratorio
