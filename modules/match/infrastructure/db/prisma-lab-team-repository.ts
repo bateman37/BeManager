@@ -84,23 +84,33 @@ export class PrismaLabTeamRepository implements LabTeamRepository {
   }
 
   async savePlayer(teamId: string, player: PlayerProfile): Promise<void> {
-    const data = {
-      name: player.name,
-      age: player.age,
-      positionLabel: player.positionLabel,
-      template: player.template,
-      heightCm: player.measures.heightCm,
-      weightKg: player.measures.weightKg,
-      wingspanCm: player.measures.wingspanCm,
-      standingReachCm: player.measures.standingReachCm,
-      attributes: player.attributes as unknown as Record<string, number>,
-      pnrTendency: player.pnrTendency,
-    };
-
-    await prisma.labPlayer.upsert({
-      where: { teamId_id: { teamId, id: player.id } },
-      create: { teamId, id: player.id, ...data },
-      update: data,
-    });
+    await prisma.labPlayer.upsert(toUpsertArgs(teamId, player));
   }
+
+  async savePlayers(teamId: string, players: readonly PlayerProfile[]): Promise<void> {
+    if (players.length === 0) return;
+    // Transacción atómica (ME-06 §4): si cualquier upsert falla, ninguno se
+    // aplica. No toca ningún jugador de `teamId` fuera de esta lista.
+    await prisma.$transaction(players.map((player) => prisma.labPlayer.upsert(toUpsertArgs(teamId, player))));
+  }
+}
+
+function toUpsertArgs(teamId: string, player: PlayerProfile) {
+  const data = {
+    name: player.name,
+    age: player.age,
+    positionLabel: player.positionLabel,
+    template: player.template,
+    heightCm: player.measures.heightCm,
+    weightKg: player.measures.weightKg,
+    wingspanCm: player.measures.wingspanCm,
+    standingReachCm: player.measures.standingReachCm,
+    attributes: player.attributes as unknown as Record<string, number>,
+    pnrTendency: player.pnrTendency,
+  };
+  return {
+    where: { teamId_id: { teamId, id: player.id } },
+    create: { teamId, id: player.id, ...data },
+    update: data,
+  };
 }

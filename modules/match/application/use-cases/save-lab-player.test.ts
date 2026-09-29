@@ -26,6 +26,10 @@ class InMemoryLabTeamRepository implements LabTeamRepository {
     const others = team.players.filter((p) => p.id !== player.id);
     this.teams.set(teamId, { ...team, players: [...others, player] });
   }
+
+  async savePlayers(teamId: string, players: readonly PlayerProfile[]): Promise<void> {
+    for (const player of players) await this.savePlayer(teamId, player);
+  }
 }
 
 class FailingLabTeamRepository implements LabTeamRepository {
@@ -36,6 +40,9 @@ class FailingLabTeamRepository implements LabTeamRepository {
     throw new Error("conexión rechazada");
   }
   async savePlayer(): Promise<void> {
+    throw new Error("conexión rechazada a postgres://user:secret@host:5432/db");
+  }
+  async savePlayers(): Promise<void> {
     throw new Error("conexión rechazada a postgres://user:secret@host:5432/db");
   }
 }

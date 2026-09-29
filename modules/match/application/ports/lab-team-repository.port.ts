@@ -22,4 +22,11 @@ export interface LabTeamRepository {
   getTeam(teamId: string): Promise<LabTeamRecord | null>;
   /** Crea o actualiza (upsert) un jugador dentro de un equipo existente. */
   savePlayer(teamId: string, player: PlayerProfile): Promise<void>;
+  /**
+   * Crea o actualiza (upsert) varios jugadores del mismo equipo como una
+   * sola operación atómica (ME-06 §4): si falla la actualización de
+   * cualquiera de ellos, no debe quedar ningún jugador a medio modificar.
+   * No toca ningún jugador del equipo que no aparezca en `players`.
+   */
+  savePlayers(teamId: string, players: readonly PlayerProfile[]): Promise<void>;
 }
