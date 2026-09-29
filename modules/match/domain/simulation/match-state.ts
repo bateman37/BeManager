@@ -39,6 +39,30 @@ export type TerminalOutcome =
       /** Puntos totales de la jugada: canasta contada (si aplica) + libres anotados. */
       readonly totalPoints: number;
     }
+  /**
+   * Solo en el partido de ME-04 (reglas de partido activas en el núcleo
+   * enlazado): la falta de tiro se ha pitado y la canasta (si la hubo) ya
+   * está adjudicada, pero los libres se ejecutan después, cuando quien
+   * orquesta el partido haya abierto la oportunidad de sustitución.
+   */
+  | {
+      readonly kind: "shooting_foul_free_throws_pending";
+      readonly shooterId: string;
+      readonly foulerId: string;
+      readonly basketCounted: boolean;
+      readonly freeThrowsAwarded: number;
+    }
+  /**
+   * Solo en el partido de ME-04: falta personal defensiva ordinaria sin
+   * tiro (contacto ilegal al contener o cerrar el paso, antes del gesto de
+   * tiro). La sanción (saque o dos libres por bonus) la adjudica el perfil
+   * de reglas del partido, no el núcleo.
+   */
+  | {
+      readonly kind: "non_shooting_foul";
+      readonly foulerId: string;
+      readonly fouledId: string;
+    }
   | { readonly kind: "out_of_bounds"; readonly lastTouchPlayerId: string }
   | { readonly kind: "shot_clock_violation" }
   | { readonly kind: "possession_reorganized_control_kept"; readonly outletPlayerId: string }

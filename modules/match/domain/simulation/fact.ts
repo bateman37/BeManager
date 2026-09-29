@@ -53,7 +53,20 @@ export type FactKind =
   | "loose_ball_recovered"
   | "backcourt_violation"
   | "throw_in_violation"
-  | "tramo_stopped";
+  | "tramo_stopped"
+  // ME-04: partido completo. Amplían la taxonomía sin cambiar las anteriores.
+  | "legal_containment"
+  | "non_shooting_foul"
+  | "personal_foul"
+  | "player_disqualified"
+  | "substitution"
+  | "jump_ball"
+  | "period_started"
+  | "period_ended"
+  | "buzzer"
+  | "game_ended"
+  | "alternating_arrow"
+  | "second_entry";
 
 export interface PlayerSnapshot {
   readonly playerId: string;

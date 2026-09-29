@@ -144,7 +144,13 @@ export type PhaseKind =
   | "recuperacion_propia";
 
 /** Cómo se resolvió el ataque de la fase (ventaja temprana frente a ataque organizado). */
-export type PhaseEntry = "ataque_organizado" | "ventaja_temprana" | "segunda_oportunidad" | "pendiente";
+export type PhaseEntry =
+  | "ataque_organizado"
+  | "ventaja_temprana"
+  | "segunda_oportunidad"
+  /** ME-04: segunda entrada del mismo bloqueo directo tras negarse la primera (solo en el partido). */
+  | "segunda_entrada"
+  | "pendiente";
 
 export interface PhaseRecord {
   readonly index: number;
@@ -208,6 +214,10 @@ export interface TramoEvent {
   /** `null` mientras no corre para nadie (p. ej. antes del toque legal de un saque). */
   readonly shotClockMs: Milliseconds | null;
   readonly score: Readonly<Record<string, number>>;
+  /** Período del hecho (el tramo siempre es 1; el partido de ME-04, 1–4 y prórrogas 5…). */
+  readonly period: number;
+  /** Los diez IDs en pista en ese instante (orden estable). */
+  readonly onCourtIds: readonly string[];
 }
 
 export type TramoStopCause = "cuatro_posesiones" | "tiempo_agotado" | "guardian";

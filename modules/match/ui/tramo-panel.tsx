@@ -49,6 +49,7 @@ const ENTRY_LABELS: Record<PhaseEntry, string> = {
   ataque_organizado: "Ataque organizado",
   ventaja_temprana: "Ventaja temprana",
   segunda_oportunidad: "Segunda oportunidad",
+  segunda_entrada: "Segunda entrada del bloqueo",
   pendiente: "Por decidir",
 };
 

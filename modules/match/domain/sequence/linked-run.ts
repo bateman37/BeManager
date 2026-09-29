@@ -1,0 +1,1530 @@
+/**
+ * Motor de continuidad de posesiones enlazadas (ME-03, ADR-0006),
+ * compartido por el tramo de ME-03 (`play-tramo.ts`) y por el partido
+ * completo de ME-04 (`domain/game/play-full-game.ts`). La misma cancha, los
+ * mismos diez jugadores en pista y el mismo balón atraviesan rebotes,
+ * pérdidas, canastas, saques y cambios de dirección: cada frontera hereda
+ * posiciones reales, relojes, balón, encargos y el estado del azar. No
+ * concatena llamadas a `runPossession` ni recarga el fixture.
+ *
+ * El árbol de pase/tiro/tapón/falta/rebote es el del núcleo compartido
+ * (`possession-core.ts`, modo enlazado). Esta clase solo orquesta: marco
+ * local del equipo que ataca, reglas de reloj y reanudación FIBA 2026
+ * alcanzables (`fiba-clock-rules.ts`), transición y saques. Lo que
+ * distingue un tramo de un partido (quintetos, sentido de ataque por
+ * período, fin de período, bonus, sustituciones) entra por los métodos
+ * `protected` que cada modo redefine; el tramo conserva exactamente su
+ * comportamiento de ME-03.
+ */
+import type { Point2D } from "../geometry/point";
+import { distance, timeToReach } from "../geometry/point";
+import { ATTACKED_HOOP, isInsideCourt } from "../geometry/court";
+import {
+  toGlobal,
+  toLocal,
+  attackedHoopGlobal,
+  isFrontcourtLocal,
+  endLineThrowInSpot,
+  outOfBoundsThrowInSpot,
+  sidelineThrowInSpot,
+  type AttackDirection,
+} from "../geometry/frame";
+import { positionOnTrajectory, truncateTrajectory, type TrajectoryPoint } from "../geometry/trajectory";
+import { createResumableRandom, type ResumableRandom } from "../random/seeded-random";
+import { secondsToMs, type Milliseconds } from "../time/clock";
+import type { DefensiveCoverage, MatchInput } from "../lab/match-input";
+import { getScenario } from "../lab/scenario";
+import type { LAB_0_2_PARAMETERS_VERSION } from "../lab/lab-0-2-parameters";
+import {
+  attackerMoveSpeedMps,
+  defenderLateralSpeedMps,
+  closeoutBrakingExtraSeconds,
+  PASS_FLIGHT_SPEED_MPS,
+  PASS_RELEASE_SECONDS,
+} from "../lab/lab-0-1-parameters";
+import type { PlayerProfile } from "../players/player-profile";
+import type { FactKind, FactPhase, PlayerSnapshot } from "../simulation/fact";
+import type { TerminalOutcome, BallState, BallStatus } from "../simulation/match-state";
+import {
+  computePossessionCore,
+  REBOUND_CANDIDATE_SPEED_MPS,
+  type LinkedEntry,
+  type LinkedGameRules,
+  type PlannedLeg,
+  type PossessionCoreResult,
+  type RawEvent,
+  type ReboundPriority,
+} from "../simulation/possession-core";
+import { resolvePass } from "../simulation/resolvers/pass-resolver";
+import { resolveRebound, pickTipWinnerByT20 } from "../simulation/resolvers/rebound-resolver";
+import {
+  SHOT_CLOCK_FULL_MS,
+  shotClockAfterLiveControl,
+  shotClockForThrowIn,
+  evaluateBackcourtCount,
+  evaluateThrowInCount,
+  backcourtElapsedAfterThrowIn,
+} from "./fiba-clock-rules";
+import {
+  readTransition,
+  readSecondChance,
+  readOutlet,
+  frontcourtEntryOffsetSeconds,
+  type RaceParticipant,
+} from "./transition";
+import {
+  REBOUND_PRIORITY_LABELS,
+  type ControlState,
+  type PhaseEntry,
+  type PhaseKind,
+  type PossessionRecord,
+  type Responsibility,
+  type ResponsibilityChange,
+  type TramoBallState,
+  type TramoEvent,
+} from "./tramo-model";
+
+export interface LinkedLimits {
+  /** Fases (rebotes ofensivos, salidas, recuperaciones) máximas en una posesión. */
+  readonly maxPhasesPerPossession: number;
+  /** Pasos de orquestación máximos de la corrida completa. */
+  readonly maxSteps: number;
+  /** Pasos consecutivos sin avanzar el reloj interno antes de declarar un ciclo. */
+  readonly maxZeroTimeSteps: number;
+}
+
+/** Equipo tal y como lo necesita el motor: identidad, nombre y plan tras tiro. */
+export interface LinkedTeam {
+  readonly id: string;
+  readonly name: string;
+  readonly priority: ReboundPriority;
+}
+
+export interface LinkedRunSettings {
+  readonly seed: number;
+  readonly rulesetVersion: "FIBA-2026";
+  readonly labParametersVersion: typeof LAB_0_2_PARAMETERS_VERSION;
+  /** Disposición del bloqueo directo que usan la organización y el núcleo. */
+  readonly dispositionScenarioId: "drop_con_ayuda";
+  readonly teams: readonly [LinkedTeam, LinkedTeam];
+  /** Todos los perfiles inscritos (copia estable), con su equipo. */
+  readonly roster: readonly { readonly teamId: string; readonly profile: PlayerProfile }[];
+  readonly limits: LinkedLimits;
+}
+
+export const OFFENSE_SLOTS = ["O1", "O2", "O3", "O4", "O5"] as const;
+export const DEFENSE_SLOTS = ["D1", "D2", "D3", "D4", "D5"] as const;
+const SLOT_TOKEN = /\b([OD][1-5])\b/g;
+
+/** Hechos del núcleo que deciden el desenlace de un tramo de cálculo. */
+const DECISIVE_KINDS: ReadonlySet<FactKind> = new Set<FactKind>([
+  "shot_result",
+  "rebound_secured",
+  "rebound_contested",
+  "turnover",
+  "pass_control_lost",
+  "shot_blocked",
+  "free_throws_result",
+  "out_of_bounds",
+  "shot_clock_violation",
+  "possession_continues",
+  "shooting_foul",
+  "non_shooting_foul",
+]);
+
+export const ROLE_LABELS: Readonly<Record<string, string>> = {
+  O1: "manejador del bloqueo directo",
+  O2: "esquina del lado del balón",
+  O3: "esquina débil",
+  O4: "ala débil",
+  O5: "bloqueador y continuador",
+  D1: "persigue al manejador",
+  D2: "defiende la esquina del lado del balón",
+  D3: "ayuda desde la esquina débil",
+  D4: "defiende el ala débil y repara",
+  D5: "protege el aro ante el bloqueo",
+};
+
+/** Equipo en un marco: su quinteto en pista en el orden de rol del sistema. */
+export interface FrameTeam {
+  readonly id: string;
+  readonly name: string;
+  readonly priority: ReboundPriority;
+  readonly players: readonly PlayerProfile[];
+}
+
+/**
+ * Marco de una fase: quién ataca, hacia dónde, y qué jugador real ocupa
+ * cada rol canónico de la acción (el orden del quinteto da el rol; el
+ * equipo lo da el control del balón, no el prefijo del ID).
+ */
+export interface Frame {
+  readonly attacking: FrameTeam;
+  readonly defending: FrameTeam;
+  readonly dir: AttackDirection;
+  readonly slotToId: Readonly<Record<string, string>>;
+  readonly idToSlot: Readonly<Record<string, string>>;
+}
+
+export function buildFrameFromTeams(attacking: FrameTeam, defending: FrameTeam, dir: AttackDirection): Frame {
+  const slotToId: Record<string, string> = {};
+  OFFENSE_SLOTS.forEach((slot, i) => (slotToId[slot] = attacking.players[i]!.id));
+  DEFENSE_SLOTS.forEach((slot, i) => (slotToId[slot] = defending.players[i]!.id));
+  const idToSlot = Object.fromEntries(Object.entries(slotToId).map(([slot, id]) => [id, slot]));
+  return { attacking, defending, dir, slotToId, idToSlot };
+}
+
+/** Mismo marco con otra asignación de roles canónicos (p. ej. la segunda entrada de ME-04). */
+export function rebindFrame(frame: Frame, slotToId: Readonly<Record<string, string>>): Frame {
+  const idToSlot = Object.fromEntries(Object.entries(slotToId).map(([slot, id]) => [id, slot]));
+  return { ...frame, slotToId, idToSlot };
+}
+
+export type Step =
+  | { readonly kind: "set"; readonly frame: Frame; readonly atMs: Milliseconds }
+  | { readonly kind: "organize"; readonly frame: Frame; readonly atMs: Milliseconds; readonly holderId: string }
+  | { readonly kind: "advance"; readonly frame: Frame; readonly atMs: Milliseconds; readonly holderId: string }
+  | { readonly kind: "second_chance"; readonly frame: Frame; readonly atMs: Milliseconds; readonly holderId: string }
+  | { readonly kind: "loose_ball"; readonly frame: Frame; readonly atMs: Milliseconds; readonly ball: Point2D }
+  | {
+      readonly kind: "throw_in";
+      readonly teamId: string;
+      readonly atMs: Milliseconds;
+      readonly spot: Point2D;
+      readonly reason: string;
+      readonly sameTeamKeepsBall: boolean;
+      readonly shotClockMs: Milliseconds;
+    }
+  /** Paso propio de un modo (p. ej. inicio de período del partido). */
+  | { readonly kind: "custom"; readonly label: string; readonly atMs: Milliseconds; readonly run: () => Step | null };
+
+export interface BallMark {
+  readonly status: BallStatus;
+  readonly holderId: string | null;
+  /** Posición fija (balón sin poseedor); con poseedor se sigue su trayectoria. */
+  readonly fixed: Point2D | null;
+}
+
+export interface PendingEvent {
+  readonly atMs: Milliseconds;
+  readonly possessionIndex: number;
+  readonly phaseIndex: number;
+  readonly possessionTeamId: string;
+  readonly phase: FactPhase;
+  readonly kind: FactKind;
+  readonly actors: readonly string[];
+  readonly text: string;
+  readonly detail: Readonly<Record<string, unknown>>;
+  readonly ball: BallMark;
+  readonly control: ControlState;
+  readonly gameClockMs: Milliseconds;
+  readonly shotClockMs: Milliseconds | null;
+  readonly score: Readonly<Record<string, number>>;
+  readonly period: number;
+  readonly onCourtIds: readonly string[];
+}
+
+export interface EmitArgs {
+  readonly atMs: Milliseconds;
+  readonly phase: FactPhase;
+  readonly kind: FactKind;
+  readonly actors: readonly string[];
+  readonly text: string;
+  readonly detail?: Readonly<Record<string, unknown>>;
+  readonly ball?: BallMark;
+}
+
+export interface LinkedStop {
+  readonly cause: string;
+  readonly atMs: Milliseconds;
+  readonly explanation: string;
+}
+
+export function formatSeconds(seconds: number): string {
+  return `${seconds.toFixed(2).replace(".", ",")} s`;
+}
+
+export abstract class LinkedRun {
+  protected readonly settings: LinkedRunSettings;
+  protected readonly limits: LinkedLimits;
+  protected readonly rng: ResumableRandom;
+  protected readonly profiles = new Map<string, PlayerProfile>();
+  protected readonly teamOf = new Map<string, string>();
+  protected readonly teams = new Map<string, LinkedTeam>();
+  protected readonly tracks: Record<string, TrajectoryPoint[]> = {};
+  protected readonly events: PendingEvent[] = [];
+  protected readonly possessions: PossessionRecord[] = [];
+  protected readonly responsibilities: ResponsibilityChange[] = [];
+  protected readonly currentResponsibility = new Map<string, Responsibility>();
+  protected readonly rngStates: { atMs: Milliseconds; state: number }[] = [];
+  protected readonly score: Record<string, number> = {};
+
+  protected game: { ms: Milliseconds; running: boolean; ref: Milliseconds };
+  protected shot: { ms: Milliseconds; running: boolean; ref: Milliseconds } | null;
+  protected ball: BallMark;
+  protected throwInTeamId: string | null = null;
+  /** Cuenta de 8 s en curso (art. 28), o `null` si el balón ya está en pista delantera. */
+  protected backcourt: { startMs: Milliseconds; elapsedBeforeMs: Milliseconds } | null = null;
+  protected closed = 0;
+  protected stop: LinkedStop | null = null;
+  protected lastMs: Milliseconds = 0;
+  /** Instante exacto en que el reloj de partido llegó a 0, si ya ocurrió. */
+  protected gameExpiredAtMs: Milliseconds | null = null;
+
+  constructor(settings: LinkedRunSettings) {
+    this.settings = settings;
+    this.limits = settings.limits;
+    this.rng = createResumableRandom(settings.seed);
+    for (const team of settings.teams) {
+      this.teams.set(team.id, team);
+      this.score[team.id] = 0;
+    }
+    for (const { teamId, profile } of settings.roster) {
+      this.profiles.set(profile.id, profile);
+      this.teamOf.set(profile.id, teamId);
+    }
+    this.game = { ms: 0, running: false, ref: 0 };
+    this.shot = null;
+    this.ball = { status: "dead", holderId: null, fixed: { x: 14, y: 7.5 } };
+  }
+
+  // --- lo que cada modo define -------------------------------------------------
+
+  /** Quinteto en pista del equipo, en orden de rol del sistema (1–5). */
+  protected abstract lineup(teamId: string): readonly PlayerProfile[];
+  /** Sentido de ataque vigente del equipo. */
+  protected abstract attackDirection(teamId: string): AttackDirection;
+  /** Cobertura con la que defiende el equipo. */
+  protected abstract coverageWhenDefending(teamId: string): DefensiveCoverage;
+  /** Qué hacer cuando un hecho alcanza el agotamiento del reloj de partido; `true` si el hecho se registra. */
+  protected abstract onGameClockExpired(e: EmitArgs, expiryMs: Milliseconds): boolean;
+
+  /** Tras cerrar una posesión (con su hecho ya emitido o no); `false` detiene el paso en curso. */
+  protected afterPossessionClosed(_atMs: Milliseconds, emitted: boolean): boolean {
+    return emitted;
+  }
+  /** ¿Detiene el reloj de partido esta canasta? (FIBA art. 50; el tramo, C1: nunca). */
+  protected madeBasketStopsGameClock(): boolean {
+    return false;
+  }
+  /** Reglas de partido que el núcleo debe aplicar (ninguna en el tramo). */
+  protected coreRules(): LinkedGameRules | undefined {
+    return undefined;
+  }
+  /** Tiempo de juego transcurrido con el reloj en marcha, para minutos. */
+  protected onClockRan(_deltaMs: Milliseconds): void {}
+  /** Período al que pertenece un hecho. */
+  protected currentPeriod(): number {
+    return 1;
+  }
+  /** Los diez jugadores en pista en este instante (orden estable por ID). */
+  protected onCourtIds(): readonly string[] {
+    return Object.keys(this.tracks).sort();
+  }
+  /** Posesión a la que se atribuye un hecho. */
+  protected possessionRef(): PossessionRecord | null {
+    return this.possessions[this.possessions.length - 1] ?? null;
+  }
+  /** Cómo se nombra la corrida en los diagnósticos del guardián. */
+  protected runLabel(): string {
+    return "el tramo";
+  }
+  /** Tipo del hecho con que se registra una parada del guardián. */
+  protected stopEventKind(): FactKind {
+    return "tramo_stopped";
+  }
+
+  // --- utilidades ---------------------------------------------------------
+
+  protected profile(id: string): PlayerProfile {
+    const p = this.profiles.get(id);
+    if (!p) throw new Error(`Jugador desconocido: ${id}`);
+    return p;
+  }
+
+  protected team(id: string): LinkedTeam {
+    return this.teams.get(id)!;
+  }
+
+  protected otherTeam(teamId: string): LinkedTeam {
+    return this.settings.teams[0].id === teamId ? this.settings.teams[1] : this.settings.teams[0];
+  }
+
+  protected frameTeam(teamId: string): FrameTeam {
+    const t = this.team(teamId);
+    return { id: t.id, name: t.name, priority: t.priority, players: this.lineup(teamId) };
+  }
+
+  protected frameFor(attackingTeamId: string): Frame {
+    return buildFrameFromTeams(
+      this.frameTeam(attackingTeamId),
+      this.frameTeam(this.otherTeam(attackingTeamId).id),
+      this.attackDirection(attackingTeamId),
+    );
+  }
+
+  protected runSpeed(id: string): number {
+    return attackerMoveSpeedMps(this.profile(id).attributes.F01);
+  }
+
+  protected positionAt(id: string, atMs: Milliseconds): Point2D {
+    return positionOnTrajectory(this.tracks[id]!, atMs);
+  }
+
+  protected localPositions(frame: Frame, atMs: Milliseconds): Record<string, Point2D> {
+    const out: Record<string, Point2D> = {};
+    for (const [slot, id] of Object.entries(frame.slotToId)) out[slot] = toLocal(frame.dir, this.positionAt(id, atMs));
+    return out;
+  }
+
+  /** Nueva orden de desplazamiento global: sale desde donde está de verdad en `departMs`. */
+  protected moveGlobal(id: string, departMs: Milliseconds, target: Point2D): Milliseconds {
+    const from = this.positionAt(id, departMs);
+    const arriveMs = departMs + secondsToMs(timeToReach(from, target, this.runSpeed(id)));
+    const track = truncateTrajectory(this.tracks[id]!, departMs);
+    if (arriveMs > departMs) track.push({ atMs: arriveMs, position: target, moving: true });
+    this.tracks[id] = track;
+    return arriveMs;
+  }
+
+  protected holdAll(atMs: Milliseconds): void {
+    for (const id of this.onCourtIds()) this.tracks[id] = truncateTrajectory(this.tracks[id]!, atMs);
+  }
+
+  protected assignResponsibility(atMs: Milliseconds, id: string, responsibility: Responsibility, reason: string): void {
+    if (this.currentResponsibility.get(id) === responsibility && responsibility !== "cargar_rebote" && responsibility !== "proteger_balance") {
+      return;
+    }
+    this.currentResponsibility.set(id, responsibility);
+    this.responsibilities.push({ atMs, playerId: id, teamId: this.teamOf.get(id)!, responsibility, reason });
+  }
+
+  protected translateText(frame: Frame, text: string): string {
+    return text.replace(SLOT_TOKEN, (token) => frame.slotToId[token] ?? token);
+  }
+
+  protected translateDetail(frame: Frame, value: unknown): unknown {
+    if (typeof value === "string") return /^[OD][1-5]$/.test(value) ? (frame.slotToId[value] ?? value) : value;
+    if (Array.isArray(value)) return value.map((v) => this.translateDetail(frame, v));
+    if (value && typeof value === "object") {
+      const obj = value as Record<string, unknown>;
+      const keys = Object.keys(obj);
+      if (keys.length === 2 && typeof obj.x === "number" && typeof obj.y === "number") {
+        return toGlobal(frame.dir, { x: obj.x, y: obj.y });
+      }
+      return Object.fromEntries(keys.map((k) => [k === "slot" ? "playerId" : k, this.translateDetail(frame, obj[k])]));
+    }
+    return value;
+  }
+
+  // --- relojes ------------------------------------------------------------
+
+  protected sync(atMs: Milliseconds): void {
+    if (atMs < this.game.ref) return;
+    if (this.game.running) {
+      if (this.gameExpiredAtMs === null && atMs >= this.game.ref + this.game.ms) {
+        this.gameExpiredAtMs = this.game.ref + this.game.ms;
+      }
+      const before = this.game.ms;
+      this.game.ms = Math.max(0, this.game.ms - (atMs - this.game.ref));
+      if (before > this.game.ms) this.onClockRan(before - this.game.ms);
+    }
+    this.game.ref = atMs;
+    if (this.shot) {
+      if (this.shot.running) this.shot.ms = Math.max(0, this.shot.ms - (atMs - this.shot.ref));
+      this.shot.ref = atMs;
+    }
+  }
+
+  protected stopGameClock(atMs: Milliseconds): void {
+    this.sync(atMs);
+    this.game.running = false;
+  }
+
+  protected startGameClock(atMs: Milliseconds): void {
+    this.sync(atMs);
+    this.game.running = true;
+  }
+
+  protected setShotClock(atMs: Milliseconds, ms: Milliseconds): void {
+    this.sync(atMs);
+    this.shot = { ms, running: true, ref: atMs };
+  }
+
+  protected stopShotClock(atMs: Milliseconds): void {
+    this.sync(atMs);
+    if (this.shot) this.shot.running = false;
+  }
+
+  protected shotRemainingAt(atMs: Milliseconds): Milliseconds {
+    if (!this.shot) return SHOT_CLOCK_FULL_MS;
+    return this.shot.running ? Math.max(0, this.shot.ms - (atMs - this.shot.ref)) : this.shot.ms;
+  }
+
+  protected shotExpiryMs(): Milliseconds {
+    if (!this.shot || !this.shot.running) return Infinity;
+    return this.shot.ref + this.shot.ms;
+  }
+
+  protected gameExpiryMs(): Milliseconds {
+    if (this.gameExpiredAtMs !== null) return this.gameExpiredAtMs;
+    return this.game.running ? this.game.ref + this.game.ms : Infinity;
+  }
+
+  // --- relato ---------------------------------------------------------------
+
+  protected currentPossession(): PossessionRecord {
+    return this.possessions[this.possessions.length - 1]!;
+  }
+
+  protected control(): ControlState {
+    const b = this.ball;
+    if (b.status === "held" || b.status === "in_flight_pass") {
+      const holderTeam = b.holderId ? this.teamOf.get(b.holderId)! : (this.possessionRef()?.teamId ?? null);
+      return { status: "control", controlTeamId: holderTeam, throwInTeamId: null };
+    }
+    if (b.status === "in_flight_shot") return { status: "tiro_en_el_aire", controlTeamId: null, throwInTeamId: null };
+    if (b.status === "loose") return { status: "balon_suelto", controlTeamId: null, throwInTeamId: null };
+    return { status: "balon_muerto", controlTeamId: null, throwInTeamId: this.throwInTeamId };
+  }
+
+  protected guardianStop(atMs: Milliseconds, explanation: string): void {
+    if (this.stop) return;
+    const at = Math.max(atMs, this.lastMs);
+    this.stop = { cause: "guardian", atMs: at, explanation };
+    this.pushEvent({ atMs: at, phase: "concedido", kind: this.stopEventKind(), actors: [], text: `Guardián de progreso: ${explanation}`, detail: { cause: "guardian" } });
+  }
+
+  protected pushEvent(e: EmitArgs): void {
+    const possession = this.possessionRef();
+    this.events.push({
+      atMs: e.atMs,
+      possessionIndex: possession ? possession.index : 0,
+      phaseIndex: possession ? possession.phases.length : 0,
+      possessionTeamId: possession ? possession.teamId : "",
+      phase: e.phase,
+      kind: e.kind,
+      actors: e.actors,
+      text: e.text,
+      detail: e.detail ?? {},
+      ball: this.ball,
+      control: this.control(),
+      gameClockMs: this.game.ms,
+      shotClockMs: this.shot ? this.shot.ms : null,
+      score: { ...this.score },
+      period: this.currentPeriod(),
+      onCourtIds: this.onCourtIds(),
+    });
+    this.lastMs = e.atMs;
+  }
+
+  /** Registra un hecho en su instante absoluto; `false` si la corrida (o el período) se detuvo. */
+  protected emit(e: EmitArgs): boolean {
+    if (this.stop) return false;
+    if (e.atMs < this.lastMs) {
+      this.guardianStop(this.lastMs, `hecho «${e.kind}» fuera de orden temporal; se detiene en vez de reordenar el relato.`);
+      return false;
+    }
+    if (e.atMs >= this.gameExpiryMs()) {
+      if (!this.onGameClockExpired(e, this.gameExpiryMs())) return false;
+    }
+    this.sync(e.atMs);
+
+    switch (e.kind) {
+      case "shooting_foul":
+      case "non_shooting_foul":
+        // Silbato: se detienen ambos relojes; permanecen parados durante los libres.
+        this.stopGameClock(e.atMs);
+        this.stopShotClock(e.atMs);
+        break;
+      case "rebound_secured":
+      case "rebound_contested":
+        // Último libre fallado y vivo: el reloj vuelve a correr al tocar a un jugador.
+        if (!this.game.running && this.gameExpiredAtMs === null) this.startGameClock(e.atMs);
+        break;
+      case "out_of_bounds":
+      case "backcourt_violation":
+      case "throw_in_violation":
+        this.stopGameClock(e.atMs);
+        this.stopShotClock(e.atMs);
+        break;
+      case "shot_clock_violation":
+        this.stopGameClock(e.atMs);
+        if (this.shot) this.shot.ms = 0;
+        this.stopShotClock(e.atMs);
+        break;
+      case "shot_result":
+        if (this.madeBasketStopsGameClock()) this.stopGameClock(e.atMs);
+        break;
+      default:
+        break;
+    }
+
+    if (e.ball) this.ball = e.ball;
+    if (e.kind === "field_goal_attempt" && e.detail?.made === true) {
+      const team = this.teamOf.get(e.actors[0]!)!;
+      this.score[team] = (this.score[team] ?? 0) + Number(e.detail.points ?? 0);
+    }
+    if (e.kind === "free_throws_result" && e.detail?.made === true) {
+      const team = this.teamOf.get(e.actors[0]!)!;
+      this.score[team] = (this.score[team] ?? 0) + 1;
+    }
+    this.pushEvent(e);
+    return true;
+  }
+
+  // --- posesiones y fases ---------------------------------------------------
+
+  protected openPossession(teamId: string, atMs: Milliseconds, kind: PhaseKind, reason: string): boolean {
+    this.possessions.push({
+      index: this.possessions.length + 1,
+      teamId,
+      startMs: atMs,
+      startReason: reason,
+      endMs: null,
+      endReason: null,
+      phases: [{ index: 1, kind, startMs: atMs, entry: "pendiente", entryReason: "" }],
+    });
+    return this.emit({
+      atMs,
+      phase: "ordenado",
+      kind: "possession_started",
+      actors: [],
+      text: `Empieza la posesión ${this.possessions.length} de ${this.team(teamId).name}: ${reason}.`,
+      detail: { teamId, phaseKind: kind },
+    });
+  }
+
+  protected closePossession(atMs: Milliseconds, reason: string): boolean {
+    const p = this.currentPossession();
+    p.endMs = atMs;
+    p.endReason = reason;
+    this.closed += 1;
+    this.backcourt = null;
+    this.rngStates.push({ atMs, state: this.rng.state() });
+    const ok = this.emit({
+      atMs,
+      phase: "concedido",
+      kind: "possession_ended",
+      actors: [],
+      text: `Termina la posesión ${p.index} de ${this.team(p.teamId).name}: ${reason}.`,
+      detail: { teamId: p.teamId, closed: this.closed },
+    });
+    return this.afterPossessionClosed(atMs, ok);
+  }
+
+  protected newPhase(atMs: Milliseconds, kind: PhaseKind, text: string): boolean {
+    const p = this.currentPossession();
+    p.phases.push({ index: p.phases.length + 1, kind, startMs: atMs, entry: "pendiente", entryReason: "" });
+    if (p.phases.length > this.limits.maxPhasesPerPossession) {
+      this.guardianStop(
+        atMs,
+        `la posesión ${p.index} encadena ${p.phases.length} fases (límite ${this.limits.maxPhasesPerPossession}) sin cerrarse; se detiene y se exporta el motivo en vez de inventar un desenlace.`,
+      );
+      return false;
+    }
+    return this.emit({ atMs, phase: "ordenado", kind: "phase_started", actors: [], text, detail: { phaseKind: kind, phaseIndex: p.phases.length } });
+  }
+
+  protected setPhaseEntry(entry: PhaseEntry, reason: string): void {
+    const phase = this.currentPossession().phases[this.currentPossession().phases.length - 1]!;
+    phase.entry = entry;
+    phase.entryReason = reason;
+  }
+
+  // --- ciclo principal --------------------------------------------------------
+
+  /** Siguiente paso cuando el paso en curso se interrumpe sin sucesor (p. ej. fin de período). */
+  protected takeScheduledStep(): Step | null {
+    return null;
+  }
+
+  protected loop(first: Step): void {
+    let step: Step | null = first;
+    let steps = 0;
+    let zeroTimeSteps = 0;
+
+    while (step && !this.stop) {
+      steps += 1;
+      if (steps > this.limits.maxSteps) {
+        this.guardianStop(step.atMs, `${this.runLabel()} supera ${this.limits.maxSteps} pasos de orquestación sin completarse.`);
+        break;
+      }
+      const startMs = step.atMs;
+      const closedBefore = this.closed;
+      const next: Step | null = this.execute(step) ?? (this.stop ? null : this.takeScheduledStep());
+      if (next && next.atMs <= startMs && this.closed === closedBefore) {
+        zeroTimeSteps += 1;
+        if (zeroTimeSteps > this.limits.maxZeroTimeSteps) {
+          const label = (s: Step) => (s.kind === "custom" ? `custom:${s.label}` : s.kind);
+          this.guardianStop(
+            startMs,
+            `${zeroTimeSteps} transiciones seguidas sin avanzar el reloj interno ni cerrar una posesión (ciclo inválido «${label(step)}» → «${label(next)}»).`,
+          );
+          break;
+        }
+      } else {
+        zeroTimeSteps = 0;
+      }
+      step = next;
+    }
+  }
+
+  protected execute(step: Step): Step | null {
+    switch (step.kind) {
+      case "set":
+        return this.runSet(step.frame, step.atMs);
+      case "organize":
+        return this.organize(step.frame, step.atMs, step.holderId);
+      case "advance":
+        return this.advance(step.frame, step.atMs, step.holderId);
+      case "second_chance":
+        return this.secondChance(step.frame, step.atMs, step.holderId);
+      case "loose_ball":
+        return this.looseBall(step.frame, step.atMs, step.ball);
+      case "throw_in":
+        return this.throwIn(step);
+      case "custom":
+        return step.run();
+    }
+  }
+
+  // --- tramo de cálculo del núcleo -------------------------------------------
+
+  protected computeCore(frame: Frame, t0: Milliseconds, entry: LinkedEntry, legs?: Record<string, PlannedLeg>): PossessionCoreResult {
+    const local = this.localPositions(frame, t0);
+    const matchInput: MatchInput = {
+      scenarioId: this.settings.dispositionScenarioId,
+      coverage: this.coverageWhenDefending(frame.defending.id),
+      seed: this.settings.seed,
+      rulesetVersion: this.settings.rulesetVersion,
+      labParametersVersion: this.settings.labParametersVersion,
+      offensePlayers: frame.attacking.players,
+      defensePlayers: frame.defending.players,
+    };
+    const rules = this.coreRules();
+    return computePossessionCore(matchInput, {
+      linked: {
+        binding: frame.slotToId,
+        startPositions: local,
+        legs,
+        shotClockMs: this.shotRemainingAt(t0),
+        gameClockMs: this.game.ms,
+        rng: this.rng,
+        attackingPriority: frame.attacking.priority,
+        entry,
+        ...(rules ? { rules } : {}),
+      },
+    });
+  }
+
+  protected runCore(frame: Frame, t0: Milliseconds, entry: LinkedEntry, legs?: Record<string, PlannedLeg>): Step | null {
+    const core = this.computeCore(frame, t0, entry, legs);
+
+    // Historial local → trayectoria global continua desde t0.
+    for (const [slot, entries] of Object.entries(core.positionHistory ?? {})) {
+      const id = frame.slotToId[slot]!;
+      const track = truncateTrajectory(this.tracks[id]!, t0);
+      for (const e of entries.slice(1)) {
+        track.push({ atMs: t0 + e.atMs, position: toGlobal(frame.dir, e.position), moving: e.moving });
+      }
+      this.tracks[id] = track;
+    }
+
+    // El desenlace ocurre en el último hecho decisivo; lo que el núcleo
+    // calculó después (una ayuda que llega cuando el balón ya está muerto)
+    // no se relata como si hubiera cambiado algo.
+    const decisive = core.timeline.filter((raw) => DECISIVE_KINDS.has(raw.kind));
+    const terminalAtMs = decisive.length > 0 ? Math.max(...decisive.map((raw) => raw.atMs)) : Infinity;
+    let endMs = t0;
+    for (const raw of core.timeline) {
+      if (raw.atMs > terminalAtMs) continue;
+      const atMs = t0 + raw.atMs;
+      endMs = Math.max(endMs, atMs);
+      if (!this.emitCoreEvent(frame, raw, atMs)) return null;
+    }
+    this.ball = this.globalBall(frame, core.ball);
+    return this.afterTerminal(frame, core.terminal, endMs);
+  }
+
+  protected globalBall(frame: Frame, ball: BallState): BallMark {
+    return {
+      status: ball.status,
+      holderId: ball.holderId ? (frame.slotToId[ball.holderId] ?? ball.holderId) : null,
+      fixed: ball.holderId ? null : toGlobal(frame.dir, ball.position),
+    };
+  }
+
+  protected emitCoreEvent(frame: Frame, raw: RawEvent, atMs: Milliseconds): boolean {
+    const actors = raw.actors.map((a) => frame.slotToId[a] ?? a);
+    const detail = this.translateDetail(frame, raw.detail) as Record<string, unknown>;
+    const at = (id: string) => this.positionAt(id, atMs);
+    let ball: BallMark | undefined;
+    switch (raw.kind) {
+      case "pass_released":
+        ball = { status: "in_flight_pass", holderId: null, fixed: at(actors[0]!) };
+        break;
+      case "pass_received":
+      case "shot_prepared":
+      case "rebound_secured":
+      case "rebound_contested":
+        ball = { status: "held", holderId: actors[0]!, fixed: null };
+        break;
+      case "possession_continues":
+        ball = { status: "held", holderId: actors[actors.length - 1]!, fixed: null };
+        break;
+      case "field_goal_attempt":
+        ball = { status: "in_flight_shot", holderId: null, fixed: at(actors[0]!) };
+        break;
+      case "shot_result":
+        ball = { status: "dead", holderId: null, fixed: attackedHoopGlobal(frame.dir) };
+        this.throwInTeamId = frame.defending.id;
+        break;
+      case "shot_blocked":
+      case "rebound_seeded":
+        ball = { status: "loose", holderId: null, fixed: this.ball.fixed ?? at(actors[0]!) };
+        break;
+      case "pass_control_lost":
+        ball = { status: "loose", holderId: null, fixed: at(actors[0]!) };
+        break;
+      case "turnover":
+        ball = { status: "held", holderId: actors[actors.length - 1]!, fixed: null };
+        break;
+      case "shooting_foul":
+        ball = { status: "dead", holderId: null, fixed: at(actors[0]!) };
+        this.throwInTeamId = null;
+        break;
+      case "non_shooting_foul":
+        ball = { status: "dead", holderId: null, fixed: at(actors[1] ?? actors[0]!) };
+        this.throwInTeamId = null;
+        break;
+      case "free_throws_result": {
+        const last = detail.index === detail.of;
+        ball =
+          last && detail.made !== true
+            ? { status: "loose", holderId: null, fixed: attackedHoopGlobal(frame.dir) }
+            : { status: "dead", holderId: null, fixed: attackedHoopGlobal(frame.dir) };
+        if (last && detail.made === true) this.throwInTeamId = frame.defending.id;
+        break;
+      }
+      case "out_of_bounds":
+        ball = { status: "dead", holderId: null, fixed: (detail.landingPoint as Point2D | undefined) ?? at(actors[0]!) };
+        this.throwInTeamId = frame.defending.id;
+        break;
+      case "shot_clock_violation":
+        ball = { status: "dead", holderId: null, fixed: at(actors[0]!) };
+        this.throwInTeamId = frame.defending.id;
+        break;
+      default:
+        break;
+    }
+
+    if (raw.kind === "rebound_duties_assigned") {
+      const crashers = (detail.crashers as { playerId: string; arrivalSeconds: number }[]) ?? [];
+      const balancers = (detail.balancers as { playerId: string; arrivalSeconds: number }[]) ?? [];
+      const plan = REBOUND_PRIORITY_LABELS[frame.attacking.priority];
+      crashers.forEach((c, i) =>
+        this.assignResponsibility(atMs, c.playerId, "cargar_rebote", `Plan «${plan}»: ${i + 1}.º mejor acceso al aro (${formatSeconds(c.arrivalSeconds)}).`),
+      );
+      balancers.forEach((b) =>
+        this.assignResponsibility(atMs, b.playerId, "proteger_balance", `Plan «${plan}»: llegada al aro ${formatSeconds(b.arrivalSeconds)}, prepara el retorno.`),
+      );
+    }
+
+    return this.emit({ atMs, phase: raw.phase, kind: raw.kind, actors, text: this.translateText(frame, raw.text), detail, ball });
+  }
+
+  // --- después de cada desenlace del núcleo -----------------------------------
+
+  protected afterTerminal(frame: Frame, terminal: TerminalOutcome, endMs: Milliseconds): Step | null {
+    const attackingName = frame.attacking.name;
+    switch (terminal.kind) {
+      case "made_basket": {
+        if (!this.closePossession(endMs, `canasta de ${terminal.points} puntos; saca ${frame.defending.name}`)) return null;
+        return this.throwInAfterScore(frame, endMs, "tras canasta");
+      }
+      case "shooting_foul": {
+        const reason =
+          terminal.freeThrowsMade > 0
+            ? `falta de tiro, ${terminal.freeThrowsMade}/${terminal.freeThrowsAwarded} libres anotados (último anotado); saca ${frame.defending.name}`
+            : `falta de tiro; saca ${frame.defending.name}`;
+        if (!this.closePossession(endMs, reason)) return null;
+        return this.throwInAfterScore(frame, endMs, "tras el último libre anotado");
+      }
+      case "missed_shot_defensive_rebound": {
+        const holder = this.ball.holderId!;
+        if (!this.closePossession(endMs, `rebote defensivo de ${holder}: control rival = nueva posesión`)) return null;
+        return this.beginLiveControl(this.teamOf.get(holder)!, endMs, holder, "rebote_defensivo", `rebote defensivo de ${holder}`);
+      }
+      case "steal_by_defense": {
+        const holder = this.ball.holderId!;
+        if (!this.closePossession(endMs, `robo de ${holder}: control rival = nueva posesión`)) return null;
+        return this.beginLiveControl(this.teamOf.get(holder)!, endMs, holder, "robo", `robo de ${holder}`);
+      }
+      case "missed_shot_offensive_rebound_continues": {
+        const holder = this.ball.holderId!;
+        // Art. 29: el tiro tocó aro y lo recupera el mismo equipo → 14 s desde el control.
+        this.setShotClock(endMs, shotClockAfterLiveControl("rebote_ofensivo_tras_aro", this.shotRemainingAt(endMs)));
+        if (
+          !this.newPhase(
+            endMs,
+            "rebote_ofensivo",
+            `Rebote ofensivo de ${holder}: nueva fase de la misma posesión de ${attackingName} (reloj de lanzamiento 14 s).`,
+          )
+        )
+          return null;
+        return { kind: "second_chance", frame, atMs: endMs, holderId: holder };
+      }
+      case "live_turnover":
+      case "blocked_shot_live_ball": {
+        const ballPos = this.ball.fixed!;
+        return { kind: "loose_ball", frame, atMs: endMs, ball: ballPos };
+      }
+      case "out_of_bounds": {
+        const lastTouch = frame.slotToId[terminal.lastTouchPlayerId] ?? terminal.lastTouchPlayerId;
+        const throwingTeam = this.otherTeam(this.teamOf.get(lastTouch)!);
+        const spot = outOfBoundsThrowInSpot(this.ball.fixed!);
+        const sameTeam = throwingTeam.id === this.currentPossession().teamId;
+        const remaining = this.shotRemainingAt(endMs);
+        if (!sameTeam && !this.closePossession(endMs, `balón fuera, último toque de ${lastTouch}; saca ${throwingTeam.name}`)) return null;
+        return this.throwInStep(throwingTeam.id, endMs, spot, `balón fuera (último toque de ${lastTouch})`, sameTeam, remaining);
+      }
+      case "shot_clock_violation": {
+        const spot = sidelineThrowInSpot(this.ball.fixed!);
+        if (!this.closePossession(endMs, `violación del reloj de lanzamiento; saca ${frame.defending.name}`)) return null;
+        return this.throwInStep(frame.defending.id, endMs, spot, "violación del reloj de lanzamiento", false, 0);
+      }
+      case "possession_reorganized_control_kept": {
+        const holder = frame.slotToId[terminal.outletPlayerId] ?? terminal.outletPlayerId;
+        if (
+          !this.newPhase(
+            endMs,
+            "salida_segura",
+            `Salida segura hacia ${holder}: la posesión de ${attackingName} continúa y se reorganiza, sin reiniciar el reloj de lanzamiento.`,
+          )
+        )
+          return null;
+        return { kind: "organize", frame, atMs: endMs, holderId: holder };
+      }
+      case "shooting_foul_free_throws_pending":
+      case "non_shooting_foul":
+        // Solo los produce el núcleo con reglas de partido; un modo sin
+        // ellas no sabe adjudicarlas y no inventa una reanudación.
+        this.guardianStop(endMs, `desenlace «${terminal.kind}» sin reglas de partido para adjudicarlo.`);
+        return null;
+      case "simulation_guard_stopped":
+        this.guardianStop(endMs, terminal.reason);
+        return null;
+    }
+  }
+
+  protected beginLiveControl(teamId: string, atMs: Milliseconds, holderId: string, kind: PhaseKind, reason: string): Step | null {
+    // Art. 29: control rival en balón vivo → 24 s desde el control.
+    this.setShotClock(atMs, shotClockAfterLiveControl("control_rival", this.shotRemainingAt(atMs)));
+    const frame = this.frameFor(teamId);
+    const holderLocal = toLocal(frame.dir, this.positionAt(holderId, atMs));
+    this.backcourt = isFrontcourtLocal(holderLocal) ? null : { startMs: atMs, elapsedBeforeMs: 0 };
+    if (!this.openPossession(teamId, atMs, kind, `${reason} (reloj de lanzamiento 24 s)`)) return null;
+    return { kind: "advance", frame, atMs, holderId };
+  }
+
+  protected throwInAfterScore(frame: Frame, atMs: Milliseconds, reason: string): Step | null {
+    const hoop = attackedHoopGlobal(frame.dir);
+    // El punto exacto depende del sacador real: el más cercano a la línea de fondo.
+    const thrower = this.nearestToPoint(frame.defending.id, hoop, atMs, []);
+    const spot = endLineThrowInSpot(hoop, this.positionAt(thrower, atMs));
+    return this.throwInStep(frame.defending.id, atMs, spot, reason, false, 0);
+  }
+
+  protected throwInStep(
+    teamId: string,
+    atMs: Milliseconds,
+    spot: Point2D,
+    reason: string,
+    sameTeamKeepsBall: boolean,
+    remainingMs: Milliseconds,
+  ): Step {
+    const frame = this.frameFor(teamId);
+    const shotClockMs = shotClockForThrowIn({
+      sameTeamKeepsBall,
+      remainingMs,
+      inThrowingTeamFrontcourt: isFrontcourtLocal(toLocal(frame.dir, spot)),
+    });
+    return { kind: "throw_in", teamId, atMs, spot, reason, sameTeamKeepsBall, shotClockMs };
+  }
+
+  protected nearestToPoint(teamId: string, point: Point2D, atMs: Milliseconds, exclude: readonly string[]): string {
+    return this.lineup(teamId)
+      .filter((p) => !exclude.includes(p.id))
+      .map((p) => ({ id: p.id, t: timeToReach(this.positionAt(p.id, atMs), point, this.runSpeed(p.id)) }))
+      .sort((a, b) => a.t - b.t || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))[0]!.id;
+  }
+
+  // --- saque -------------------------------------------------------------------
+
+  protected throwIn(step: Extract<Step, { kind: "throw_in" }>): Step | null {
+    const t0 = step.atMs;
+    const team = this.team(step.teamId);
+    const frame = this.frameFor(step.teamId);
+    this.throwInTeamId = team.id;
+    this.ball = { status: "dead", holderId: null, fixed: this.ball.fixed ?? step.spot };
+    // Sin control todavía: el reloj de lanzamiento no corre para nadie hasta el toque legal.
+    this.shot = null;
+    if (!step.sameTeamKeepsBall) {
+      if (!this.openPossession(team.id, t0, "saque", `saque ${step.reason}`)) return null;
+    } else if (!this.newPhase(t0, "saque", `Saque ${step.reason}: ${team.name} conserva el balón y el reloj restante.`)) {
+      return null;
+    }
+
+    const thrower = this.nearestToPoint(team.id, step.spot, t0, []);
+    const receiver = this.lineup(team.id)
+      .filter((p) => p.id !== thrower)
+      .map((p) => ({ id: p.id, d: distance(this.positionAt(p.id, t0), step.spot) }))
+      .sort((a, b) => a.d - b.d || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))[0]!.id;
+
+    this.holdAll(t0);
+    const tDisposal = this.moveGlobal(thrower, t0, step.spot);
+    this.assignResponsibility(t0, thrower, "sacador", `Jugador de ${team.name} más cercano al punto de saque.`);
+    this.assignResponsibility(t0, receiver, "receptor_saque", `Compañero más cercano al sacador; recibe donde está.`);
+    // El resto empieza ya a colocarse: atacantes a su puesto, rivales a su marca.
+    this.planOrganizeLegs(frame, t0, [thrower, receiver]);
+
+    if (
+      !this.emit({
+        atMs: t0,
+        phase: "ordenado",
+        kind: "throw_in_awarded",
+        actors: [thrower, receiver],
+        text: `Saque para ${team.name} ${step.reason}: ${thrower} va al espacio de saque (fuera de la línea) y ${receiver} se ofrece.`,
+        detail: { spot: step.spot, shotClockAtTouchMs: step.shotClockMs },
+        ball: this.ball,
+      })
+    )
+      return null;
+
+    const releaseMs = tDisposal + secondsToMs(PASS_RELEASE_SECONDS);
+    const count = evaluateThrowInCount(tDisposal, releaseMs);
+    if (count.violation) {
+      this.holdAll(count.violationAtMs!);
+      if (!this.emit({ atMs: count.violationAtMs!, phase: "concedido", kind: "throw_in_violation", actors: [thrower], text: `${thrower} no suelta el saque en 5 s: violación.` }))
+        return null;
+      this.onThrowInEnded(team.id, false);
+      if (!this.closePossession(count.violationAtMs!, `violación de 5 s en el saque`)) return null;
+      return this.throwInStep(this.otherTeam(team.id).id, count.violationAtMs!, step.spot, "tras violación de 5 s", false, 0);
+    }
+
+    const receiverPos = this.positionAt(receiver, releaseMs);
+    const touchMs = releaseMs + secondsToMs(distance(step.spot, receiverPos) / PASS_FLIGHT_SPEED_MPS);
+    const outcome = resolvePass(this.profile(thrower).attributes.T09, this.profile(receiver).attributes.T11, false, 0, 0, this.rng);
+    const delayMs = outcome.kind === "awkward_control" ? secondsToMs(outcome.extraDelaySeconds) : 0;
+    if (!this.emit({ atMs: releaseMs, phase: "ejecutado", kind: "pass_released", actors: [thrower, receiver], text: `${thrower} saca hacia ${receiver}.`, ball: { status: "in_flight_pass", holderId: null, fixed: step.spot } }))
+      return null;
+
+    // Art. 50 / art. 29: los relojes arrancan con el toque legal en la cancha.
+    this.throwInTeamId = null;
+    if (!this.game.running) this.startGameClock(touchMs);
+    this.setShotClock(touchMs, step.shotClockMs);
+    const receiverLocal = toLocal(frame.dir, this.positionAt(receiver, touchMs));
+    this.backcourt = isFrontcourtLocal(receiverLocal)
+      ? null
+      : { startMs: touchMs, elapsedBeforeMs: backcourtElapsedAfterThrowIn(step.sameTeamKeepsBall, 0) };
+    if (
+      !this.emit({
+        atMs: touchMs,
+        phase: "concedido",
+        kind: "throw_in_completed",
+        actors: [receiver],
+        text: `${receiver} recibe el saque${delayMs > 0 ? " con control incómodo" : ""}: toque legal en la cancha, corre el reloj de lanzamiento (${step.shotClockMs / 1000} s).`,
+        ball: { status: "held", holderId: receiver, fixed: null },
+      })
+    )
+      return null;
+    this.onThrowInEnded(team.id, true);
+    return { kind: "advance", frame, atMs: touchMs + delayMs, holderId: receiver };
+  }
+
+  /** Un saque termina (legalmente o por violación): el partido invierte aquí la flecha de alternancia. */
+  protected onThrowInEnded(_teamId: string, _legal: boolean): void {}
+
+  // --- organización y acción organizada ----------------------------------------
+
+  /** Destinos de la disposición del bloqueo directo, en el marco local de quien ataca. */
+  protected dispositionTargets(): Record<string, Point2D> {
+    const scenario = getScenario(this.settings.dispositionScenarioId);
+    const targets: Record<string, Point2D> = {};
+    for (const slot of [...scenario.offense, ...scenario.defense]) targets[slot.playerId] = slot.initialPosition;
+    return targets;
+  }
+
+  /** Planifica a todos (salvo `exclude`) hacia su puesto; devuelve la llegada de cada uno. */
+  protected planOrganizeLegs(
+    frame: Frame,
+    t0: Milliseconds,
+    exclude: readonly string[],
+    targets: Record<string, Point2D> = this.dispositionTargets(),
+  ): Record<string, Milliseconds> {
+    const arrivals: Record<string, Milliseconds> = {};
+    for (const [slot, id] of Object.entries(frame.slotToId)) {
+      if (exclude.includes(id)) continue;
+      const target = toGlobal(frame.dir, targets[slot]!);
+      arrivals[id] = this.moveGlobal(id, t0, target);
+      const attacking = slot.startsWith("O");
+      this.assignResponsibility(
+        t0,
+        id,
+        attacking ? "organizacion" : "retorno_defensivo",
+        attacking
+          ? `Se coloca como ${ROLE_LABELS[slot]} para la acción organizada.`
+          : `Vuelve a su marca: ${ROLE_LABELS[slot]}.`,
+      );
+    }
+    return arrivals;
+  }
+
+  protected organize(frame: Frame, t0: Milliseconds, holderId: string): Step | null {
+    const phase = this.currentPossession().phases[this.currentPossession().phases.length - 1]!;
+    if (phase.entry === "pendiente") {
+      this.setPhaseEntry(
+        "ataque_organizado",
+        `La posesión continúa y se reorganiza con ${(this.shotRemainingAt(t0) / 1000).toFixed(1)} s de lanzamiento, desde las posiciones que ya ocupaban.`,
+      );
+    }
+    const arrivals = this.planOrganizeLegs(frame, t0, []);
+    const holderSlot = frame.idToSlot[holderId]!;
+    // La acción organizada empieza cuando los cinco atacantes están
+    // situados; el ataque no espera a una defensa que llega tarde.
+    const attackerIds = OFFENSE_SLOTS.map((slot) => frame.slotToId[slot]!);
+    const tAllSet = Math.max(t0, ...attackerIds.map((id) => arrivals[id]!));
+    const handlerId = frame.slotToId.O1!;
+
+    // Cuenta de 8 s si el control empezó en pista trasera (art. 28).
+    if (this.backcourt) {
+      const from = toLocal(frame.dir, this.positionAt(holderId, t0));
+      const to = this.dispositionTargets()[holderSlot]!;
+      const offset = frontcourtEntryOffsetSeconds(from, to, (arrivals[holderId]! - t0) / 1000);
+      const crossingMs = offset === null ? null : t0 + secondsToMs(offset);
+      const count = evaluateBackcourtCount(this.backcourt.startMs, crossingMs, this.backcourt.elapsedBeforeMs);
+      if (count.violation && count.violationAtMs! <= tAllSet) return this.backcourtViolation(frame, count.violationAtMs!, holderId);
+      this.backcourt = null;
+    }
+
+    let tReady = tAllSet;
+    const passNeeded = holderId !== handlerId;
+    const releaseMs = tAllSet + secondsToMs(PASS_RELEASE_SECONDS);
+    if (passNeeded) {
+      const flightMs = secondsToMs(distance(this.positionAt(holderId, tAllSet), this.positionAt(handlerId, tAllSet)) / PASS_FLIGHT_SPEED_MPS);
+      tReady = releaseMs + flightMs;
+    }
+
+    // Reloj de lanzamiento durante la organización.
+    const expiry = this.shotExpiryMs();
+    if (expiry <= tReady) {
+      const holderAtExpiry = passNeeded && expiry > releaseMs ? handlerId : holderId;
+      return this.shotClockViolationDuringPlay(frame, expiry, holderAtExpiry);
+    }
+
+    if (passNeeded) {
+      const outcome = resolvePass(this.profile(holderId).attributes.T09, this.profile(handlerId).attributes.T11, false, 0, 0, this.rng);
+      if (!this.emit({ atMs: releaseMs, phase: "ejecutado", kind: "pass_released", actors: [holderId, handlerId], text: `${holderId} devuelve el balón al base ${handlerId} para iniciar la acción.`, ball: { status: "in_flight_pass", holderId: null, fixed: this.positionAt(holderId, releaseMs) } }))
+        return null;
+      if (!this.emit({ atMs: tReady, phase: "concedido", kind: "pass_received", actors: [handlerId], text: `${handlerId} recibe en su puesto.`, ball: { status: "held", holderId: handlerId, fixed: null } }))
+        return null;
+      if (outcome.kind === "awkward_control") tReady += secondsToMs(outcome.extraDelaySeconds);
+      if (this.shotExpiryMs() <= tReady) return this.shotClockViolationDuringPlay(frame, this.shotExpiryMs(), handlerId);
+    }
+    return this.runSet(frame, tReady);
+  }
+
+  protected runSet(
+    frame: Frame,
+    t0: Milliseconds,
+    targets: Record<string, Point2D> = this.dispositionTargets(),
+    entryText?: string,
+  ): Step | null {
+    const remaining = this.shotRemainingAt(t0);
+    const local = this.localPositions(frame, t0);
+    const coverage = this.coverageWhenDefending(frame.defending.id);
+    // Defensores que aún no han llegado a su puesto: entran en la acción
+    // desde donde están de verdad. Los que el árbol del bloqueo usa como
+    // origen de una ayuda, reparación o protección del aro parten de esa
+    // posición real (así el retraso tiene efecto causal); el resto sigue
+    // su carrera hacia su marca mientras se juega.
+    const positionalDefenders = coverage === "trampa" ? ["D2", "D3", "D4", "D5"] : ["D3", "D4", "D5"];
+    const legs: Record<string, PlannedLeg> = {};
+    const late: string[] = [];
+    for (const slot of DEFENSE_SLOTS) {
+      const id = frame.slotToId[slot]!;
+      const gap = distance(local[slot]!, targets[slot]!);
+      if (gap <= 0.05) continue;
+      const remainingRun = timeToReach(local[slot]!, targets[slot]!, this.runSpeed(id));
+      late.push(`${id} (a ${formatSeconds(remainingRun)} de su puesto)`);
+      if (!positionalDefenders.includes(slot)) {
+        legs[slot] = { departSeconds: 0, arriveSeconds: remainingRun, to: targets[slot]! };
+      }
+    }
+    for (const [slot, id] of Object.entries(frame.slotToId)) {
+      this.assignResponsibility(t0, id, "accion_organizada", `En la acción organizada: ${ROLE_LABELS[slot]}.`);
+    }
+    const lateText = late.length > 0 ? ` Defensa todavía sin colocar: ${late.join(", ")}.` : "";
+    if (
+      !this.emit({
+        atMs: t0,
+        phase: "ordenado",
+        kind: "organized_entry",
+        actors: [frame.slotToId.O1!, frame.slotToId.O5!],
+        text:
+          entryText ??
+          `Los cinco atacantes están situados: ${frame.slotToId.O1} y ${frame.slotToId.O5} inician el bloqueo directo central (${coverage === "trampa" ? "trampa" : "drop"}) con ${(remaining / 1000).toFixed(1)} s de lanzamiento.${lateText}`,
+        detail: { shotClockMs: remaining, lateDefenders: late },
+        ball: { status: "held", holderId: frame.slotToId.O1!, fixed: null },
+      })
+    )
+      return null;
+    return this.runCore(frame, t0, { kind: "organized_set" }, legs);
+  }
+
+  protected backcourtViolation(frame: Frame, atMs: Milliseconds, holderId: string): Step | null {
+    this.holdAll(atMs);
+    if (
+      !this.emit({
+        atMs,
+        phase: "concedido",
+        kind: "backcourt_violation",
+        actors: [holderId],
+        text: `${frame.attacking.name} no pasa el balón a pista delantera en 8 s: violación.`,
+        ball: { status: "dead", holderId: null, fixed: this.positionAt(holderId, atMs) },
+      })
+    )
+      return null;
+    this.throwInTeamId = frame.defending.id;
+    if (!this.closePossession(atMs, "violación de 8 s")) return null;
+    return this.throwInStep(frame.defending.id, atMs, sidelineThrowInSpot(this.positionAt(holderId, atMs)), "tras violación de 8 s", false, 0);
+  }
+
+  protected shotClockViolationDuringPlay(frame: Frame, atMs: Milliseconds, holderId: string): Step | null {
+    this.holdAll(atMs);
+    const ballPos = this.positionAt(holderId, atMs);
+    if (
+      !this.emit({
+        atMs,
+        phase: "concedido",
+        kind: "shot_clock_violation",
+        actors: [holderId],
+        text: `Se agota el reloj de lanzamiento de ${frame.attacking.name} antes de poder lanzar: violación, balón muerto.`,
+        ball: { status: "dead", holderId: null, fixed: ballPos },
+      })
+    )
+      return null;
+    this.throwInTeamId = frame.defending.id;
+    if (!this.closePossession(atMs, `violación del reloj de lanzamiento; saca ${frame.defending.name}`)) return null;
+    return this.throwInStep(frame.defending.id, atMs, sidelineThrowInSpot(ballPos), "tras violación del reloj de lanzamiento", false, 0);
+  }
+
+  // --- transición ------------------------------------------------------------------
+
+  protected participants(frame: Frame, local: Record<string, Point2D>, slots: readonly string[]): RaceParticipant[] {
+    return slots.map((slot) => {
+      const id = frame.slotToId[slot]!;
+      const p = this.profile(id);
+      return {
+        slot,
+        id,
+        position: local[slot]!,
+        runSpeedMps: attackerMoveSpeedMps(p.attributes.F01),
+        lateralSpeedMps: defenderLateralSpeedMps(p.attributes.F04),
+        t23: p.attributes.T23,
+      };
+    });
+  }
+
+  protected advance(frame: Frame, t0: Milliseconds, holderId: string): Step | null {
+    const handlerId = frame.slotToId.O1!;
+    let carrierId = holderId;
+    let t1 = t0;
+    const local0 = this.localPositions(frame, t0);
+    const defenders0 = this.participants(frame, local0, DEFENSE_SLOTS);
+
+    // Mientras se decide la salida, los demás ya se mueven hacia su puesto o su marca.
+    this.planOrganizeLegs(frame, t0, [holderId, handlerId]);
+    this.tracks[holderId] = truncateTrajectory(this.tracks[holderId]!, t0);
+    this.tracks[handlerId] = truncateTrajectory(this.tracks[handlerId]!, t0);
+
+    if (holderId !== handlerId) {
+      const outlet = readOutlet(local0[frame.idToSlot[holderId]!]!, local0.O1!, defenders0);
+      if (outlet.viable) {
+        const releaseMs = t0 + secondsToMs(PASS_RELEASE_SECONDS);
+        const arrivalMs = t0 + secondsToMs(outlet.passArrivalSeconds);
+        this.assignResponsibility(t0, holderId, "salida", "Asegura el balón y busca la salida.");
+        this.assignResponsibility(t0, handlerId, "salida", "Se ofrece como receptor de la salida.");
+        if (!this.emit({ atMs: t0, phase: "reconocido", kind: "transition_outlet", actors: [holderId, handlerId], text: `${holderId} ve salida viable hacia ${handlerId}: el primer rival (${outlet.closestDefender.id}) tardaría ${formatSeconds(outlet.closestDefender.arrivalSeconds)} y el pase llega en ${formatSeconds(outlet.passArrivalSeconds)}.` }))
+          return null;
+        const pass = resolvePass(this.profile(holderId).attributes.T09, this.profile(handlerId).attributes.T11, false, 0, 0, this.rng);
+        if (!this.emit({ atMs: releaseMs, phase: "ejecutado", kind: "pass_released", actors: [holderId, handlerId], text: `${holderId} da el pase de salida a ${handlerId}.`, ball: { status: "in_flight_pass", holderId: null, fixed: this.positionAt(holderId, releaseMs) } }))
+          return null;
+        if (!this.emit({ atMs: arrivalMs, phase: "concedido", kind: "pass_received", actors: [handlerId], text: `${handlerId} recibe la salida${pass.kind === "awkward_control" ? " con control incómodo" : ""}.`, ball: { status: "held", holderId: handlerId, fixed: null } }))
+          return null;
+        carrierId = handlerId;
+        t1 = arrivalMs + (pass.kind === "awkward_control" ? secondsToMs(pass.extraDelaySeconds) : 0);
+      } else {
+        this.assignResponsibility(t0, holderId, "salida", "Sin salida viable: conserva y sube el balón.");
+        if (!this.emit({ atMs: t0, phase: "reconocido", kind: "transition_outlet", actors: [holderId], text: `Sin salida viable hacia ${handlerId} (${outlet.interceptor ? `${outlet.interceptor.id} podría cortar la línea del pase` : `${outlet.closestDefender.id} llegaría antes que el pase`}): ${holderId} conserva y sube el balón.` }))
+          return null;
+      }
+    } else {
+      this.assignResponsibility(t0, holderId, "salida", "El base asegura y sube el balón él mismo.");
+      if (!this.emit({ atMs: t0, phase: "reconocido", kind: "transition_outlet", actors: [holderId], text: `El base ${holderId} tiene el balón y lo sube él mismo.` }))
+        return null;
+    }
+
+    // Ventana leída en el instante real en que el balón entra en pista
+    // delantera (ME-03, aclaración opción B): se avanza primero el balón
+    // (botando con el portador, con todos los demás desplazamientos ya en
+    // marcha) hasta ese cruce, y solo entonces se reconstruyen posiciones y
+    // trayectorias para leer la ventaja. Un defensor que a esa altura
+    // todavía no ha cruzado no protege nada todavía, por rápido que sea.
+    // El portador bota hacia el aro: hace falta un tramo de trayectoria real
+    // (no solo el instante t1) para poder interpolar su posición más
+    // adelante, en el cruce real de la mitad de la pista.
+    const originGlobal = this.positionAt(carrierId, t1);
+    const originLocal = toLocal(frame.dir, originGlobal);
+    const fullArriveMs = this.moveGlobal(carrierId, t1, attackedHoopGlobal(frame.dir));
+    const crossOffset = frontcourtEntryOffsetSeconds(originLocal, ATTACKED_HOOP, (fullArriveMs - t1) / 1000);
+    if (crossOffset !== null) t1 += secondsToMs(crossOffset);
+
+    const local = this.localPositions(frame, t1);
+    const carrierSlot = frame.idToSlot[carrierId]!;
+    const attackers = this.participants(frame, local, OFFENSE_SLOTS);
+    const defenders = this.participants(frame, local, DEFENSE_SLOTS);
+    const carrier = attackers.find((a) => a.slot === carrierSlot)!;
+    const read = readTransition(
+      carrier,
+      attackers.filter((a) => a.slot !== carrierSlot),
+      defenders,
+      this.shotRemainingAt(t1) / 1000,
+    );
+
+    if (read.kind === "sin_ventaja") {
+      const reason = `Sin ventaja: ataque organizado. Primer defensor en el aro: ${read.firstDefender.id} (${formatSeconds(read.firstDefender.arrivalSeconds)}); atacante más rápido: ${read.fastestAttacker.id} (${formatSeconds(read.fastestAttacker.arrivalSeconds)}); ${read.reason}.`;
+      this.setPhaseEntry("ataque_organizado", reason);
+      if (!this.emit({ atMs: t1, phase: "reconocido", kind: "transition_read", actors: [carrierId], text: reason, detail: { advantage: false } }))
+        return null;
+      return { kind: "organize", frame, atMs: t1, holderId: carrierId };
+    }
+
+    const shooterSlot = read.kind === "penetracion" ? carrierSlot : read.receiver.slot;
+    const shooterId = frame.slotToId[shooterSlot]!;
+    const shooterArrival =
+      read.kind === "penetracion" ? read.carrier.arrivalSeconds : timeToReach(local[shooterSlot]!, ATTACKED_HOOP, this.runSpeed(shooterId));
+    const contesterTimed =
+      read.kind === "superioridad"
+        ? read.secondDefender
+        : read.kind === "superioridad_3x2"
+          ? (read.thirdDefender ?? read.secondDefender)
+          : read.firstDefender;
+    const reason =
+      read.kind === "penetracion"
+        ? `Ventaja temprana: ${carrierId} ataca el aro y llega en ${formatSeconds(read.carrier.arrivalSeconds)}, antes que el primer defensor (${read.firstDefender.id}, ${formatSeconds(read.firstDefender.arrivalSeconds)}).`
+        : read.kind === "pase_adelantado"
+          ? `Ventaja temprana: ${carrierId} adelanta el balón a ${shooterId}, que llega al aro en ${formatSeconds(read.receiver.arrivalSeconds)}, antes que el primer defensor (${read.firstDefender.id}, ${formatSeconds(read.firstDefender.arrivalSeconds)}).`
+          : read.kind === "superioridad"
+            ? `Ventaja temprana 2×1: ${read.firstDefender.id} para a ${carrierId} en el aro (${formatSeconds(read.carrier.arrivalSeconds)}) y ${shooterId} recibe en ${formatSeconds(read.receiver.arrivalSeconds)}, antes que el segundo defensor (${read.secondDefender.id}, ${formatSeconds(read.secondDefender.arrivalSeconds)}).`
+            : `Ventaja temprana 3×2: ${read.firstDefender.id} para a ${carrierId} y ${read.secondDefender.id} cierra a ${read.contained.id} (el corredor); ${shooterId} recibe abierto en ${formatSeconds(read.receiver.arrivalSeconds)}${read.thirdDefender ? `, antes que el tercer defensor (${read.thirdDefender.id}, ${formatSeconds(read.thirdDefender.arrivalSeconds)})` : " sin un tercer defensor todavía situado"}.`;
+
+    // Cuenta de 8 s: el cruce ya se fijó en `t1` antes de leer la ventaja.
+    if (this.backcourt) {
+      const count = evaluateBackcourtCount(
+        this.backcourt.startMs,
+        crossOffset === null ? null : t1,
+        this.backcourt.elapsedBeforeMs,
+      );
+      if (count.violation) return this.backcourtViolation(frame, count.violationAtMs!, carrierId);
+      this.backcourt = null;
+    }
+
+    this.setPhaseEntry("ventaja_temprana", reason);
+    this.assignResponsibility(t1, shooterId, "carril_transicion", "Ataca el aro antes de que llegue su defensor.");
+    if (!this.emit({ atMs: t1, phase: "reconocido", kind: "transition_read", actors: [carrierId, shooterId], text: reason, detail: { advantage: true, kind: read.kind } }))
+      return null;
+
+    // Diez desplazamientos reales mientras se resuelve la ventaja: quienes
+    // atacan el aro y los defensores que lo protegen van al aro; el resto,
+    // a su puesto o su marca.
+    const targets = this.dispositionTargets();
+    const toRim = new Set<string>([shooterSlot, read.firstDefender.slot, contesterTimed.slot]);
+    if (read.kind === "superioridad") toRim.add(carrierSlot);
+    if (read.kind === "superioridad_3x2") {
+      toRim.add(carrierSlot);
+      toRim.add(read.contained.slot);
+      toRim.add(read.secondDefender.slot);
+    }
+    const defenderArrival = new Map<string, number>([
+      [read.firstDefender.slot, read.firstDefender.arrivalSeconds],
+      [contesterTimed.slot, contesterTimed.arrivalSeconds],
+      ...(read.kind === "superioridad_3x2" ? ([[read.secondDefender.slot, read.secondDefender.arrivalSeconds]] as const) : []),
+    ]);
+    const legs: Record<string, PlannedLeg> = {};
+    for (const p of [...attackers, ...defenders]) {
+      const to = toRim.has(p.slot) ? ATTACKED_HOOP : targets[p.slot]!;
+      const arrive = defenderArrival.get(p.slot) ?? timeToReach(p.position, to, p.runSpeedMps);
+      legs[p.slot] = { departSeconds: 0, arriveSeconds: arrive, to };
+      if (p.slot.startsWith("D")) {
+        this.assignResponsibility(
+          t1,
+          p.id,
+          "retorno_defensivo",
+          p.slot === read.firstDefender.slot
+            ? "Primer responsable de proteger el aro en la transición."
+            : p.slot === contesterTimed.slot
+              ? "Segundo en llegar: debe cerrar al compañero liberado."
+              : `Vuelve a su marca: ${ROLE_LABELS[p.slot]}.`,
+        );
+      }
+    }
+    const contester = defenders.find((d) => d.slot === contesterTimed.slot)!;
+    const entry: LinkedEntry = {
+      kind: "direct_finish",
+      shooterSlot,
+      finishSpot: ATTACKED_HOOP,
+      shooterAtSpotSeconds: shooterArrival,
+      pass:
+        read.kind === "penetracion"
+          ? null
+          : { passerSlot: carrierSlot, releaseSeconds: read.passReleaseSeconds, arrivalSeconds: read.passArrivalSeconds },
+      contesterSlot: contester.slot,
+      contesterArrivalSeconds: contesterTimed.arrivalSeconds,
+      contesterGeometry: {
+        originPos: contester.position,
+        destinationPos: ATTACKED_HOOP,
+        speedMps: contester.runSpeedMps,
+        brakingExtraSeconds: closeoutBrakingExtraSeconds(this.profile(contester.id).attributes.F03),
+      },
+    };
+    return this.runCore(frame, t1, entry, legs);
+  }
+
+  protected secondChance(frame: Frame, t0: Milliseconds, holderId: string): Step | null {
+    const local = this.localPositions(frame, t0);
+    const slot = frame.idToSlot[holderId]!;
+    const rebounder = this.participants(frame, local, [slot])[0]!;
+    const defenders = this.participants(frame, local, DEFENSE_SLOTS);
+    const read = readSecondChance(rebounder, defenders);
+    const remaining = this.shotRemainingAt(t0) / 1000;
+
+    if (!read.putback || remaining <= 2) {
+      const reason = `Sin carril tras el rebote: ${read.firstDefender.id} protege el aro en ${formatSeconds(read.firstDefender.arrivalSeconds)} y ${holderId} tardaría ${formatSeconds(read.rebounderArrivalSeconds)}; la posesión sale y se reorganiza.`;
+      this.setPhaseEntry("ataque_organizado", reason);
+      if (!this.emit({ atMs: t0, phase: "reconocido", kind: "second_chance_read", actors: [holderId], text: reason, detail: { putback: false } }))
+        return null;
+      return { kind: "organize", frame, atMs: t0, holderId };
+    }
+
+    const reason = `Segunda oportunidad: ${holderId} llega al aro en ${formatSeconds(read.rebounderArrivalSeconds)}, antes que ${read.firstDefender.id} (${formatSeconds(read.firstDefender.arrivalSeconds)}).`;
+    this.setPhaseEntry("segunda_oportunidad", reason);
+    if (!this.emit({ atMs: t0, phase: "reconocido", kind: "second_chance_read", actors: [holderId], text: reason, detail: { putback: true } }))
+      return null;
+    const contester = defenders.find((d) => d.slot === read.firstDefender.slot)!;
+    return this.runCore(
+      frame,
+      t0,
+      {
+        kind: "direct_finish",
+        shooterSlot: slot,
+        finishSpot: ATTACKED_HOOP,
+        shooterAtSpotSeconds: read.rebounderArrivalSeconds,
+        pass: null,
+        contesterSlot: contester.slot,
+        contesterArrivalSeconds: read.firstDefender.arrivalSeconds,
+        contesterGeometry: {
+          originPos: contester.position,
+          destinationPos: ATTACKED_HOOP,
+          speedMps: contester.lateralSpeedMps,
+          brakingExtraSeconds: closeoutBrakingExtraSeconds(this.profile(contester.id).attributes.F03),
+        },
+      },
+      { [slot]: { departSeconds: 0, arriveSeconds: read.rebounderArrivalSeconds, to: ATTACKED_HOOP } },
+    );
+  }
+
+  // --- balón suelto ------------------------------------------------------------------
+
+  protected looseBall(_frame: Frame, t0: Milliseconds, ball: Point2D): Step | null {
+    if (!isInsideCourt(ball)) {
+      this.guardianStop(t0, "balón suelto fuera de la cancha sin último toque adjudicable; ME-03 no inventa la reanudación.");
+      return null;
+    }
+    this.holdAll(t0);
+    const ids = [...this.onCourtIds()].sort();
+    const candidates = ids.map((id) => {
+      const p = this.profile(id);
+      return {
+        playerId: id,
+        arrivalTimeSeconds: timeToReach(this.positionAt(id, t0), ball, REBOUND_CANDIDATE_SPEED_MPS),
+        closedOut: false,
+        t19: p.attributes.T19,
+        f05: p.attributes.F05,
+        t20: p.attributes.T20,
+      };
+    });
+    const outcome = resolveRebound({ landingPoint: ball, flightTimeSeconds: 0 }, candidates, this.rng);
+    if (outcome.kind === "out_of_bounds") {
+      this.guardianStop(t0, "balón suelto sin candidatos para recuperarlo.");
+      return null;
+    }
+    const winner = outcome.kind === "secured" ? outcome.playerId : pickTipWinnerByT20(outcome, (id) => this.profile(id).attributes.T20);
+    const arrival = candidates.find((c) => c.playerId === winner)!.arrivalTimeSeconds;
+    const tControl = t0 + secondsToMs(arrival);
+    const track = truncateTrajectory(this.tracks[winner]!, t0);
+    if (tControl > t0) track.push({ atMs: tControl, position: ball, moving: true });
+    this.tracks[winner] = track;
+
+    const possessionTeam = this.currentPossession().teamId;
+    const winnerTeam = this.teamOf.get(winner)!;
+    const sameTeam = winnerTeam === possessionTeam;
+    if (
+      !this.emit({
+        atMs: tControl,
+        phase: "concedido",
+        kind: "loose_ball_recovered",
+        actors: [winner],
+        text: sameTeam
+          ? `${winner} recupera el balón suelto para su equipo (llega en ${formatSeconds(arrival)}): la posesión continúa.`
+          : `${winner} recupera el balón suelto para ${this.team(winnerTeam).name} (llega en ${formatSeconds(arrival)}); no se anota robo porque nadie controlaba el balón.`,
+        detail: { sameTeam, contested: outcome.kind === "loose_ball_tip" },
+        ball: { status: "held", holderId: winner, fixed: null },
+      })
+    )
+      return null;
+
+    const frame = this.frameFor(possessionTeam);
+    if (sameTeam) {
+      // Sin toque de aro no hay reinicio de 14 s: se conserva el reloj restante.
+      const remaining = this.shotRemainingAt(tControl);
+      this.setShotClock(tControl, shotClockAfterLiveControl("recuperacion_propia_sin_aro", remaining));
+      if (!this.newPhase(tControl, "recuperacion_propia", `${winner} recupera el balón suelto: nueva fase de la misma posesión, reloj de lanzamiento sin reiniciar (${(remaining / 1000).toFixed(1)} s).`))
+        return null;
+      return { kind: "organize", frame, atMs: tControl, holderId: winner };
+    }
+    if (!this.closePossession(tControl, `balón suelto recuperado por ${winner}: control rival = nueva posesión`)) return null;
+    return this.beginLiveControl(winnerTeam, tControl, winner, "recuperacion_rival", `recuperación de balón suelto de ${winner}`);
+  }
+
+  // --- resultado ------------------------------------------------------------------------
+
+  /**
+   * Materializa los hechos con la foto de los diez que estaban en pista en
+   * cada instante (coordenadas globales), recorriendo cada trayectoria una
+   * sola vez en orden temporal.
+   */
+  protected materializeEvents(stopAtMs: Milliseconds): TramoEvent[] {
+    for (const id of Object.keys(this.tracks)) this.tracks[id] = truncateTrajectory(this.tracks[id]!, stopAtMs);
+    return this.events.map((e, i) => {
+      const positions: PlayerSnapshot[] = e.onCourtIds.map((id) => ({ playerId: id, position: this.positionAt(id, e.atMs) }));
+      const ball: TramoBallState = {
+        status: e.ball.status,
+        holderId: e.ball.holderId,
+        position: e.ball.holderId ? this.positionAt(e.ball.holderId, e.atMs) : (e.ball.fixed ?? { x: 14, y: 7.5 }),
+      };
+      return { ...e, sequence: i, positions, ball };
+    });
+  }
+}

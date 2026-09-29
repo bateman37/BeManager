@@ -41,3 +41,33 @@ export function awardFreeThrowsForShootingFoul(
   }
   return { count: shotType === "three_point" ? 3 : 2, basketCounted: false };
 }
+
+/**
+ * Contacto al contener o cerrar el paso de un atacante en movimiento (ME-04
+ * §3, «vía ordinaria sin tiro»), antes de que empiece ningún gesto de tiro.
+ * Se decide una vez, por hechos geométricos, con la misma idea de frenada
+ * que el cierre (`evaluateCloseoutLegality`): el defensor tiene posición
+ * legal si ya había llegado **y frenado** (llegada + frenada F03) antes del
+ * primer contacto corporal. Si el atacante ya estaba parado cuando llega el
+ * defensor, es contención legal (el defensor frena delante de él). Sin
+ * solape corporal no hay contacto. No hay cuota aleatoria de faltas.
+ */
+export type ContainmentLegality = "sin_contacto" | "contencion_legal" | "contacto_ilegal";
+
+export interface ContainmentContactFacts {
+  /** Primer instante de solape corporal (s), o `null` si no se solapan. */
+  readonly contactSeconds: number | null;
+  /** El atacante seguía desplazándose en el instante de contacto. */
+  readonly attackerMoving: boolean;
+  /** Instante en que el defensor llega a su punto de contención (s). */
+  readonly defenderArrivalSeconds: number;
+  /** Tiempo extra de frenada del defensor (`closeoutBrakingExtraSeconds(F03)`). */
+  readonly brakingExtraSeconds: number;
+}
+
+export function evaluateContainmentContact(facts: ContainmentContactFacts): ContainmentLegality {
+  if (facts.contactSeconds === null) return "sin_contacto";
+  if (!facts.attackerMoving) return "contencion_legal";
+  const defenderSetSeconds = facts.defenderArrivalSeconds + facts.brakingExtraSeconds;
+  return defenderSetSeconds <= facts.contactSeconds ? "contencion_legal" : "contacto_ilegal";
+}
