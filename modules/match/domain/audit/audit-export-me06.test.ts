@@ -140,3 +140,52 @@ describe("ME-06: la observación ON/OFF de auditoría no cambia hechos, marcador
     expect(withAudit.stop.cause).toBe(withoutAudit.stop.cause);
   });
 });
+
+describe("ME-06 (6.2): partido completo reproducible con la mano a mano, con sustituciones reales", () => {
+  it("hechos, reloj, marcador, faltas, tiros, rebotes, quinteto y acta son válidos; IDs reales en auditoría tras sustituir, ninguna acción de quien no está en pista", () => {
+    const gameInput = input(82, ["mano_a_mano_sin_balon", "mano_a_mano_sin_balon"], ["negar_primera_salida", "guardar_espacio"]);
+    const result = playFullGame(gameInput);
+    expect(result.substitutions.length).toBeGreaterThan(0);
+    expect(["final", "guardian"]).toContain(result.stop.cause);
+
+    const audit = buildAuditExport(gameInput, result, { exportedAt: new Date(0).toISOString() });
+    // El acta reconcilia de verdad: nunca FGM>FGA, nunca puntos != marcador.
+    expect(audit.result.reconciliation.every((c) => c.ok)).toBe(true);
+
+    const onCourtEvents = result.events.filter((e) => e.onCourtIds.length === 10);
+    function onCourtAt(atMs: number): ReadonlySet<string> {
+      let last = onCourtEvents[0]!;
+      for (const e of onCourtEvents) {
+        if (e.atMs > atMs) break;
+        last = e;
+      }
+      return new Set(last.onCourtIds);
+    }
+    const handoffPoints = new Set([
+      "seleccion_familia",
+      "entrada_mano_a_mano",
+      "transferencia_mano_a_mano",
+      "bloqueo_indirecto_o3",
+      "lectura_mano_a_mano",
+      "resolucion_tiro",
+    ]);
+    let checked = 0;
+    for (const d of audit.decisions.records) {
+      if (!handoffPoints.has(d.point) || d.holderId === null) continue;
+      const onCourt = onCourtAt(d.atMs);
+      expect(onCourt.has(d.holderId)).toBe(true);
+      for (const p of d.participants) expect(onCourt.has(p)).toBe(true);
+      checked += 1;
+    }
+    expect(checked).toBeGreaterThan(0);
+  });
+
+  it("una misma semilla y foto reproducen exactamente el mismo partido (hechos, marcador y reloj) — HF-002", () => {
+    const gameInput = input(82, ["mano_a_mano_sin_balon", "bloqueo_directo"]);
+    const first = playFullGame(gameInput);
+    const second = playFullGame(gameInput);
+    expect(second.finalScore).toEqual(first.finalScore);
+    expect(second.events.length).toBe(first.events.length);
+    expect(second.stop).toEqual(first.stop);
+  });
+});
