@@ -33,6 +33,14 @@
   activa y sincronizada `claude/new-session-p9xna7`, así que la entrega
   se hizo ahí (una sola rama, una sola PR), conforme al punto 0.3 del
   prompt.
+- `implementation/ME-06-ataques-variados-correccion-ME04-laboratorio.md`
+  — adelanta ME-06 antes de ME-05: revisión acotada de las lecturas de
+  ME-04B, segunda familia ofensiva (mano a mano sin balón), selector de
+  plan ofensivo por equipo, controles de perfiles de laboratorio y
+  auditoría ampliada. El prompt propone la rama
+  `match/me-06-variedad-y-laboratorio`; el entorno de ejecución ya tenía
+  activa y sincronizada `claude/new-session-p9xna7`, así que la entrega
+  se hizo ahí (una sola rama, una sola PR), igual que en ME-04B.
 
 ## Hotfixes existentes
 
