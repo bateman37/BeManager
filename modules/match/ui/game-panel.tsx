@@ -85,6 +85,12 @@ function rolesOf(playerId: string): string {
   return roles && roles.length > 0 ? roles.map((r) => `${r} ${FUNCTIONAL_ROLE_LABELS[r]}`).join(" / ") : "sin rol declarado";
 }
 
+/** Titulares en orden de rol y después suplentes por ID (presentación). */
+function ordered<T extends { readonly id: string }>(players: readonly T[], starters: readonly string[]): T[] {
+  const rank = (id: string) => (starters.includes(id) ? starters.indexOf(id) : 100);
+  return [...players].sort((a, b) => rank(a.id) - rank(b.id) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+}
+
 const button = "rounded border border-slate-300 px-2 py-1 text-sm disabled:opacity-40 dark:border-slate-700";
 
 // --- visor del partido -------------------------------------------------------------
@@ -394,7 +400,7 @@ function BoxScoreTables({ game }: { readonly game: LabGameView }) {
   return (
     <div className="space-y-4">
       {game.input.teams.map((t, i) => {
-        const lines = t.roster.map((p) => game.box.players[p.id]!).filter(Boolean);
+        const lines = ordered(t.roster, t.starters).map((p) => game.box.players[p.id]!).filter(Boolean);
         const totals = game.box.teams[t.id]!;
         return (
           <div key={t.id} className="overflow-x-auto">
@@ -606,7 +612,7 @@ export function GameSection(props: GameSectionProps) {
                   </p>
                 )}
                 <ul className="space-y-0.5">
-                  {team.players.map((p) => (
+                  {ordered(team.players, (LAB_STARTER_IDS[team.id] ?? []) as readonly string[]).map((p) => (
                     <li key={p.id}>
                       <span className="font-mono">{p.id}</span> {p.name} · {rolesOf(p.id)}
                       {((LAB_STARTER_IDS[team.id] ?? []) as readonly string[]).includes(p.id) ? " · titular" : " · suplente"}
