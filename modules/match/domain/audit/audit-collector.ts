@@ -37,6 +37,27 @@ export function createNoopAuditCollector(): AuditCollector {
   return NOOP_COLLECTOR;
 }
 
+/**
+ * Valida la integridad referencial de `factLink` contra la línea de tiempo
+ * ya finalizada (ME-04B §4.2): un hecho puede haberse calculado dentro de un
+ * tramo de cálculo y no llegar a ocurrir de verdad en el partido (bocina,
+ * guardián, corte de período) — el registro de la decisión no lo sabe hasta
+ * que la corrida termina. En vez de exportar un enlace que apunta a un
+ * `(kind, atMs)` que no existe en `events`, esta función lo deja `null`
+ * explícito (enlace ausente, no inventado). No modifica ningún otro campo.
+ */
+export function sanitizeAuditFactLinks<E extends { readonly kind: string; readonly atMs: number }>(
+  decisions: readonly AuditDecisionRecord[],
+  events: readonly E[],
+): AuditDecisionRecord[] {
+  const realFacts = new Set(events.map((e) => `${e.kind}@${e.atMs}`));
+  return decisions.map((d) => {
+    if (d.factLink === null) return d;
+    const key = `${d.factLink.kind}@${d.factLink.atMs}`;
+    return realFacts.has(key) ? d : { ...d, factLink: null };
+  });
+}
+
 /** Colector real: acumula en memoria durante una única corrida. */
 export function createRecordingAuditCollector(): AuditCollector {
   const decisions: AuditDecisionRecord[] = [];

@@ -216,10 +216,18 @@ describe("ME-04A: rutas de drop y trampa realmente evaluadas (semilla 1, fixture
   });
 
   it("una decisión no evaluada por cortocircuito permanece distinguible de una descartada por condición", () => {
+    // ME-04B (§3.2): `lectura_bloqueo_o1` ahora evalúa de verdad las cinco
+    // vías con un valor comparable (ninguna se corta por cortocircuito), así
+    // que el ejemplo de esta distinción se comprueba en `lectura_segunda_o5`
+    // (invariante sin cambios: cuando O5 invierte a O3, la segunda entrada
+    // ni siquiera se evaluó, y la finalización bajo contención sí se evaluó
+    // y perdió frente a la esquina abierta).
     const result = playFullGame(input(1, ["drop", "drop"], ["proteger_balance", "proteger_balance"], true));
-    const chosenPaseO5 = result.audit!.decisions.find((d) => d.point === "lectura_bloqueo_o1" && d.chosenOptionId === "pase_o5")!;
-    const shortCircuited = chosenPaseO5.options.find((o) => o.id === "salida_segura")!;
-    const rejected = chosenPaseO5.options.find((o) => o.id === "finalizar")!;
+    const secondReads = result.audit!.decisions.filter((d) => d.point === "lectura_segunda_o5" && d.chosenOptionId === "invertir_o3");
+    expect(secondReads.length).toBeGreaterThan(0);
+    const chosenInvertO3 = secondReads[0]!;
+    const shortCircuited = chosenInvertO3.options.find((o) => o.id === "segunda_entrada")!;
+    const rejected = chosenInvertO3.options.find((o) => o.id === "finalizar_bajo_contencion")!;
     expect(shortCircuited.status).toBe("no_evaluada_por_cortocircuito");
     expect(rejected.status).toBe("descartada_por_condicion");
     expect(shortCircuited.status).not.toBe(rejected.status);

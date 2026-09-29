@@ -64,8 +64,11 @@ export type AuditReasonCode =
   | "rebound_duty_crash_fastest"
   | "rebound_duty_balance_return"
   | "transition_advantage_found"
+  | "transition_no_advantage"
   | "role_fixed_no_ranking"
   | "not_evaluated_short_circuit"
+  | "situational_value_lower"
+  | "tie_band_resolved_by_tendency"
   | "not_available";
 
 export interface AuditOptionRecord {

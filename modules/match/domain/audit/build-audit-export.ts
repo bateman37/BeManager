@@ -10,7 +10,7 @@ import type { PhaseEntry } from "../sequence/tramo-model";
 import { reconcileBoxScore, type ReconciliationCheck } from "../game/box-score";
 import type { AuditCoverageGap, AuditDecisionRecord } from "./audit-types";
 
-export const AUDIT_SCHEMA_VERSION = "ME-04A-AUDIT-1";
+export const AUDIT_SCHEMA_VERSION = "ME-04B-AUDIT-1";
 
 export interface AuditExportRun {
   readonly schemaVersion: typeof AUDIT_SCHEMA_VERSION;
@@ -50,7 +50,15 @@ export interface AuditExportTeam {
 export interface AuditExportPossessionRejections {
   readonly point: string;
   readonly total: number;
-  readonly byReasonCode: Readonly<Record<string, number>>;
+  /**
+   * Por qué código real se eligió el desenlace de este punto (ME-04B §4.3):
+   * antes se perdía porque solo se contaban las opciones `descartada_por_
+   * condicion`, dejando en `{}` un punto donde la única información real
+   * estaba en la opción `elegida` (p. ej. «sin_ventaja», «no_evaluada»).
+   */
+  readonly chosenByReasonCode: Readonly<Record<string, number>>;
+  /** Motivos de las alternativas realmente evaluadas y descartadas (no cortocircuitadas). */
+  readonly alternativesByReasonCode: Readonly<Record<string, number>>;
 }
 
 export interface AuditExportTeamSummary {
@@ -194,14 +202,18 @@ const REJECTION_TRACKED_POINTS: readonly string[] = ["entrada_fase_transicion", 
 function buildRejectionReasons(decisions: readonly AuditDecisionRecord[]): AuditExportPossessionRejections[] {
   return REJECTION_TRACKED_POINTS.map((point) => {
     const records = decisions.filter((d) => d.point === point);
-    const byReasonCode: Record<string, number> = {};
+    const chosenByReasonCode: Record<string, number> = {};
+    const alternativesByReasonCode: Record<string, number> = {};
     for (const d of records) {
       for (const o of d.options) {
-        if (o.status !== "descartada_por_condicion") continue;
-        byReasonCode[o.reasonCode] = (byReasonCode[o.reasonCode] ?? 0) + 1;
+        if (o.status === "elegida") {
+          chosenByReasonCode[o.reasonCode] = (chosenByReasonCode[o.reasonCode] ?? 0) + 1;
+        } else if (o.status === "descartada_por_condicion") {
+          alternativesByReasonCode[o.reasonCode] = (alternativesByReasonCode[o.reasonCode] ?? 0) + 1;
+        }
       }
     }
-    return { point, total: records.length, byReasonCode };
+    return { point, total: records.length, chosenByReasonCode, alternativesByReasonCode };
   });
 }
 

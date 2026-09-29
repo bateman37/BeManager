@@ -4,7 +4,7 @@ import type { TrajectoryPoint } from "../geometry/trajectory";
 import type { Milliseconds } from "../time/clock";
 import type { PlayerProfile } from "../players/player-profile";
 import type { DefensiveCoverage } from "../lab/match-input";
-import { LAB_0_2_PARAMETERS_VERSION } from "../lab/lab-0-2-parameters";
+import { LAB_0_3_PARAMETERS_VERSION } from "../lab/lab-0-3-parameters";
 import type { BallStatus } from "../simulation/match-state";
 import type { FactKind, FactPhase, PlayerSnapshot } from "../simulation/fact";
 import type { ReboundPriority } from "../simulation/possession-core";
@@ -54,7 +54,7 @@ export interface TramoInput {
   readonly seed: number;
   readonly coverage: DefensiveCoverage;
   readonly rulesetVersion: "FIBA-2026";
-  readonly labParametersVersion: typeof LAB_0_2_PARAMETERS_VERSION;
+  readonly labParametersVersion: typeof LAB_0_3_PARAMETERS_VERSION;
   readonly tramoVersion: typeof TRAMO_VERSION;
   /** Posición de partida: la del escenario `drop_con_ayuda`, 7:12 de C1 y 18 s de tiro. */
   readonly startScenarioId: "drop_con_ayuda";
@@ -90,7 +90,7 @@ export function buildTramoInput(args: {
     seed: args.seed,
     coverage: args.coverage,
     rulesetVersion: "FIBA-2026",
-    labParametersVersion: LAB_0_2_PARAMETERS_VERSION,
+    labParametersVersion: LAB_0_3_PARAMETERS_VERSION,
     tramoVersion: TRAMO_VERSION,
     startScenarioId: "drop_con_ayuda",
     teams: [

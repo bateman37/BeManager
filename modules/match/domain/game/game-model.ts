@@ -9,7 +9,7 @@
 import type { Milliseconds } from "../time/clock";
 import type { PlayerProfile } from "../players/player-profile";
 import type { DefensiveCoverage } from "../lab/match-input";
-import { LAB_0_2_PARAMETERS_VERSION } from "../lab/lab-0-2-parameters";
+import { LAB_0_3_PARAMETERS_VERSION } from "../lab/lab-0-3-parameters";
 import type { ReboundPriority } from "../simulation/possession-core";
 import { LAB_STARTER_IDS } from "../players/lab-roster-fixture";
 import { LAB_DECLARED_ROLES, type FunctionalRole } from "../players/functional-roles";
@@ -19,7 +19,7 @@ import { SUBSTITUTION_POLICY_VERSION, type SubstitutionReason } from "./substitu
 import type { BoxScore } from "./box-score";
 import type { RawAuditLog } from "../audit/audit-types";
 
-export const GAME_VERSION = "ME-04-GAME-1";
+export const GAME_VERSION = "ME-04B-GAME-1";
 export const MAX_ROSTER_SIZE = 12;
 
 export interface GameTeamInput {
@@ -40,7 +40,7 @@ export interface GameInput {
   readonly gameVersion: typeof GAME_VERSION;
   readonly seed: number;
   readonly rulesetVersion: "FIBA-2026";
-  readonly labParametersVersion: typeof LAB_0_2_PARAMETERS_VERSION;
+  readonly labParametersVersion: typeof LAB_0_3_PARAMETERS_VERSION;
   readonly jumpBallVersion: typeof JUMP_BALL_APPROXIMATION_VERSION;
   readonly substitutionPolicyVersion: typeof SUBSTITUTION_POLICY_VERSION;
   /** `[0]` ataca hacia x creciente en la primera mitad. */
@@ -105,7 +105,7 @@ export function buildGameInput(args: {
     gameVersion: GAME_VERSION,
     seed: args.seed,
     rulesetVersion: "FIBA-2026",
-    labParametersVersion: LAB_0_2_PARAMETERS_VERSION,
+    labParametersVersion: LAB_0_3_PARAMETERS_VERSION,
     jumpBallVersion: JUMP_BALL_APPROXIMATION_VERSION,
     substitutionPolicyVersion: SUBSTITUTION_POLICY_VERSION,
     teams: [home, away],

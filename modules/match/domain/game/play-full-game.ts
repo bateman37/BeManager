@@ -76,7 +76,7 @@ import {
   type PlannedSubstitution,
 } from "./substitution-policy";
 import { projectBoxScore } from "./box-score";
-import { createRecordingAuditCollector } from "../audit/audit-collector";
+import { createRecordingAuditCollector, sanitizeAuditFactLinks } from "../audit/audit-collector";
 import type {
   FoulRecord,
   GameInput,
@@ -952,7 +952,18 @@ class GameRun extends LinkedRun {
       effectivePlayedMs: this.playedMs,
       entryCounts,
       rngStateAtBoundaries: this.rngStates,
-      ...(this.input.auditEnabled ? { audit: this.audit.snapshot() } : {}),
+      ...(this.input.auditEnabled
+        ? {
+            audit: (() => {
+              const raw = this.audit.snapshot();
+              // ME-04B §4.2: un hecho calculado en un tramo puede no llegar a
+              // ocurrir de verdad (bocina, guardián, corte de período); el
+              // enlace se valida aquí, contra la línea de tiempo ya
+              // finalizada, no se asume válido solo porque se registró.
+              return { ...raw, decisions: sanitizeAuditFactLinks(raw.decisions, events) };
+            })(),
+          }
+        : {}),
     };
   }
 }

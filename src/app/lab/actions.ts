@@ -12,7 +12,7 @@ import {
 import { playLabTramo } from "@match/application/use-cases/play-lab-tramo";
 import { playLabGame } from "@match/application/use-cases/play-lab-game";
 import type { BuildGameTeamArgs } from "@match/domain/game/game-model";
-import { LAB_0_2_PARAMETERS_VERSION } from "@match/domain/lab/lab-0-2-parameters";
+import { LAB_0_3_PARAMETERS_VERSION } from "@match/domain/lab/lab-0-3-parameters";
 import type { BuildTramoTeamArgs } from "@match/domain/sequence/tramo-model";
 import type { PlayerProfile } from "@match/domain/players/player-profile";
 import type { ScenarioId } from "@match/domain/lab/scenario";
@@ -50,7 +50,7 @@ export async function runScenarioAction(
     coverage,
     seed,
     rulesetVersion: "FIBA-2026",
-    labParametersVersion: LAB_0_2_PARAMETERS_VERSION,
+    labParametersVersion: LAB_0_3_PARAMETERS_VERSION,
     offensePlayers,
     defensePlayers,
   };
@@ -67,7 +67,7 @@ export async function compareScenarioAction(
     {
       seed,
       rulesetVersion: "FIBA-2026",
-      labParametersVersion: LAB_0_2_PARAMETERS_VERSION,
+      labParametersVersion: LAB_0_3_PARAMETERS_VERSION,
       offensePlayers,
       defensePlayers,
     },
@@ -86,7 +86,7 @@ export async function compareCoverageAction(
     {
       seed,
       rulesetVersion: "FIBA-2026",
-      labParametersVersion: LAB_0_2_PARAMETERS_VERSION,
+      labParametersVersion: LAB_0_3_PARAMETERS_VERSION,
       offensePlayers,
       defensePlayers,
     },

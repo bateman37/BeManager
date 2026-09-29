@@ -34,7 +34,7 @@ import { createResumableRandom, type ResumableRandom } from "../random/seeded-ra
 import { secondsToMs, type Milliseconds } from "../time/clock";
 import type { DefensiveCoverage, MatchInput } from "../lab/match-input";
 import { getScenario } from "../lab/scenario";
-import type { LAB_0_2_PARAMETERS_VERSION } from "../lab/lab-0-2-parameters";
+import type { LAB_0_3_PARAMETERS_VERSION } from "../lab/lab-0-3-parameters";
 import {
   attackerMoveSpeedMps,
   defenderLateralSpeedMps,
@@ -104,7 +104,7 @@ export interface LinkedTeam {
 export interface LinkedRunSettings {
   readonly seed: number;
   readonly rulesetVersion: "FIBA-2026";
-  readonly labParametersVersion: typeof LAB_0_2_PARAMETERS_VERSION;
+  readonly labParametersVersion: typeof LAB_0_3_PARAMETERS_VERSION;
   /** Disposición del bloqueo directo que usan la organización y el núcleo. */
   readonly dispositionScenarioId: "drop_con_ayuda";
   readonly teams: readonly [LinkedTeam, LinkedTeam];
@@ -415,6 +415,22 @@ export abstract class LinkedRun {
    * del núcleo del bloqueo): entrada de fase/transición, organización del
    * creador. Sin efecto si el colector está desactivado (ME-04A §3).
    */
+  /**
+   * Enlace al hecho de `this.events` **efectivamente emitido** (ME-04B §4.2):
+   * busca hacia atrás el último hecho ya registrado de ese tipo y usa su
+   * instante real, nunca el instante propio de la decisión. Los llamadores
+   * deben emitir el hecho antes de llamar a `auditDecision` con
+   * `factLinkKind`; si no hay ningún hecho de ese tipo todavía (no llegó a
+   * ocurrir: desvío previo, bocina, guardián), el enlace queda ausente
+   * (`null`) en vez de inventar un instante.
+   */
+  private resolveFactLink(kind: string): import("../audit/audit-types").AuditFactLink | null {
+    for (let i = this.events.length - 1; i >= 0; i--) {
+      if (this.events[i]!.kind === kind) return { atMs: this.events[i]!.atMs, kind };
+    }
+    return null;
+  }
+
   protected auditDecision(
     atMs: Milliseconds,
     input: {
@@ -438,7 +454,7 @@ export abstract class LinkedRun {
       participants: input.participants,
       options: input.options,
       chosenOptionId: input.chosenOptionId,
-      factLink: input.factLinkKind ? { atMs, kind: input.factLinkKind } : null,
+      factLink: input.factLinkKind ? this.resolveFactLink(input.factLinkKind) : null,
       rngStateBefore: null,
       rngStateAfter: null,
       note: input.note,
@@ -1375,6 +1391,13 @@ export abstract class LinkedRun {
     if (read.kind === "sin_ventaja") {
       const reason = `Sin ventaja: ataque organizado. Primer defensor en el aro: ${read.firstDefender.id} (${formatSeconds(read.firstDefender.arrivalSeconds)}); atacante más rápido: ${read.fastestAttacker.id} (${formatSeconds(read.fastestAttacker.arrivalSeconds)}); ${read.reason}.`;
       this.setPhaseEntry("ataque_organizado", reason);
+      // El hecho se emite primero: el enlace de auditoría (§4.2) apunta al
+      // instante en que `transition_read` realmente se registró, no al
+      // instante propio de esta decisión (aquí coinciden en t1, pero la
+      // búsqueda hacia atrás en `this.events` es la misma regla que usan los
+      // demás puntos, para no depender de que ambos instantes coincidan).
+      if (!this.emit({ atMs: t1, phase: "reconocido", kind: "transition_read", actors: [carrierId], text: reason, detail: { advantage: false } }))
+        return null;
       this.auditDecision(t1, {
         point: "entrada_fase_transicion",
         holderId: carrierId,
@@ -1382,15 +1405,13 @@ export abstract class LinkedRun {
         chosenOptionId: "sin_ventaja",
         factLinkKind: "transition_read",
         options: [
-          { id: "sin_ventaja", status: "elegida", reasonCode: "not_available", reasonNote: read.reason, values: { firstDefenderArrivalSeconds: read.firstDefender.arrivalSeconds, fastestAttackerArrivalSeconds: read.fastestAttacker.arrivalSeconds } },
+          { id: "sin_ventaja", status: "elegida", reasonCode: "transition_no_advantage", reasonNote: read.reason, values: { firstDefenderArrivalSeconds: read.firstDefender.arrivalSeconds, fastestAttackerArrivalSeconds: read.fastestAttacker.arrivalSeconds } },
           { id: "penetracion", status: "no_evaluada_por_cortocircuito", reasonCode: "not_evaluated_short_circuit" },
           { id: "pase_adelantado", status: "no_evaluada_por_cortocircuito", reasonCode: "not_evaluated_short_circuit" },
           { id: "superioridad_2x1", status: "no_evaluada_por_cortocircuito", reasonCode: "not_evaluated_short_circuit" },
           { id: "superioridad_3x2", status: "no_evaluada_por_cortocircuito", reasonCode: "not_evaluated_short_circuit" },
         ],
       });
-      if (!this.emit({ atMs: t1, phase: "reconocido", kind: "transition_read", actors: [carrierId], text: reason, detail: { advantage: false } }))
-        return null;
       return { kind: "organize", frame, atMs: t1, holderId: carrierId };
     }
 
@@ -1426,6 +1447,10 @@ export abstract class LinkedRun {
 
     this.setPhaseEntry("ventaja_temprana", reason);
     this.assignResponsibility(t1, shooterId, "carril_transicion", "Ataca el aro antes de que llegue su defensor.");
+    // El hecho se emite primero (§4.2): el enlace de auditoría busca el
+    // `transition_read` ya registrado, con su instante real.
+    if (!this.emit({ atMs: t1, phase: "reconocido", kind: "transition_read", actors: [carrierId, shooterId], text: reason, detail: { advantage: true, kind: read.kind } }))
+      return null;
     this.auditDecision(t1, {
       point: "entrada_fase_transicion",
       holderId: carrierId,
@@ -1439,8 +1464,6 @@ export abstract class LinkedRun {
           .map((id) => ({ id, status: "no_evaluada_por_cortocircuito" as const, reasonCode: "not_evaluated_short_circuit" as const })),
       ],
     });
-    if (!this.emit({ atMs: t1, phase: "reconocido", kind: "transition_read", actors: [carrierId, shooterId], text: reason, detail: { advantage: true, kind: read.kind } }))
-      return null;
 
     // Diez desplazamientos reales mientras se resuelve la ventaja: quienes
     // atacan el aro y los defensores que lo protegen van al aro; el resto,
