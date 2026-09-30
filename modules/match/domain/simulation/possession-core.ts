@@ -693,6 +693,67 @@ function familyAuditValues(o: FamilyOpportunity): Record<string, number | string
   };
 }
 
+/**
+ * Valor proyectado de la acción organizada con una asignación de roles
+ * concreta (ME-07B v2 §2.4, primitiva de asignación de funciones): la misma
+ * proyección en seco que usa el selector de familia (§2.2), desde las
+ * posiciones que ocuparán los diez al estar situados, sin azar, hechos ni
+ * auditoría. Permite comparar quién crea y quién bloquea con la misma
+ * frontera y los mismos costes, en vez de devolver siempre el balón al rol
+ * fijo O1 del orden del quinteto.
+ */
+export interface OrganizedProjection {
+  readonly value: number;
+  readonly plan: OffensivePlan;
+  readonly bestReadOption: string | null;
+}
+
+export function projectOrganizedOpportunity(
+  input: MatchInput,
+  linked: Omit<LinkedSegmentOptions, "rng" | "entry" | "legs">,
+): OrganizedProjection {
+  const scenario = getScenario(input.scenarioId);
+  const positions: Record<string, Point2D> = {};
+  const positionHistory: Record<string, PositionHistoryEntry[]> = {};
+  for (const slot of [...scenario.offense, ...scenario.defense]) {
+    const start = linked.startPositions[slot.playerId];
+    if (!start) throw new Error(`Falta la posición de partida del rol ${slot.playerId}`);
+    positions[slot.playerId] = start;
+    positionHistory[slot.playerId] = [{ atMs: 0, position: start }];
+  }
+  const ctx: CoreContext = {
+    input,
+    rng: DRY_RUN_RNG,
+    timeline: [],
+    sequence: 0,
+    positions,
+    positionHistory,
+    gameClockMs: linked.gameClockMs,
+    shotClockMs: linked.shotClockMs,
+    possessionPhase: 0,
+    resolvedCoverage: "drop",
+    linked: {
+      binding: linked.binding,
+      priority: linked.attackingPriority,
+      balancers: new Set(),
+      rules: linked.rules ?? null,
+      containment: null,
+      firstGestureSeconds: Infinity,
+    },
+    audit: createNoopAuditCollector(),
+    auditMeta: null,
+    projecting: true,
+  };
+  const planChoice: OffensivePlanChoice = input.offensivePlan ?? "bloqueo_directo";
+  const bloqueo =
+    planChoice === "mano_a_mano_sin_balon" ? null : familyOpportunity(projectFamilyRead(ctx, (dry) => runDropPhase(dry, scenario)));
+  const handoff = planChoice === "bloqueo_directo" ? null : familyOpportunity(projectFamilyRead(ctx, (dry) => runHandoffPhase(dry)));
+  if (handoff && (!bloqueo || handoff.value > bloqueo.value)) {
+    return { value: handoff.viable ? handoff.value : 0, plan: "mano_a_mano_sin_balon", bestReadOption: handoff.bestOptionId };
+  }
+  return { value: bloqueo!.viable ? bloqueo!.value : 0, plan: "bloqueo_directo", bestReadOption: bloqueo!.bestOptionId };
+}
+
 export function computePossessionCore(
   input: MatchInput,
   options: ComputePossessionCoreOptions = {},

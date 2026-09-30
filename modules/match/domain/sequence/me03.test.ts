@@ -119,8 +119,11 @@ describe("ME-03 (2): el mismo equipo de diez atraviesa el cambio de lado", () =>
       else expect(pos.x).toBeGreaterThan(14);
     }
     const entries = r.events.filter((e) => e.kind === "organized_entry");
-    expect(entries.some((e) => e.actors.join() === "O1,O5")).toBe(true);
-    expect(entries.some((e) => e.actors.join() === "D1,D5")).toBe(true);
+    // ME-07B v2 §2.4: creador y bloqueador se asignan por proyección entre
+    // jugadores reales (no siempre O1/O5 del orden del quinteto), así que se
+    // exige que cada equipo inicie acciones con sus propios jugadores.
+    expect(entries.some((e) => e.actors.every((a) => TEAM_OF[a] === SIERRA_CLARA.id))).toBe(true);
+    expect(entries.some((e) => e.actors.every((a) => TEAM_OF[a] === PUERTO_AMBAR.id))).toBe(true);
   });
 
   it("ninguna posesión posterior reinicia el fixture: ni 7:12/18 s ni la disposición de scenario.ts", () => {

@@ -43,7 +43,7 @@ import type {
 } from "../lab/match-input";
 import { getScenario } from "../lab/scenario";
 import type { ObservedOutcome } from "../lab/lab-0-4-parameters";
-import type { LAB_0_3_PARAMETERS_VERSION } from "../lab/lab-0-3-parameters";
+import { FIRST_READ_TIE_BAND_POINTS, type LAB_0_3_PARAMETERS_VERSION } from "../lab/lab-0-3-parameters";
 import {
   attackerMoveSpeedMps,
   defenderLateralSpeedMps,
@@ -59,6 +59,7 @@ import type { FactKind, FactPhase, PlayerSnapshot } from "../simulation/fact";
 import type { TerminalOutcome, BallState, BallStatus } from "../simulation/match-state";
 import {
   computePossessionCore,
+  projectOrganizedOpportunity,
   REBOUND_CANDIDATE_SPEED_MPS,
   type LinkedEntry,
   type LinkedGameRules,
@@ -816,9 +817,8 @@ export abstract class LinkedRun {
 
   // --- tramo de cálculo del núcleo -------------------------------------------
 
-  protected computeCore(frame: Frame, t0: Milliseconds, entry: LinkedEntry, legs?: Record<string, PlannedLeg>): PossessionCoreResult {
-    const local = this.localPositions(frame, t0);
-    const matchInput: MatchInput = {
+  protected coreMatchInput(frame: Frame): MatchInput {
+    return {
       scenarioId: this.settings.dispositionScenarioId,
       coverage: this.coverageWhenDefending(frame.defending.id),
       seed: this.settings.seed,
@@ -830,6 +830,11 @@ export abstract class LinkedRun {
       offBallDefensiveCall: this.offBallCallWhenDefending(frame.defending.id),
       creationPriority: this.creationPriorityWhenAttacking(frame.attacking.id),
     };
+  }
+
+  protected computeCore(frame: Frame, t0: Milliseconds, entry: LinkedEntry, legs?: Record<string, PlannedLeg>): PossessionCoreResult {
+    const local = this.localPositions(frame, t0);
+    const matchInput = this.coreMatchInput(frame);
     const rules = this.coreRules();
     const possession = this.possessionRef();
     return computePossessionCore(matchInput, {
@@ -1250,6 +1255,108 @@ export abstract class LinkedRun {
     return arrivals;
   }
 
+  /**
+   * Asignación de funciones al organizar (ME-07B v2 §2.4, primitiva de
+   * gramática §3): en vez de devolver siempre el balón al rol fijo O1 del
+   * orden del quinteto, compara asignaciones reales de creador (el poseedor
+   * o el O1 vigente) y de bloqueador (O5 o O4) con la misma proyección en
+   * seco que el selector de familia, desde la disposición que ocuparán y con
+   * el reloj que quedará tras situarse (y tras el pase de vuelta si hace
+   * falta). Los defensores **siguen a su marca**: si un atacante cambia de
+   * rol, su defensor cambia con él (D1 es quien defiende al creador, D5 quien
+   * defiende al bloqueador), sin cambios de emparejamiento instantáneos.
+   * Gana el mayor valor proyectado; dentro de `FIRST_READ_TIE_BAND_POINTS`,
+   * la asignación que queda lista antes; en empate exacto, la vigente.
+   */
+  protected assignOrganizedRoles(
+    frame: Frame,
+    t0: Milliseconds,
+    holderId: string,
+  ): { frame: Frame; options: import("../audit/audit-types").AuditOptionRecord[] } {
+    const targets = this.dispositionTargets();
+    const originalHandlerId = frame.slotToId.O1!;
+    const swapRoles = (map: Readonly<Record<string, string>>, a: string, b: string): Record<string, string> => {
+      if (a === b) return { ...map };
+      const out = { ...map };
+      out[`O${a}`] = map[`O${b}`]!;
+      out[`O${b}`] = map[`O${a}`]!;
+      out[`D${a}`] = map[`D${b}`]!;
+      out[`D${b}`] = map[`D${a}`]!;
+      return out;
+    };
+    const holderRole = frame.idToSlot[holderId]!.slice(1);
+    const handlerMaps: Record<string, string>[] = [{ ...frame.slotToId }];
+    if (holderId !== originalHandlerId) handlerMaps.push(swapRoles(frame.slotToId, "1", holderRole));
+    const candidates: { map: Record<string, string>; handlerId: string; screenerId: string; tReadyMs: number; value: number; plan: string; read: string | null }[] = [];
+    const matchInput = this.coreMatchInput(frame);
+    const remainingAtT0 = this.shotRemainingAt(t0);
+    for (const handlerMap of handlerMaps) {
+      for (const map of [handlerMap, swapRoles(handlerMap, "4", "5")]) {
+        const handlerId = map.O1!;
+        let tAllSet = t0;
+        for (const slot of OFFENSE_SLOTS) {
+          const id = map[slot]!;
+          const arrive = t0 + secondsToMs(timeToReach(this.positionAt(id, t0), toGlobal(frame.dir, targets[slot]!), this.runSpeed(id)));
+          tAllSet = Math.max(tAllSet, arrive);
+        }
+        const passNeeded = holderId !== handlerId;
+        const tReadyMs = passNeeded
+          ? tAllSet + secondsToMs(PASS_RELEASE_SECONDS) + secondsToMs(distance(targets[this.slotOf(map, holderId)]!, targets.O1!) / PASS_FLIGHT_SPEED_MPS)
+          : tAllSet;
+        const shotClockMs = Math.max(0, remainingAtT0 - (tReadyMs - t0));
+        const projection = projectOrganizedOpportunity(matchInput, {
+          binding: map,
+          startPositions: targets,
+          shotClockMs,
+          gameClockMs: this.game.ms,
+          attackingPriority: frame.attacking.priority,
+          rules: this.coreRules(),
+        });
+        candidates.push({ map, handlerId, screenerId: map.O5!, tReadyMs, value: projection.value, plan: projection.plan, read: projection.bestReadOption });
+      }
+    }
+    const best = Math.max(...candidates.map((c) => c.value));
+    let chosen = candidates[0]!;
+    for (const c of candidates) {
+      if (best - c.value > FIRST_READ_TIE_BAND_POINTS) continue;
+      if (best - chosen.value > FIRST_READ_TIE_BAND_POINTS || c.tReadyMs < chosen.tReadyMs) chosen = c;
+    }
+    // Una opción por creador candidato (su mejor bloqueador), para que el
+    // motivo quede legible por jugador real.
+    const byHandler = new Map<string, (typeof candidates)[number]>();
+    for (const c of candidates) {
+      const prev = byHandler.get(c.handlerId);
+      if (!prev || c === chosen || (prev !== chosen && c.value > prev.value)) byHandler.set(c.handlerId, c);
+    }
+    const options = [...byHandler.values()].map((c) => {
+      const values = {
+        projectedValue: c.value,
+        screenerId: c.screenerId,
+        projectedPlan: c.plan,
+        projectedBestRead: c.read,
+        readySeconds: (c.tReadyMs - t0) / 1000,
+      };
+      if (c === chosen) {
+        const reasonCode = c.handlerId === holderId && holderId !== originalHandlerId ? "creator_kept_by_real_holder" : "creator_projected_value_higher";
+        const note = `${c.handlerId} crea con ${c.screenerId} de bloqueador: valor proyectado ${c.value.toFixed(3)}, listo en ${((c.tReadyMs - t0) / 1000).toFixed(2)} s.`;
+        return { id: c.handlerId, status: "elegida" as const, reasonCode: reasonCode as import("../audit/audit-types").AuditReasonCode, reasonNote: note, values };
+      }
+      const lostByTime = best - c.value <= FIRST_READ_TIE_BAND_POINTS;
+      return {
+        id: c.handlerId,
+        status: "descartada_por_condicion" as const,
+        reasonCode: (lostByTime ? (c.handlerId === holderId ? "creator_pass_back_faster" : "creator_ready_later_in_band") : "situational_value_lower") as import("../audit/audit-types").AuditReasonCode,
+        values,
+      };
+    });
+    return { frame: chosen.map === candidates[0]!.map ? frame : rebindFrame(frame, chosen.map), options };
+  }
+
+  private slotOf(map: Readonly<Record<string, string>>, id: string): string {
+    for (const [slot, v] of Object.entries(map)) if (v === id) return slot;
+    throw new Error(`Jugador sin rol en la asignación: ${id}`);
+  }
+
   protected organize(frame: Frame, t0: Milliseconds, holderId: string): Step | null {
     const phase = this.currentPossession().phases[this.currentPossession().phases.length - 1]!;
     if (phase.entry === "pendiente") {
@@ -1269,23 +1376,8 @@ export abstract class LinkedRun {
     // por la segunda entrada del bloqueo, ME-04): los otros tres atacantes
     // mantienen su tarea de espaciado/corte/balance sin cambios.
     const originalHandlerId = frame.slotToId.O1!;
-    let effectiveFrame = frame;
-    let creatorReasonCode: import("../audit/audit-types").AuditReasonCode = "role_fixed_no_ranking";
-    let creatorNote = "El manejador es el rol fijo O1 del quinteto vigente; no se compara contra otros candidatos.";
-    if (holderId !== originalHandlerId) {
-      const holderSlot0 = frame.idToSlot[holderId]!;
-      const o1TargetGlobal = toGlobal(frame.dir, this.dispositionTargets().O1!);
-      const keepSeconds = timeToReach(this.positionAt(holderId, t0), o1TargetGlobal, attackerMoveSpeedMps(this.profile(holderId).attributes.F01));
-      const passSeconds = PASS_RELEASE_SECONDS + distance(this.positionAt(holderId, t0), this.positionAt(originalHandlerId, t0)) / PASS_FLIGHT_SPEED_MPS;
-      if (keepSeconds <= passSeconds) {
-        effectiveFrame = rebindFrame(frame, { ...frame.slotToId, O1: holderId, [holderSlot0]: originalHandlerId });
-        creatorReasonCode = "creator_kept_by_real_holder";
-        creatorNote = `${holderId} conserva la iniciativa: llega a su puesto de creador en ${keepSeconds.toFixed(2)} s, no más lento que el pase de vuelta a ${originalHandlerId} (${passSeconds.toFixed(2)} s).`;
-      } else {
-        creatorReasonCode = "creator_pass_back_faster";
-        creatorNote = `Devuelve el balón a ${originalHandlerId}: ${passSeconds.toFixed(2)} s frente a ${keepSeconds.toFixed(2)} s si ${holderId} conservara la iniciativa.`;
-      }
-    }
+    const assignment = this.assignOrganizedRoles(frame, t0, holderId);
+    const effectiveFrame = assignment.frame;
 
     const arrivals = this.planOrganizeLegs(effectiveFrame, t0, []);
     const holderSlot = effectiveFrame.idToSlot[holderId]!;
@@ -1297,14 +1389,9 @@ export abstract class LinkedRun {
     this.auditDecision(t0, {
       point: "organizacion_creador",
       holderId,
-      participants: [...new Set([holderId, originalHandlerId])],
+      participants: [...new Set([holderId, originalHandlerId, effectiveFrame.slotToId.O5!])],
       chosenOptionId: handlerId,
-      options: [
-        { id: handlerId, status: "elegida", reasonCode: creatorReasonCode, reasonNote: creatorNote },
-        ...(handlerId !== originalHandlerId
-          ? [{ id: originalHandlerId, status: "descartada_por_condicion" as const, reasonCode: "situational_value_lower" as const }]
-          : []),
-      ],
+      options: assignment.options,
     });
 
     // Cuenta de 8 s si el control empezó en pista trasera (art. 28).
@@ -1389,7 +1476,7 @@ export abstract class LinkedRun {
         text:
           entryText ??
           `Los cinco atacantes están situados: ${frame.slotToId.O1} y ${frame.slotToId.O5} inician el bloqueo directo central (${coverage === "trampa" ? "trampa" : coverage === "auto" ? "cobertura automática" : "drop"}) con ${(remaining / 1000).toFixed(1)} s de lanzamiento.${lateText}`,
-        detail: { shotClockMs: remaining, lateDefenders: late },
+        detail: { shotClockMs: remaining, lateDefenders: late, roles: { ...frame.slotToId } },
         ball: { status: "held", holderId: frame.slotToId.O1!, fixed: null },
       })
     )

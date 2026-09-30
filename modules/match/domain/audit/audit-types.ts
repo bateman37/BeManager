@@ -84,6 +84,9 @@ export type AuditReasonCode =
   // devolver siempre el balón al rol fijo O1.
   | "creator_kept_by_real_holder"
   | "creator_pass_back_faster"
+  // ME-07B v2 §2.4: asignación de creador/bloqueador por proyección.
+  | "creator_projected_value_higher"
+  | "creator_ready_later_in_band"
   | "not_evaluated_short_circuit"
   | "situational_value_lower"
   | "tie_band_resolved_by_tendency"
