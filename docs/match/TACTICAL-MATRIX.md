@@ -5,7 +5,7 @@
 **Debe leerse cuando:** vayas a implementar, probar o declarar jugable cualquier táctica de ME-07B.
 **No cubre:** el diseño de cada táctica (ver `reference/BeManager-capitulo-tacticas-integradas-al-motor-v1.md`) ni el detalle del árbol ya implementado (ver `ACTIONS.md`).
 **Documentos relacionados:** `ACTIONS.md`, `AUDIT.md`, `docs/prompts/implementation/ME-07B-v2-capitulo-tactico-y-20-auditorias.md`, `docs/prompts/implementation/ME-07B-PROGRESS.md`.
-**Última actualización:** 2026-09-30 (ME-07B v2, sesión v2-1).
+**Última actualización:** 2026-09-30 (ME-07B v2, sesión v2-2: §2.4–§2.5).
 
 ## Reglas de estado
 
@@ -27,7 +27,7 @@ auditoría** · **Prueba** · **Estado**. «—» = no existe todavía.
 | Nombre | Capa | Config. | Entrada | Mecanismo | Fallback | Hecho/auditoría | Prueba | Estado |
 |---|---|---|---|---|---|---|---|---|
 | Transición agresiva | Estilo | — | — | — | — | — | — | pendiente |
-| Correr solo ante ventaja | Estilo | — (comportamiento fijo) | Salida tras rebote/robo/saque | Lectura de ventaja por llegadas reales (ME-03, opción B) | Organizar | `entrada_fase_transicion` | `me03.test.ts` | parcial: no configurable, sin alternativa «agresiva» |
+| Correr solo ante ventaja | Estilo | — (comportamiento fijo) | Salida tras rebote/robo/saque | Lectura de ventaja por llegadas reales (ME-03, opción B); sin ventaja, triple del portador en su punto real de tiro frente al valor de organizar (§2.5) | Organizar | `entrada_fase_transicion` (`triple_portador` con cerrador y oposición) | `me03.test.ts`, `me07b-v2-transition.test.ts` | parcial: no configurable, sin alternativa «agresiva» |
 | Ataque temprano | Estilo | — | — | — | — | — | — | pendiente |
 | Juego de control | Estilo | — | — | — | — | — | — | pendiente |
 | Movimiento continuo | Estilo | — | — | — | — | — | — | pendiente |
@@ -35,7 +35,7 @@ auditoría** · **Prueba** · **Estado**. «—» = no existe todavía.
 | Libertad pautada/contextual | Estilo | — | — | — | — | — | — | pendiente |
 | Buscar aro / buscar triple / equilibrio | Estilo | `creationPriority` | Banda de empate de la lectura | Desempate dentro de `FIRST_READ_TIE_BAND_POINTS` | Valor mayor | `creation_priority_resolved_band` | `me07a.test.ts` | parcial: solo desempata, no crea oportunidades |
 | Cargar rebote / proteger balance | Estilo | `priority` | Gesto de cada tiro | Reparto por llegada al aro (1 ó 2 cargan) | — | `asignacion_rebote`, `disputa_rebote` | `me03.test.ts`, `me07b-v2-rebound.test.ts` | parcial: reparto por personas sí; sin elegir quién |
-| Roles fijos / intercambio viable | Estilo | — | — | Reasignación O1↔poseedor (`organize`) | Pase de vuelta | `organizacion_creador` | `me07a.test.ts` | parcial: solo creador |
+| Roles fijos / intercambio viable | Estilo | — | Cada organización | Creador (poseedor u O1) y bloqueador (O5 u O4) por proyección en seco; defensores siguen a su marca (§2.4) | Rol vigente | `organizacion_creador`, `organized_entry.detail.roles` | `me07a.test.ts`, `me07b-v2-roles.test.ts` | parcial: sin orden «roles fijos» configurable ni UI |
 
 ## Ataque — espaciado, ocupación y colocación
 
@@ -56,7 +56,7 @@ auditoría** · **Prueba** · **Estado**. «—» = no existe todavía.
 
 | Nombre | Capa | Config. | Entrada | Mecanismo | Fallback | Hecho/auditoría | Prueba | Estado |
 |---|---|---|---|---|---|---|---|---|
-| Bloqueo directo central | Familia | `offensivePlan` | Ataque organizado | O5 pantalla, O1 usa, lectura por valor | Salida segura | `seleccion_familia`, `lectura_bloqueo_o1` | `me04b`, `me06` | parcial: monopolio en `auto`, explicado por el roll libre que concede el drop (§2.2 hecho, §2.3 pendiente) |
+| Bloqueo directo central | Familia | `offensivePlan` | Ataque organizado | Pantalla del bloqueador asignado, lectura por valor frente al mejor cierre real (§2.4) | Salida segura | `seleccion_familia`, `lectura_bloqueo_o1` | `me04b`, `me06`, `me07b-v2-reads.test.ts` | parcial: sin /lab v2-2; foto seed PnR 1.011 / DHO 214 (Sierra) |
 | Bloqueo directo lateral | Familia | — | — | — | — | — | — | pendiente |
 | Mano a mano (DHO) | Familia | `offensivePlan` | Ataque organizado | Entrada a O5 en codo, entrega a O2 | O5 conserva | `entrada/transferencia_mano_a_mano` | `me06-mano-a-mano.test.ts` | parcial: casi nunca elegido en `auto` |
 | Pindown | Familia | — | — | Solo el indirecto O4→O3 dentro del DHO | — | `bloqueo_indirecto_o3` | `me06` | pendiente como familia propia |
@@ -64,7 +64,7 @@ auditoría** · **Prueba** · **Estado**. «—» = no existe todavía.
 | Corte | Familia | — | — | Corte de O3 dentro del DHO | — | — | `me06` | pendiente como familia propia |
 | Aislamiento contextual | Familia | — | — | — | — | — | — | pendiente |
 | Drive-and-kick | Familia | — | — | — | — | — | — | pendiente |
-| Pase extra | Familia | — | — | Inversión O5→O3 (segunda lectura) | — | `lectura_segunda_o5` | `me04b` | parcial: una sola ruta |
+| Pase extra | Familia | — | Receptor del roll con D3 fuera de O3 | Inversión O5→O3 valorada con desvío y cierre real de D4 (§2.4) | Tiro del receptor | `lectura_segunda_o5` | `me04b`, `me07b-v2-reads.test.ts` | parcial: una sola ruta |
 | Ataque a zona (poste alto, short corner, inversión) | Familia | — | — | — | — | — | — | pendiente |
 | Ataque a presión (salida, receptor central, 3×2 tras ruptura) | Familia | — | — | — | — | — | — | pendiente |
 
@@ -95,14 +95,14 @@ auditoría** · **Prueba** · **Estado**. «—» = no existe todavía.
 | Keeper | Lectura | — | Entrega negada | O5 conserva y lee | — | `transferencia_mano_a_mano` | `me06` | parcial: solo por negación, no elección |
 | Curl | Lectura | — | — | — | — | — | — | pendiente |
 | Backdoor | Lectura | — | — | — | — | — | — | pendiente |
-| Tiro temprano/penetración del base libre | Lectura | — | — | Finalizar / triple O1 en 1ª lectura | — | `lectura_bloqueo_o1` | `me04b` | parcial |
+| Tiro temprano/penetración del base libre | Lectura | — | 1ª lectura del bloqueo | Finalizar, triple con cierre de D1, tiro parado (T03) o floater (T02) antes del protector (§2.4) | Pase / salida | `lectura_bloqueo_o1` (`parada_o1`, `flotadora_o1`) | `me04b`, `me07b-v2-reads.test.ts` | parcial: sin /lab v2-2 |
 
 ## Ataque — continuaciones
 
 | Nombre | Capa | Config. | Entrada | Mecanismo | Fallback | Hecho/auditoría | Prueba | Estado |
 |---|---|---|---|---|---|---|---|---|
-| Roll profundo | Continuación | — | — | Punto `DEEP_CONTINUATION_SPOT` sin decisión propia | — | — | — | pendiente |
-| Short roll | Continuación | — | Pase a O5 | Recepción en `SHORT_ROLL_SPOT` y lectura de O5 | Tiro contenido | `lectura_segunda_o5` | `me02`, `me04b` | parcial: única continuación |
+| Roll profundo | Continuación | — | Recepción en el short roll | El receptor ataca el aro (`finalizar_aro`) frente a D5/D3 reales (§2.4) | Floater / inversión | `lectura_segunda_o5` | `me07b-v2-reads.test.ts` | parcial: el roll sigue parando en el short roll antes de decidir |
+| Short roll | Continuación | — | Pase a O5 | Recepción en `SHORT_ROLL_SPOT`; lee aro/floater/inversión frente al mejor cierre; tendencia en la banda (§2.4) | Segunda entrada / tiro contenido | `lectura_segunda_o5` | `me02`, `me04b`, `me07b-v2-reads.test.ts` | parcial: única continuación física |
 | Pop | Continuación | — | — | — | — | — | — | pendiente |
 | Mantener perseguidor detrás | Continuación | — | — | — | — | — | — | pendiente |
 | Lift | Continuación | — | — | — | — | — | — | pendiente |
@@ -155,10 +155,10 @@ auditoría** · **Prueba** · **Estado**. «—» = no existe todavía.
 | Deny | Receptores | `negar_primera_salida` | DHO | D3 persigue apretado | — | idem | `me06` | parcial: solo en DHO |
 | Top-lock | Receptores | — | — | — | — | — | — | pendiente |
 | Criterio de closeout | Receptores | — | — | — | — | — | — | pendiente |
-| Drop | Cobertura | `coverage` | Bloqueo directo | D5 protege aro, D3 ayuda opcional | — | `seleccion_cobertura` | `me02`, `me04b` | parcial: compite con trampa en `auto` (§2.3); sin orden visible de ayuda |
+| Drop | Cobertura | `coverage` | Bloqueo directo | D5 retrocede al aro desde el roll (una sola trayectoria) y contesta al receptor; no sale al tiro parado mientras el roll no está contenido (§2.4) | — | `seleccion_cobertura` | `me02`, `me04b`, `me07b-v2-reads.test.ts` | parcial: compite con trampa en `auto`; sin at the level/profundidad configurable |
 | At the level | Cobertura | — | — | — | — | — | — | pendiente |
 | Show / hedge | Cobertura | — | — | — | — | — | — | pendiente |
-| Trap | Cobertura | `coverage=trampa` | Bloqueo directo | D1+D5 al balón, D3 low man, D4 rota | Recuperar | `lectura_trampa`, `seleccion_cobertura` | `me02`, `me07b-v2-coverage.test.ts` | parcial: elegible y elegida en `auto` desde la preparación (§2.3); sin lugar/disparador configurable |
+| Trap | Cobertura | `coverage=trampa` | Bloqueo directo | D1+D5 al balón, D3 low man, D4 rota; contacto de la trampa cerrada puede ser falta sin tiro (M07, §2.5) | Recuperar | `lectura_trampa`, `seleccion_cobertura`, `puerta_falta_sin_tiro` | `me02`, `me07b-v2-coverage.test.ts`, `me07b-v2-fouls.test.ts` | parcial: elegible y elegida en `auto` desde la preparación (§2.3); sin lugar/disparador configurable |
 | Switch | Cobertura | — | — | — | — | — | — | pendiente |
 | ICE lateral | Cobertura | — | — | — | — | — | — | pendiente |
 | Under | Cobertura | — | — | — | — | — | — | pendiente |
@@ -170,16 +170,16 @@ auditoría** · **Prueba** · **Estado**. «—» = no existe todavía.
 |---|---|---|---|---|---|---|---|---|
 | Nail | Ayuda | — | — | — | — | — | — | pendiente |
 | Low man | Ayuda | — (en trampa) | Trampa | D3 sobre el short roll | — | `lectura_trampa` | `me02` | parcial: solo dentro de la trampa |
-| Tag | Ayuda | `d3HelpsRoller` (escenario) | Drop | D3 frena el roll y deja su marca | — | `lectura_bloqueo_o1` | `me02` | parcial: no configurable en partido |
+| Tag | Ayuda | `rollHelpCall` (motor; escenario en lab) | Drop | D3 decide ayudar comparando concesión con/sin ayuda (§2.4); `siempre` obliga | Conserva marca | `help_decision` | `me02`, `me07b-v2-reads.test.ts` | parcial: orden sin control en /lab |
 | Stunt | Ayuda | — | — | — | — | — | — | pendiente |
 | Dig | Ayuda | — | — | — | — | — | — | pendiente |
-| No dejar tirador de esquina | Ayuda | — | — | — | — | — | — | pendiente |
+| No dejar tirador de esquina | Ayuda | — (dentro de `rollHelpCall=auto`) | Drop con continuador | D3 no ayuda si la esquina concede más que el roll (§2.4) | Ayuda | `help_decision.detail.concession*` | `me07b-v2-reads.test.ts` | parcial: sin orden propia ni emergencia |
 | X-out | Reparación | — | — | — | — | — | — | pendiente |
 | Sink-and-fill | Reparación | — | — | — | — | — | — | pendiente |
 | Ayuda a la ayuda | Reparación | — (en trampa) | Trampa | D4 rota a O3 tras D3 | — | `lectura_trampa` | `me02` | parcial |
 | Recuperar / intercambiar | Reparación | — | — | — | — | — | — | pendiente |
 | Scram | Reparación | — | — | — | — | — | — | pendiente |
-| Cerrar línea (box-out) | Tras tiro | — (fijo) | Tiro/libre que toca aro | Cierre legal y próximo con T19/F05 del cerrador; sin desplazamiento defensivo previo | Carrera libre | `disputa_rebote` | `rebound-boxout.test.ts`, `me07b-v2-rebound.test.ts` | parcial: sin orden configurable ni carrera defensiva a cerrar (retirada, ver `ACTIONS.md`) |
+| Cerrar línea (box-out) | Tras tiro | — (fijo) | Tiro/libre que toca aro | Cierre legal y próximo con T19/F05 del cerrador; el defensor cerrado que aún disputa puede cometer falta por encima de la espalda (M07, §2.5) | Carrera libre | `disputa_rebote`, `puerta_falta_sin_tiro` | `rebound-boxout.test.ts`, `me07b-v2-rebound.test.ts`, `me07b-v2-fouls.test.ts` | parcial: sin orden configurable ni carrera defensiva a cerrar; sin falta en ataque |
 | Capturar / cargar / balancear (defensa) | Tras tiro | — | — | — | — | — | — | pendiente |
 | Excepciones: ICE izq., cambiar con este quinteto, perseguir a X, presión solo tras saque de fondo | Excepción | — | — | — | — | — | — | pendiente |
 | Prioridad y fallback de órdenes contradictorias | Excepción | — | — | — | — | — | — | pendiente |

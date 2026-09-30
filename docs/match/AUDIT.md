@@ -12,7 +12,7 @@ describe cómo se observa y se exporta lo que esos documentos ya definen.
 **Documentos relacionados:** `MODEL.md`, `ACTIONS.md`, `BOXSCORE.md`,
 `docs/decisions/DECISION-REQUERIDA-ME-04-alcance-natural-faltas-y-segunda-entrada.md`.
 **Última actualización:** 2026-09-30 (ME-07B v2: esquema `ME-07B-AUDIT-1`,
-punto `disputa_rebote`).
+punto `disputa_rebote`, lecturas y faltas de §2.4–§2.5).
 
 ## Qué es y qué no es
 
@@ -124,6 +124,24 @@ lectura/entrada anterior (`causingDecision` con id, punto, opción,
 instante y `factLink`), con tirador real, posición e instante; categorías
 `familia`/`transicion`/`segunda_oportunidad`/`otra_fase`. `byFamily`
 cuenta los tiros con esa atribución (antes: la última familia de la fase).
+**§2.4–§2.5:** `organizacion_creador` lista una opción por creador
+candidato (ID real) con `projectedValue`, `screenerId`, `projectedPlan`,
+`projectedBestRead` y `readySeconds`; motivos
+`creator_kept_by_real_holder`, `creator_projected_value_higher`,
+`creator_pass_back_faster`, `creator_ready_later_in_band`. El hecho
+`organized_entry` lleva `detail.roles` (rol → ID real).
+`lectura_bloqueo_o1` añade `parada_o1`/`flotadora_o1` (tipo, distancia,
+cerrador, oposición) y `triple_o1.contesterId`; `lectura_segunda_o5` pasa
+a `finalizar_aro`/`flotadora`/`invertir_o3` (cerrador y oposición real) con
+`receiver_value_higher|lower`, `receiver_option_not_viable` y los motivos
+de tendencia; `help_decision` lleva `concessionWithHelp/WithoutHelp`.
+`entrada_fase_transicion.triple_portador` guarda profundidad, carrera,
+cerrador, oposición y `organizeProjectedValue`. `resolucion_tiro.legal_contest`
+añade `contactFoulProbability`, `contactFoul` y `contesterM07`;
+`puerta_falta_sin_tiro` registra también las faltas de trampa y de rebote
+(`contact_foul_drawn`/`contact_foul_not_drawn`, `situation`,
+`foulProbability`). Tipos de FGA: `close_finish`, `floater`, `mid_range`,
+`three_point` (los dos intermedios cuentan como 2FGA).
 Sigue pendiente de este encargo (§6):
 candidatos viables/inviables por decisión en todos los puntos y los
 demás puntos nuevos de §6.

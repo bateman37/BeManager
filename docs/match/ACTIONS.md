@@ -5,7 +5,7 @@
 **Debe leerse cuando:** vayas a modificar `possession-core.ts` o a añadir una tercera acción táctica, otra cobertura u otra orden defensiva.
 **No cubre:** ninguna otra familia táctica (poste, zonas, todas las variantes de mano a mano) ni otras coberturas de bloqueo (switch, ICE/veer...): llegan en entregas posteriores (ver `docs/match/roadmap.md`). La transición de ME-03 no es una táctica nueva: solo decide si existe ventana y reutiliza las ejecuciones ya existentes (sección final).
 **Documentos relacionados:** `docs/match/reference/BeManager-capitulo-tacticas-integradas-al-motor-v1.md`, `CAPABILITIES.md`, `RULES.md`.
-**Última actualización:** 2026-09-30 (ME-07B v2, rebote).
+**Última actualización:** 2026-09-30 (ME-07B v2, §2.4–§2.5).
 
 ## Disposición y roles fijos
 
@@ -136,6 +136,36 @@ previo 6 usos); el ataque hace lo mismo con cada familia. Así la defensa
 alterna por resultados visibles, sin cuotas: foto seed 484 trampas / 675
 drops (Sierra defendiendo) y 443 / 733 (Puerto). Pendiente: switch, show,
 at the level, ICE, under y la respuesta de zona (§5).
+
+**ME-07B v2 §2.4 — lecturas frente al mejor cierre real.** Cada vía de
+tiro de la primera lectura del bloqueo y de la lectura del continuador se
+valora con la oposición que resultará de verdad (`bestContest`, misma regla
+R_contest que `resolveShotAttempt`). O1: `finalizar`, `pase_o5` (valor =
+la misma lectura del receptor proyectada), `pase_o3`, `triple_o1` (cierra
+el mejor de D1, que sale de la pantalla con su retraso, y D5 solo si el
+continuador ya está contenido), `parada_o1` y `flotadora_o1` (se detiene
+antes del protector: fuera de su alcance o justo antes del contacto; el
+tipo, tiro medio T03 o floater T02, lo decide la zona real, LAB-0.5) y
+`salida_segura`. O5 al recibir (`lectura_segunda_o5`): `finalizar_aro`,
+`flotadora` o `invertir_o3`, frente a D5 con **una sola trayectoria de
+drop** (retrocede al aro desde que empieza el roll) y D3 si ayuda; en la
+banda de empate decide su tendencia de tiro. Contenido y sin vía mejor,
+conserva la segunda entrada de ME-04. D3 decide la ayuda (`help_decision`)
+comparando la concesión con y sin ayuda en la recepción prevista; en la
+posesión de laboratorio el escenario sigue siendo una orden explícita y en
+el partido `rollHelpCall` (`auto` por defecto, `siempre`) la gobierna. Al
+organizar, `assignOrganizedRoles` (linked-run) compara creador (poseedor u
+O1) y bloqueador (O5 u O4) por proyección; los defensores siguen a su marca.
+
+**ME-07B v2 §2.5 — transición y faltas.** Sin ventaja, el portador sigue
+botando hasta un punto detrás del arco (`planTransitionPullUps`, a 2/1,25/
+0,5 m) y cada defensor cierra desde su posición real en el cruce; el triple
+tras bote (preparación T06) compite con el valor proyectado de organizar y
+la tendencia decide en la banda. Los contactos defensivos reales se
+adjudican con M07 del defensor (LAB-0.6): cierre legal con solape en una
+finalización o tiro (`resolucion_tiro`, falta de tiro), trampa cerrada y
+rebote por encima de la espalda (`puerta_falta_sin_tiro`, falta sin tiro).
+Pendiente: falta en ataque y carrera defensiva a cerrar tras el tiro.
 
 **Cobertura `auto` (ME-07A §4, superado en parte por ME-07B v2).** Antes de despachar el árbol, si
 `coverage: "auto"`, compara de forma pura (sin RNG) qué concede `drop`

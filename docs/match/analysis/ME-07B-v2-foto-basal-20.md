@@ -146,3 +146,44 @@ abiertas:** la trampa multiplica el rebote ofensivo (defensores fuera de
 sitio y sin carrera defensiva a cerrar, ver §2.1) y las pérdidas; la
 familia sigue siendo casi siempre PnR salvo con Sierra +3; solo existen
 dos coberturas. Nada de esto es objetivo numérico.
+
+## Tras §2.4 (lecturas y asignación de roles) y §2.5 (transición y faltas)
+
+Mismas 20 semillas y fotos, `npx tsx scripts/me07b-v2-baseline-20.ts` en el
+commit `7346e64`. Las huellas cambian respecto al basal porque T02/T03/M07
+pasan a activas (valor neutro 8 en el fixture y el +3/+5 también las
+incrementa); el resto de la configuración es la misma.
+
+| Métrica | seed Sierra | seed Puerto | +3 Sierra | +3 Puerto | +5 Sierra | +5 Puerto |
+|---|---:|---:|---:|---:|---:|---:|
+| Puntos · posesiones | 1.133 · 1.169 | 1.297 · 1.167 | 814 · 671 | 595 · 672 | 468 · 323 | 312 · 322 |
+| 2FGM/2FGA · 3FGM/3FGA | 275/607 · 159/560 | 335/624 · 178/643 | 253/462 · 80/246 | 131/302 · 101/368 | 119/192 · 63/179 | 49/124 · 65/197 |
+| Tipos: aro / floater / medio / triple | 421/107/79/560 | 246/337/41/643 | 251/211/0/246 | 70/91/141/368 | 148/44/0/179 | 52/0/72/197 |
+| FTM/FTA · PF | 106/135 · 119 | 93/143 · 111 | 68/90 · 45 | 30/45 · 68 | 41/49 · 20 | 19/23 · 40 |
+| OREB tras fallo de campo vivo | 215/570 | 222/640 | 106/271 | 102/349 | 82/146 | 55/164 |
+| Familias PnR / DHO | 1.011 / 214 | 1.088 / 180 | 452 / 222 | 752 / 34 | 169 / 139 | 383 / 3 |
+| Cobertura como defensa: trampa / drop | 564 / 704 | 353 / 872 | 161 / 625 | 216 / 458 | 124 / 262 | 98 / 210 |
+| 1ª lectura PnR: pase O5 / parada O1 / triple O1 | 644 / 81 / 28 | 577 / 44 / 3 | 399 / 0 / 12 | 383 / 144 / 74 | 106 / 0 / 0 | 172 / 74 / 13 |
+| 2ª lectura O5: aro / floater / inversión | 270 / 107 / 204 | 42 / 339 / 129 | 141 / 211 / 15 | 0 / 91 / 219 | 51 / 44 / 1 | 14 / 0 / 124 |
+| Triple del portador en transición elegido | 14 | 8 | 7 | 6 | 13 | 1 |
+| Creador = poseedor real al organizar | 745 / 1.233 | 632 / 1.276 | 329 / 679 | 455 / 788 | 132 / 312 | 244 / 388 |
+
+**Causas, no cuotas.** (1) El pase al continuador se valoraba como una
+finalización sin oposición aunque el pívot de drop estaba a 0,73 m del
+short roll y nunca contestaba; ahora cada vía del receptor y del manejador
+se valora frente al mejor cierre real (D5 con una sola trayectoria de drop,
+D1 que sale de la pantalla, D3 si ayuda), con la misma regla R_contest que
+resuelve el tiro. (2) D3 ya no ayuda siempre al continuador: compara lo que
+concede ayudando y sin ayudar. (3) El triple de transición se leía en el
+medio campo, donde la regla de profundidad nunca se cumplía. (4) Solo un
+cierre tardío podía ser falta; ahora cualquier contacto defensivo real se
+adjudica con M07 (LAB-0.6), y las faltas ya no dependen de las segundas
+oportunidades (70 → 230 PF y ≈100 → 278 FTA en los 11 seed).
+
+Parejas: 91 seed 109–99 (Puerto 19/82) → +3 131–121 (Puerto 49/65); 102
+seed 100–143 (Puerto 39/82) → +5 169–116 (Puerto 19/81). Con la misma
+semilla y órdenes, ahora sí cambian familia, lectura y tirador (Sierra +5
+elige la mano a mano 139/308). **Limitaciones abiertas:** la geometría de
+entrada sigue siendo única (4-out/1-in), así que la variedad nace de
+personal, reloj y respuestas defensivas, no de estructuras (§4); sin falta
+en ataque; OREB aún alto (35–38 % tras fallo vivo en seed).

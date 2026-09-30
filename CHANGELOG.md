@@ -47,9 +47,31 @@ decisiones duraderas viven en `docs/decisions/`, no aquí.
   por equipo conservado.
 - Semillas naturales de cuatro pruebas (bocina ×2, dos prórrogas/guardián,
   tapón) y dos huellas de regresión recalculadas con causa documentada.
-- **Pendiente**: §2.4–§2.5, coberturas switch/show/ICE/under/at the level, respuesta defensiva «cerrar» tras el tiro
-  (probada y retirada: eliminaba la única fuente natural de faltas),
-  faltas y libres naturales, §§3–7 completos. ME-07B no está terminada.
+- **§2.4 Roles.** Al organizar, creador (O1) y bloqueador (O5/O4) se
+  asignan entre jugadores reales con la misma proyección en seco del
+  selector de familia; los defensores siguen a su marca (sin cambio de
+  emparejamiento instantáneo). Foto seed: el poseedor real crea 745/1.233
+  veces (antes 34/1.182).
+- **§2.4 Lecturas.** O5 lee aro, floater o inversión frente al mejor
+  cierre real (D5 con una sola trayectoria de drop, que antes nunca
+  contestaba al continuador, y D3); O1 añade el tiro parado (tiro medio o
+  floater) y su triple cuenta el cierre de D1; D3 decide si ayuda al
+  continuador comparando concesiones (orden `rollHelpCall`, «no dejar
+  tirador de esquina»). Nuevos tipos de tiro `floater` (T02) y `mid_range`
+  (T03), LAB-0.5; T02/T03 activas con relleno neutro 8.
+- **§2.5 Transición.** El triple del portador se lee en su punto real de
+  tiro tras la carrera con balón, con el cierre desde posiciones reales, y
+  compite con el valor proyectado de organizar (antes se leía en el medio
+  campo y nunca existía): 14 y 8 elegidos en la foto seed.
+- **§2.5 Faltas.** Contactos defensivos reales —cierre legal con solape,
+  trampa cerrada, rebote por encima de la espalda— se adjudican con M07
+  (Disciplina, activa con relleno neutro 8; LAB-0.6). Foto seed: 70 → 230
+  PF y ≈100 → 278 FTA; ya no dependen de las segundas oportunidades.
+- **Pendiente**: coberturas switch/show/ICE/under/at the level, falta en
+  ataque, respuesta defensiva «cerrar» tras el tiro (probada y retirada en
+  v2-1; OREB tras fallo vivo aún 35–38 %), §§3–7 completos (gramática,
+  estructuras, libro, inventario, 15 atributos candidatos restantes, UI de
+  Ataque/Defensa/Libro, plan manual). ME-07B no está terminada.
 
 ## ME-07B — Cierre de ME-07A y motor táctico integrado (en curso, sin fusionar)
 

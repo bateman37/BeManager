@@ -5,7 +5,7 @@
 **Debe leerse cuando:** vayas a activar una nueva capacidad o a calibrar un coeficiente existente.
 **No cubre:** las 45 capacidades candidatas completas del catálogo (ver `docs/match/reference/BeManager-capitulo-atributos-y-motor-v2.md` §2.2–2.4).
 **Documentos relacionados:** `ACTIONS.md`, `docs/decisions/ADR-0004-detailed-engine-analytic-timing.md`.
-**Última actualización:** 2026-09-30 (ME-07B v2, rebote).
+**Última actualización:** 2026-09-30 (ME-07B v2, §2.4–§2.5).
 
 ## 27 capacidades activas (de 45 candidatas)
 
@@ -230,6 +230,23 @@ El tramo enlazado no activa capacidades nuevas ni coeficientes nuevos:
   una trampa desde drop») queda superado: D5 sale al empezar a prepararse
   la pantalla; con un D5 lento (F04/M01/M05/T22 mínimos) la trampa sigue
   siendo no elegible (`me07a.test.ts`).
+
+## ME-07B v2 §2.4–§2.5: T02, T03 y M07 activas; LAB-0.5 y LAB-0.6
+
+Catálogo activo: 30 capacidades (27 + T02, T03, M07). Perfiles persistidos
+sin ellas reciben el valor neutro 8 (`NEUTRAL_BACKFILL_RATINGS`, mismo
+patrón que M09); el fixture las declara 8 en las tres plantillas y el
+incremento +1/+3/+5 también las alcanza.
+
+- **T02 Floater:** acierto del tiro `floater` (zona 2–4,5 m, preparación de
+  finalización cercana), base LAB-0.5 0,48. Solo cuando el jugador suelta
+  antes del protector de aro; T01 sigue siendo la finalización pegada al aro.
+- **T03 Tiro medio:** acierto del tiro `mid_range` (4,5 m–arco), base 0,42;
+  preparación tras bote por T06 sin segundo premio de acierto.
+- **M07 Disciplina:** riesgo de que un contacto defensivo real sea falta
+  (LAB-0.6: finalización 0,12, tiro exterior 0,03, trampa 0,07, rebote
+  0,06; −0,008 por punto; [0,01; 0,35]). No cambia llegadas, alcance ni
+  acierto. Prueba discriminante en `me07b-v2-fouls.test.ts`.
 
 ## Editor de equilibrio
 

@@ -272,3 +272,26 @@ Siguiente paso: §2.4 (lecturas del receptor: extra pass, media distancia
 T03, floater T02, re-screen, conservar), §2.5 (transición y faltas de
 contacto; volver a introducir «cerrar» tras el tiro), switch como tercera
 cobertura; después la gramática de §3.
+
+### Sesión v2-2 — 2026-09-30 (en curso)
+
+**Base:** continúa `claude/me-07b-v2-capitulo-tactico` y la **PR #11 Draft**.
+
+#### Hecho y verificado (con commits)
+1. `635a66d` — **§2.4 roles**: `assignOrganizedRoles` asigna creador y
+   bloqueador por proyección en seco; defensores siguen a su marca. Foto
+   seed: el poseedor real crea 745/1.233 (antes 34/1.182).
+2. `2e6b62f` + `8bb8bf8` — **§2.4 lecturas**: O5 lee aro/floater/inversión
+   y O1 añade tiro parado, todo frente al mejor cierre real (D5 con una sola
+   trayectoria de drop, D1, D3); D3 decide la ayuda comparando concesiones
+   (`rollHelpCall`); T02/T03 activas con floater/tiro medio (LAB-0.5).
+3. `e75641c` + `7346e64` — **§2.5**: triple del portador en transición en su
+   punto real de tiro (14 y 8 elegidos en seed, antes 0); faltas por contacto
+   real con M07 activa (LAB-0.6): 70 → 230 PF, ≈100 → 278 FTA en los 11 seed.
+4. Documentación: `ACTIONS`, `CAPABILITIES`, `AUDIT`, `CHANGELOG`, matriz y
+   análisis de la foto (`ME-07B-v2-foto-basal-20.md`, sección §2.4–§2.5).
+
+#### Decisión sobre «cerrar tras el tiro» (retirada en v2-1)
+No se reintroduce todavía: su efecto medido en v2-1 sobre OREB fue casi nulo
+y su único daño (0 faltas) desaparece porque las faltas ya no dependen de la
+segunda oportunidad. OREB tras fallo vivo en seed: 215/570 y 222/640.
