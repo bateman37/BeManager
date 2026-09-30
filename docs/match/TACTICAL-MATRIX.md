@@ -5,7 +5,7 @@
 **Debe leerse cuando:** vayas a implementar, probar o declarar jugable cualquier táctica de ME-07B.
 **No cubre:** el diseño de cada táctica (ver `reference/BeManager-capitulo-tacticas-integradas-al-motor-v1.md`) ni el detalle del árbol ya implementado (ver `ACTIONS.md`).
 **Documentos relacionados:** `ACTIONS.md`, `AUDIT.md`, `docs/prompts/implementation/ME-07B-v2-capitulo-tactico-y-20-auditorias.md`, `docs/prompts/implementation/ME-07B-PROGRESS.md`.
-**Última actualización:** 2026-09-30 (ME-07B v2, sesión v2-2: §2.4–§2.5).
+**Última actualización:** 2026-09-30 (ME-07B v2, sesión v2-2: §2.4–§2.5 y coberturas §5).
 
 ## Reglas de estado
 
@@ -155,13 +155,13 @@ auditoría** · **Prueba** · **Estado**. «—» = no existe todavía.
 | Deny | Receptores | `negar_primera_salida` | DHO | D3 persigue apretado | — | idem | `me06` | parcial: solo en DHO |
 | Top-lock | Receptores | — | — | — | — | — | — | pendiente |
 | Criterio de closeout | Receptores | — | — | — | — | — | — | pendiente |
-| Drop | Cobertura | `coverage` | Bloqueo directo | D5 retrocede al aro desde el roll (una sola trayectoria) y contesta al receptor; no sale al tiro parado mientras el roll no está contenido (§2.4) | — | `seleccion_cobertura` | `me02`, `me04b`, `me07b-v2-reads.test.ts` | parcial: compite con trampa en `auto`; sin at the level/profundidad configurable |
+| Drop | Cobertura | `coverage` | Bloqueo directo | D5 retrocede al aro desde el roll (una sola trayectoria) y contesta al receptor; no sale al tiro parado mientras el roll no está contenido (§2.4) | Plan base ante empate o cobertura no aplicable | `seleccion_cobertura` | `me02`, `me04b`, `me07b-v2-reads.test.ts` | parcial: compite con cinco coberturas en `auto`; sin profundidad configurable |
 | At the level | Cobertura | — | — | — | — | — | — | pendiente |
-| Show / hedge | Cobertura | — | — | — | — | — | — | pendiente |
+| Show / hedge | Cobertura | `coverage=show` | Bloqueo directo | D5 sale delante del punto de uso (M01/M05, T22) y vuelve al aro con el aviso M09 cuando D1 supera la pantalla; D3 decide la ayuda al roll | Salida segura | `show_committed`, `show_recovery`, `lectura_show`, `seleccion_cobertura` | `me07b-v2-switch-show.test.ts` | parcial: elegido en `auto` (foto seed 48/139); sin `/lab` recorrido en v2-2 |
 | Trap | Cobertura | `coverage=trampa` | Bloqueo directo | D1+D5 al balón, D3 low man, D4 rota; contacto de la trampa cerrada puede ser falta sin tiro (M07, §2.5) | Recuperar | `lectura_trampa`, `seleccion_cobertura`, `puerta_falta_sin_tiro` | `me02`, `me07b-v2-coverage.test.ts`, `me07b-v2-fouls.test.ts` | parcial: elegible y elegida en `auto` desde la preparación (§2.3); sin lugar/disparador configurable |
-| Switch | Cobertura | — | — | — | — | — | — | pendiente |
-| ICE lateral | Cobertura | — | — | — | — | — | — | pendiente |
-| Under | Cobertura | — | — | — | — | — | — | pendiente |
+| Switch | Cobertura | `coverage=cambio` | Bloqueo directo | D5 canta y sale a la altura del bloqueo (M01/M05, T22), D1 se queda con el bloqueador (M09, T23); O1 lee frente al pívot; emparejamiento cambiado persiste en la posesión | Salida segura | `switch_committed`, `lectura_cambio`, `seleccion_cobertura` | `me07b-v2-switch-show.test.ts` | parcial: elegido en `auto` (foto seed 40/61); sin scram/recuperar tras el desajuste ni `/lab` |
+| ICE lateral | Cobertura | `coverage=ice` | Solo pantalla lateral (`isLateralScreenSpot`) | — (no hay bloqueo lateral en el ataque todavía) | Ante bloqueo central: no elegible, juega drop | `coverage_not_applicable` (`requested`/`applied`), `coverage_ice_central_not_eligible` | `me07b-v2-switch-show.test.ts` (negación central) | pendiente: solo la incompatibilidad «ICE central no elegible» (vista en `/lab`, semilla 92); sin ejecución |
+| Under | Cobertura | `coverage=por_debajo` | Bloqueo directo | D1 pasa entre el bloqueador y su defensor sin retraso: niega el dos contra uno del roll y contesta la entrada; el cierre del triple rodea al bloqueador y no contesta si aún no lo ha rodeado al soltar | — | `screen_navigated.route`, `lectura_bloqueo_o1` (`d1CloseoutMarginSeconds`, `d1WallsDrive`) | `me07b-v2-switch-show.test.ts` | parcial: elegido en `auto` (foto seed 125/55); `/lab` semilla 92 recorrida en `85725d6`; el ataque aún no lo anticipa al elegir familia |
 | Respuesta de zona al bloqueo | Cobertura | — | — | — | — | — | — | pendiente |
 
 ## Defensa — ayudas, reparación y tras tiro

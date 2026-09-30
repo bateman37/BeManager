@@ -134,8 +134,26 @@ se combina con lo que esa defensa ya ha concedido de verdad con esa
 cobertura en el partido (`blendProjectionWithObservation`, LAB-0.4, peso
 previo 6 usos); el ataque hace lo mismo con cada familia. Así la defensa
 alterna por resultados visibles, sin cuotas: foto seed 484 trampas / 675
-drops (Sierra defendiendo) y 443 / 733 (Puerto). Pendiente: switch, show,
-at the level, ICE, under y la respuesta de zona (§5).
+drops (Sierra defendiendo) y 443 / 733 (Puerto).
+
+**ME-07B v2 §5 — cambio, show, por debajo e ICE.** `auto` compite entre
+seis coberturas con la misma proyección en seco y la misma mezcla con lo
+observado; una concesión proyectada idéntica a la de drop conserva drop.
+*Cambio*: D5 canta (M01/M05) y sale a la altura del bloqueo (T22), D1 se
+queda con el bloqueador (aviso M09, T23); O1 lee frente al pívot
+(`lectura_cambio`) y el emparejamiento cambiado persiste en la posesión.
+*Show*: D5 sale delante del punto de uso y vuelve al aro cuando D1 supera
+la pantalla (M09); ventana del roll mientras vuelve (`lectura_show`).
+*Por debajo*: D1 pasa entre el bloqueador y su defensor sin ser bloqueado;
+sin retraso no hay dos contra uno (el pase al roll sigue la regla de drop
+con retraso nulo) y D1 contesta la entrada si ya espera en su punto; para
+cerrar el triple de O1 tiene que rodear al bloqueador y, si al soltar aún
+no lo ha rodeado, no contesta (`d1CloseoutMarginSeconds`, `d1WallsDrive`
+en `lectura_bloqueo_o1`). *ICE*: solo elegible con pantalla lateral; ante
+el bloqueo central (el único que se arma hoy) no es elegible
+(`coverage_ice_central_not_eligible`) y la orden manual juega drop con el
+hecho `coverage_not_applicable`. Pendiente: ICE ejecutable (bloqueo
+lateral), at the level y la respuesta de zona.
 
 **ME-07B v2 §2.4 — lecturas frente al mejor cierre real.** Cada vía de
 tiro de la primera lectura del bloqueo y de la lectura del continuador se

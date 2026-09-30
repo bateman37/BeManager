@@ -230,6 +230,11 @@ El tramo enlazado no activa capacidades nuevas ni coeficientes nuevos:
   una trampa desde drop») queda superado: D5 sale al empezar a prepararse
   la pantalla; con un D5 lento (F04/M01/M05/T22 mínimos) la trampa sigue
   siendo no elegible (`me07a.test.ts`).
+- **ME-07B v2 §5 (coberturas):** cambio, show y por debajo no añaden
+  parámetros; consultan capacidades ya activas en su tarea: M01/M05
+  (reconocer la pantalla al prepararse), M09 (aviso entre D1 y D5 en cambio
+  y show), T22/T23 (llegada al perímetro y al aro), F04/F03 (desplazamiento
+  lateral y frenada del cierre de D1 que rodea al bloqueador en el under).
 
 ## ME-07B v2 §2.4–§2.5: T02, T03 y M07 activas; LAB-0.5 y LAB-0.6
 

@@ -118,7 +118,14 @@ cerró, `boxesOut` si él cerró, y sus T19/F05/T20 consultados. Motivos
 `seleccion_cobertura` (§2.3) añade la concesión proyectada, la rama
 prevista de la trampa, `stealProbability`, llegadas de D5/pase y la
 mezcla con lo observado (`observedUses`, `observedPoints`,
-`blendedValue`). **§2.6:** `result.summary.shots` enlaza cada FGA a la
+`blendedValue`); desde §5 compiten `drop`, `trampa`, `cambio`, `show`,
+`por_debajo` e `ice` (motivos `coverage_tied_base_kept` si su concesión es
+idéntica a la de drop y `coverage_ice_central_not_eligible`). Nuevos puntos
+`lectura_cambio` y `lectura_show` (motivos `read_value_higher/lower`,
+`read_option_not_viable`) y hechos `switch_committed`, `show_committed`,
+`show_recovery` y `coverage_not_applicable` (`requested`, `applied`,
+`lateral`); `screen_navigated.detail.route = "por_debajo"` en el under.
+**§2.6:** `result.summary.shots` enlaza cada FGA a la
 familia elegida antes que él en su fase y a la última decisión de
 lectura/entrada anterior (`causingDecision` con id, punto, opción,
 instante y `factLink`), con tirador real, posición e instante; categorías

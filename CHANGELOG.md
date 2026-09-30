@@ -75,7 +75,18 @@ decisiones duraderas viven en `docs/decisions/`, no aquí.
   que deja; nadie juega fuera de un rol declarado. Si ni así hay relevo, el
   guardián sigue explicándolo (queda 1 de 60: los cuatro aleros declarados
   de Puerto excluidos; decisión requerida en el progreso).
-- **Pendiente**: coberturas switch/show/ICE/under/at the level, falta en
+- **§5 Coberturas.** `auto` compite entre drop, trampa, cambio, show, por
+  debajo e ICE con la misma proyección en seco. Cambio: D5 canta y sale a
+  la altura del bloqueo, D1 se queda con el bloqueador y el desajuste
+  persiste en la posesión. Show: D5 sale y vuelve cuando D1 supera la
+  pantalla. Por debajo: D1 pasa entre el bloqueador y su defensor; niega
+  roll y penetración, pero el cierre del triple tiene que rodear al
+  bloqueador y llega tarde (margen medio −0,60 s → +0,27 s en la semilla
+  92; O1 elige triple 6 → 120 veces). ICE: no elegible ante el bloqueo
+  central (orden manual → drop con el motivo); el ICE ejecutable espera al
+  bloqueo lateral. Foto seed, coberturas de Sierra defendiendo: trampa 349,
+  drop 757, por debajo 125, cambio 40, show 48 (Puerto: 236/775/55/61/139).
+- **Pendiente**: ICE ejecutable y at the level, falta en
   ataque, respuesta defensiva «cerrar» tras el tiro (probada y retirada en
   v2-1; OREB tras fallo vivo aún 35–38 %), §§3–7 completos (gramática,
   estructuras, libro, inventario, 15 atributos candidatos restantes, UI de

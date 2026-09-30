@@ -295,3 +295,96 @@ cobertura; después la gramática de §3.
 No se reintroduce todavía: su efecto medido en v2-1 sobre OREB fue casi nulo
 y su único daño (0 faltas) desaparece porque las faltas ya no dependen de la
 segunda oportunidad. OREB tras fallo vivo en seed: 215/570 y 222/640.
+
+#### Hecho y verificado (con commits, continuación de v2-2)
+5. `25e0695` — **§3 primitivas**: lectura del receptor del roll y plan de
+   ayuda compartidos por drop/show (antes duplicados por familia).
+6. `f4fe5f8` — **§5 cambio y show** (commit de la sesión interrumpida; sus
+   documentos no se actualizaron entonces y se ponen al día aquí).
+7. `5cbb4a7` — **«Parada de guardián»: causa real y corrección.** No era un
+   defecto del trabajo de under/ICE en curso, sino de la rotación
+   `ME-04-ROT-1`: con las faltas de contacto de §2.5 las exclusiones suben a
+   ≈0,7 por partido y, si ningún suplente declaraba el rol del excluido, el
+   partido ordinario paraba por guardián. Reproducido: `f4fe5f8` limpio para
+   por guardián en 3 de 60 semillas naturales (10, 29, 54); el WIP lo hacía
+   en la 91 (foto seed, `me07b-v2-rebound.test.ts` en rojo) porque cambiaba
+   la secuencia. Semilla 91: se excluye PA09 (alero) con PA08 [2,3] en pista
+   como escolta y solo escoltas/bases/interiores en el banquillo. Ahora
+   (`ME-04-ROT-2`) un compañero en pista que declara el rol pasa a él y entra
+   el suplente del rol que deja; nadie juega fuera de un rol declarado.
+   Prueba pura nueva en `me04.test.ts`; la 91 termina `final` con el hecho
+   «PA08 pasa de escolta a alero y entra PA06».
+8. `85725d6` — **§5 por debajo (under) e ICE** (terminado desde el WIP, con
+   dos correcciones de fondo): (a) el WIP hacía **siempre viable** el pase al
+   roll en el under, al revés de su lógica (sin retraso de pantalla no hay
+   dos contra uno): ahora sigue la regla de drop con retraso nulo; (b) el
+   triple de O1 salía igual de contestado que por encima (0,5 en el 100 %:
+   el under solo quitaba opciones y dominaba). Ahora D1 pasa entre el
+   bloqueador y su defensor, contesta la entrada (`d1WallsDrive`) y, para
+   cerrar el triple, rodea al bloqueador; si al soltar aún no lo ha rodeado,
+   no contesta. Semilla 92 (Puerto por debajo vs drop, ataque bloqueo):
+   margen medio del cierre de D1 −0,60 s → +0,27 s, oposición del triple
+   0,5 → 0, O1 elige triple 6 → 120; Sierra 99 → 131 puntos. ICE: no
+   elegible ante el bloqueo central (`coverage_ice_central_not_eligible`);
+   la orden manual juega drop con `coverage_not_applicable`.
+9. Documentación (este commit): `ACTIONS`, `AUDIT`, `CAPABILITIES`,
+   `RULES`, `MODEL`, `CHANGELOG`, matriz.
+
+#### Pruebas realmente pasadas
+`npm run check` completo (lint + typecheck + 284 tests + docs:check +
+build) en `85725d6`.
+
+#### Foto de las 20 (`scripts/me07b-v2-baseline-20.ts`) en `85725d6`
+Las 20 terminan `final`, actas conciliadas. Frente a `f4fe5f8`:
+- Seed (11): coberturas de Sierra defendiendo trampa 349 / drop 757 / por
+  debajo 125 / cambio 40 / show 48 (antes 478/668/—/17/117); Puerto
+  236/775/55/61/139. PF 104 y 126 (antes 108 y 110: sin regresión a «0
+  faltas»). OREB tras fallo vivo 207/522 y 215/661 (antes 234/561 y
+  210/627). Puntos 1.317–1.307 (antes 1.146–1.199): más triples anotados de
+  Sierra (168/513 frente a 123/495) — pendiente de descomponer.
+- Sierra +5 (3): la familia de Sierra pasa a mano a mano 293 / PnR 17
+  (antes 119/213; con el WIP 20/319). **No es efecto del under** (la
+  proyección de familia es siempre contra drop): la mediana de la brecha
+  PnR–DHO es −0,012/−0,012/−0,001 por partido (antes −0,033/0,000/−0,001),
+  un empate de filo en el que cada partido se va entero a un lado. Defecto
+  abierto de §2.2 (selector sin banda ante empate proyectado).
+- 60 semillas naturales: guardián en 1 (la 39: los dos bases declarados de
+  Sierra excluidos). Ver decisión requerida.
+
+#### `/lab` real (PostgreSQL 16 + Chromium de Playwright) en `85725d6`
+`walk.cjs` (fuera del repo) sobre `npm run dev`: restaurar ambos equipos,
+semilla 92 con Puerto «Por debajo (under)» → 163–127, `final`, 110 hechos
+`screen_navigated` con `route=por_debajo`; semilla 92 con Puerto «ICE
+lateral» → 103–105, `final`, 118 `coverage_not_applicable`; auto/auto
+semilla 91 → 123–87, idéntico al script de dominio, coberturas trampa 191,
+show 8, cambio 5, por debajo 5, drop 4. Exportaciones `ME-07B-AUDIT-1`
+abiertas (~1 MB); el panel muestra «rotación ME-04-ROT-2».
+
+#### DECISIÓN REQUERIDA — exclusión sin nadie que declare su rol
+Con `ME-04-ROT-2` el guardián solo queda cuando **todos** los inscritos
+que declaran un rol están excluidos (1 de 60 semillas naturales; la
+plantilla de laboratorio declara dos bases por equipo). Opciones: (a)
+dejarlo así (el guardián lo explica, partido sin ganador); (b) permitir un
+suplente fuera de rol declarado, con criterio a decidir (menos minutos,
+rol vecino…); (c) ampliar los roles declarados de la plantilla. No se
+inventa: queda para Dennis. Observación relacionada: las faltas se
+concentran en los aleros (D3/O3: ayuda al roll y segunda oportunidad).
+
+#### No verificado / pendiente
+- ICE ejecutable (necesita bloqueo lateral), at the level, respuesta de
+  zona; scram/recuperar tras el desajuste del cambio.
+- El ataque no anticipa under/cambio/show al elegir familia (proyecta contra
+  drop).
+- Resto de §3 (ficha de libro, estructuras), §4–§7 completos. Ninguna fila
+  de la matriz es «jugable».
+
+#### Reanudar
+```bash
+cd BeManager && git fetch origin && git checkout claude/me-07b-v2-capitulo-tactico && git pull
+npm ci && npm run check
+npx tsx scripts/me07b-v2-baseline-20.ts
+```
+Siguiente paso: banda de empate del selector de familia (§2.2, Sierra +5),
+at the level, después la ficha de libro de §3 (fase/condición, colocación,
+roles, primera acción, lecturas, seguridad) sobre las primitivas ya
+compartidas.
