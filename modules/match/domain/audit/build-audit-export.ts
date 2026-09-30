@@ -19,7 +19,9 @@ import type { PlayerProfile } from "../players/player-profile";
  * no reinterpreta ni reescribe un `.json` ya exportado con
  * `"ME-06-AUDIT-1"`.
  */
-export const AUDIT_SCHEMA_VERSION = "ME-07A-AUDIT-1";
+// ME-07B v2 §6: nuevo punto `disputa_rebote` (llegada bruta/efectiva y
+// cierres con T19/F05 del cerrador). No reinterpreta `ME-07A-AUDIT-1`.
+export const AUDIT_SCHEMA_VERSION = "ME-07B-AUDIT-1";
 
 export interface AuditExportRun {
   readonly schemaVersion: typeof AUDIT_SCHEMA_VERSION;

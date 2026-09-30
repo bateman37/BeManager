@@ -143,7 +143,9 @@ describe("runPossession: HF-002 bug 2 (balón vivo hasta control real)", () => {
   // 3.3): las semillas concretas que alcanzaban cada rama cambian, pero la
   // rama en sí sigue siendo alcanzable (recalculadas aquí, no eliminadas).
   it("un tapón deja el balón suelto, no muerto en el aro", () => {
-    const state = runPossession(buildInput("drop_con_ayuda", 10));
+    // Semilla recalculada en ME-07B v2 §2.1 (el rebote con cierre real y la
+    // caída del tirador cambian qué semillas llegan a un tapón).
+    const state = runPossession(buildInput("drop_con_ayuda", 66));
     expect(state.terminal!.kind).toBe("blocked_shot_live_ball");
     expect(state.ball.status).toBe("loose");
     expect(state.ball.holderId).toBeNull();

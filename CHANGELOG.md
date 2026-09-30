@@ -3,6 +3,36 @@
 Formato libre en español, orden cronológico inverso. Los motivos de
 decisiones duraderas viven en `docs/decisions/`, no aquí.
 
+## ME-07B v2 — Capítulo táctico íntegro y reparación causal (en curso, PR #11 Draft, sin fusionar)
+
+- Encargo vigente guardado en
+  `docs/prompts/implementation/ME-07B-v2-capitulo-tactico-y-20-auditorias.md`
+  y diagnóstico de 20 auditorías en
+  `docs/match/analysis/ME-07A-diagnostico-20-auditorias.md`. Rama nueva
+  `claude/me-07b-v2-capitulo-tactico` desde `main` (`7b7eedd`, PR #10 ya
+  fusionada); PR #11 Draft.
+- Foto basal de las 20 auditorías recreada desde el `GameInput`
+  (`scripts/me07b-v2-baseline-20.ts`, cuadro en
+  `docs/match/analysis/ME-07B-v2-foto-basal-20.md`): mismos marcadores y
+  tiros que el anexo del informe en los 20 partidos.
+- **§2.1 Rebote.** Corrige el defecto de ME-01 (el retraso del cierre
+  valía siempre cero y la ventana de vuelo usaba la llegada sin ajustar):
+  un cierre legal y próximo —cerrador más cerca del aro que su rival y con
+  contacto alcanzable durante el vuelo y antes de que el rival llegue— suma
+  `closeoutReboundDelaySeconds(T19, F05)` **del cerrador** a la llegada **del
+  rival**; pool, instante de control, hecho (`boxOuts`) y auditoría usan la
+  llegada efectiva. El tirador no cierra mientras completa su gesto y cae
+  de su salto antes de ir al rebote (`shooterLandingSeconds(F06)`, nueva
+  hipótesis LAB-0.4). Efecto medido en la foto seed: OREB tras fallo de
+  campo vivo 362/537 → 167/518 (Sierra) y 374/617 → 103/534 (Puerto); casi
+  todo el efecto viene de la caída del tirador, no del retraso del cierre.
+- Auditoría versionada a `ME-07B-AUDIT-1` con el punto `disputa_rebote`.
+- Semillas naturales de cuatro pruebas (bocina ×2, dos prórrogas/guardián,
+  tapón) y dos huellas de regresión recalculadas con causa documentada.
+- **Pendiente**: §2.2–§2.6, respuesta defensiva «cerrar» tras el tiro
+  (probada y retirada: eliminaba la única fuente natural de faltas),
+  faltas y libres naturales, §§3–7 completos. ME-07B no está terminada.
+
 ## ME-07B — Cierre de ME-07A y motor táctico integrado (en curso, sin fusionar)
 
 - Prompt guardado íntegro en

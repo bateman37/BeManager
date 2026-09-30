@@ -60,6 +60,7 @@ import {
   DEEP_CONTINUATION_SPOT,
   m09CoordinationLatencySeconds,
 } from "../lab/lab-0-2-parameters";
+import { shooterLandingSeconds } from "../lab/lab-0-4-parameters";
 import { contestReachMeters, evaluateContestLevel, FIRST_READ_TIE_BAND_POINTS } from "../lab/lab-0-3-parameters";
 import type { TerminalOutcome, BallState } from "./match-state";
 import type { FactPhase, FactKind } from "./fact";
@@ -69,8 +70,11 @@ import {
   seedReboundLanding,
   resolveRebound,
   pickTipWinnerByT20,
+  effectiveReboundArrival,
+  type ReboundBoxOutGeometry,
   type ReboundCandidate,
   type ReboundOutcome,
+  type ReboundTrace,
 } from "./resolvers/rebound-resolver";
 import { resolvesTurnoverUnderPressure } from "./resolvers/turnover-resolver";
 import { planSecondEntry, type SecondEntryPlan } from "./second-entry-read";
@@ -2719,6 +2723,8 @@ function resolveShotAttempt(ctx: CoreContext, args: ShotAttemptArgs): Possession
     contesterId: args.contesterId,
     shotOrigin: ctx.positions[args.shooterId]!,
     atSeconds: args.tReady + 0.05,
+    // Suelta en el vértice del salto (tReady) y el fallo se fija 0,05 s después.
+    shooterAirborneSeconds: Math.max(0, shooterLandingSeconds(player(ctx, args.shooterId).attributes.F06) - 0.05),
   });
 }
 
@@ -2832,8 +2838,9 @@ function assignReboundDuties(ctx: CoreContext, shooterSlot: string, tGesture: nu
 function buildReboundCandidates(
   ctx: CoreContext,
   landingPoint: Point2D,
-  closedOutPlayerId: string,
+  shooterId: string,
   atSeconds?: number,
+  shooterAirborneSeconds = 0,
 ): ReboundCandidate[] {
   // Modo enlazado: posiciones reales en el instante del fallo y sin los
   // atacantes que ya retornan por su encargo de balance.
@@ -2843,15 +2850,88 @@ function buildReboundCandidates(
   return ids.map((id) => {
     const profile = player(ctx, id);
     const from = ctx.linked && atSeconds !== undefined ? historyPositionAt(ctx, id, atSeconds) : ctx.positions[id]!;
-    const arrival = timeToReach(from, landingPoint, REBOUND_CANDIDATE_SPEED_MPS);
+    const arrival =
+      timeToReach(from, landingPoint, REBOUND_CANDIDATE_SPEED_MPS) + (id === shooterId ? shooterAirborneSeconds : 0);
     return {
       playerId: id,
+      teamId: isOffensivePlayer(id) ? "ataque" : "defensa",
+      position: from,
       arrivalTimeSeconds: arrival,
-      closedOut: id === closedOutPlayerId,
       t19: profile.attributes.T19,
       f05: profile.attributes.F05,
       t20: profile.attributes.T20,
+      canBoxOut: id !== shooterId,
     };
+  });
+}
+
+/** Geometría del cierre de rebote en el marco local del núcleo (ME-07B v2 §2.1). */
+const REBOUND_BOX_OUT_GEOMETRY: ReboundBoxOutGeometry = { hoop: ATTACKED_HOOP, speedMps: REBOUND_CANDIDATE_SPEED_MPS };
+
+/** Texto breve de los cierres para el relato (el detalle numérico va en el hecho). */
+function boxOutText(trace: ReboundTrace): string {
+  if (trace.boxOuts.length === 0) return "";
+  const parts = trace.boxOuts.map((b) => `${b.closerId} cierra a ${b.rivalId} (+${b.delaySeconds.toFixed(2)} s)`);
+  return ` Cierres: ${parts.join("; ")}.`;
+}
+
+function boxOutDetail(trace: ReboundTrace): Record<string, unknown> {
+  return {
+    boxOuts: trace.boxOuts.map((b) => ({
+      closer: b.closerId,
+      rival: b.rivalId,
+      contactSeconds: b.contactSeconds,
+      delaySeconds: b.delaySeconds,
+      closerT19: b.closerT19,
+      closerF05: b.closerF05,
+    })),
+  };
+}
+
+/**
+ * Punto de auditoría `disputa_rebote` (ME-07B v2 §2.1/§6): llegada bruta y
+ * efectiva de cada candidato, quién le cerró con qué T19/F05, si entró en la
+ * ventana de vuelo y quién controló. No consume azar.
+ */
+function auditReboundContest(
+  ctx: CoreContext,
+  atSeconds: number,
+  outcome: Exclude<ReboundOutcome, { kind: "out_of_bounds" }>,
+  winner: string,
+  factLinkKind: string,
+): void {
+  if (!ctx.audit.enabled) return;
+  const closedBy = new Map(outcome.trace.boxOuts.map((b) => [b.rivalId, b]));
+  const closing = new Map(outcome.trace.boxOuts.map((b) => [b.closerId, b]));
+  auditDecision(ctx, atSeconds, {
+    point: "disputa_rebote",
+    holderId: null,
+    participants: outcome.trace.arrivals.map((a) => a.playerId),
+    chosenOptionId: realId(ctx, winner),
+    factLinkKind,
+    options: outcome.trace.arrivals.map((a): AuditOptionRecord => {
+      const by = closedBy.get(a.playerId);
+      const closes = closing.get(a.playerId);
+      return {
+        id: realId(ctx, a.playerId),
+        status: a.playerId === winner ? "elegida" : "descartada_por_condicion",
+        reasonCode: by ? "rebound_boxed_out_by_rival" : a.inPool ? "rebound_arrival_in_window" : "rebound_arrival_outside_window",
+        values: {
+          rawArrivalSeconds: a.rawArrivalSeconds,
+          effectiveArrivalSeconds: a.effectiveArrivalSeconds,
+          inPool: a.inPool,
+          boxedOutBy: by ? realId(ctx, by.closerId) : null,
+          boxOutDelaySeconds: by ? by.delaySeconds : null,
+          closerT19: by ? by.closerT19 : null,
+          closerF05: by ? by.closerF05 : null,
+          boxesOut: closes ? realId(ctx, closes.rivalId) : null,
+          ownT19: player(ctx, a.playerId).attributes.T19,
+          ownF05: player(ctx, a.playerId).attributes.F05,
+          ownT20: player(ctx, a.playerId).attributes.T20,
+        },
+      };
+    }),
+    note: `${outcome.trace.boxOuts.length} cierre(s) legales y próximos; captura ${outcome.kind === "secured" ? "limpia" : "tras palmeo"}.`,
   });
 }
 
@@ -2867,6 +2947,11 @@ interface LiveReboundArgs {
   readonly contesterId: string;
   readonly shotOrigin: Point2D;
   readonly atSeconds: number;
+  /**
+   * Segundos, contados desde `atSeconds`, que el tirador sigue en el aire
+   * antes de poder ir al rebote (LAB-0.4). 0 para libres (sin salto).
+   */
+  readonly shooterAirborneSeconds?: number;
 }
 
 /**
@@ -2877,8 +2962,8 @@ interface LiveReboundArgs {
 function resolveLiveReboundAfterMiss(ctx: CoreContext, args: LiveReboundArgs): PossessionCoreResult {
   if (ctx.linked) return resolveLinkedRebound(ctx, args);
   const seed = seedReboundLanding(ATTACKED_HOOP, args.shotOrigin, args.shotType, ctx.rng);
-  const candidates = buildReboundCandidates(ctx, seed.landingPoint, args.contesterId);
-  const reboundOutcome = resolveRebound(seed, candidates, ctx.rng);
+  const candidates = buildReboundCandidates(ctx, seed.landingPoint, args.shooterId, undefined, args.shooterAirborneSeconds);
+  const reboundOutcome = resolveRebound(seed, candidates, ctx.rng, REBOUND_BOX_OUT_GEOMETRY);
 
   if (reboundOutcome.kind === "out_of_bounds") {
     return finalize(
@@ -2896,10 +2981,12 @@ function resolveLiveReboundAfterMiss(ctx: CoreContext, args: LiveReboundArgs): P
       "concedido",
       "rebound_secured",
       [reboundOutcome.playerId],
-      isOffensive
+      (isOffensive
         ? `${reboundOutcome.playerId} captura el rebote ofensivo y continúa la posesión.`
-        : `${reboundOutcome.playerId} asegura el rebote defensivo.`,
+        : `${reboundOutcome.playerId} asegura el rebote defensivo.`) + boxOutText(reboundOutcome.trace),
+      boxOutDetail(reboundOutcome.trace),
     );
+    auditReboundContest(ctx, args.atSeconds + 1, reboundOutcome, reboundOutcome.playerId, "rebound_secured");
     if (isOffensive) {
       ctx.possessionPhase += 1;
       return resolveOffensiveReboundContinuation(ctx, reboundOutcome.playerId, args.atSeconds + 1);
@@ -2913,7 +3000,16 @@ function resolveLiveReboundAfterMiss(ctx: CoreContext, args: LiveReboundArgs): P
 
   // loose_ball_tip: solo entre quienes realmente llegan (bug 1.4 corregido).
   const winner = pickTipWinner(ctx, reboundOutcome);
-  event(ctx, args.atSeconds + 1, "concedido", "rebound_contested", [winner], `${winner} controla el balón dividido tras el palmeo.`);
+  event(
+    ctx,
+    args.atSeconds + 1,
+    "concedido",
+    "rebound_contested",
+    [winner],
+    `${winner} controla el balón dividido tras el palmeo.` + boxOutText(reboundOutcome.trace),
+    boxOutDetail(reboundOutcome.trace),
+  );
+  auditReboundContest(ctx, args.atSeconds + 1, reboundOutcome, winner, "rebound_contested");
 
   if (isOffensivePlayer(winner)) {
     ctx.possessionPhase += 1;
@@ -2936,8 +3032,8 @@ function resolveLiveReboundAfterMiss(ctx: CoreContext, args: LiveReboundArgs): P
  */
 function resolveLinkedRebound(ctx: CoreContext, args: LiveReboundArgs): PossessionCoreResult {
   const seed = seedReboundLanding(ATTACKED_HOOP, args.shotOrigin, args.shotType, ctx.rng);
-  const candidates = buildReboundCandidates(ctx, seed.landingPoint, args.contesterId, args.atSeconds);
-  const reboundOutcome = resolveRebound(seed, candidates, ctx.rng);
+  const candidates = buildReboundCandidates(ctx, seed.landingPoint, args.shooterId, args.atSeconds, args.shooterAirborneSeconds);
+  const reboundOutcome = resolveRebound(seed, candidates, ctx.rng, REBOUND_BOX_OUT_GEOMETRY);
 
   if (reboundOutcome.kind === "out_of_bounds") {
     event(
@@ -2957,7 +3053,9 @@ function resolveLinkedRebound(ctx: CoreContext, args: LiveReboundArgs): Possessi
   }
 
   const winner = reboundOutcome.kind === "secured" ? reboundOutcome.playerId : pickTipWinner(ctx, reboundOutcome);
-  const arrival = candidates.find((c) => c.playerId === winner)?.arrivalTimeSeconds ?? 0;
+  // ME-07B v2 §2.1: el control llega con la llegada efectiva (retrasada si
+  // un rival le cerró), no con la carrera libre.
+  const arrival = effectiveReboundArrival(reboundOutcome.trace, winner) ?? 0;
   const tControl = args.atSeconds + Math.max(1, arrival);
   setArrival(ctx, winner, tControl, seed.landingPoint, args.atSeconds);
   const offensive = isOffensivePlayer(winner);
@@ -2967,12 +3065,20 @@ function resolveLinkedRebound(ctx: CoreContext, args: LiveReboundArgs): Possessi
     "concedido",
     reboundOutcome.kind === "secured" ? "rebound_secured" : "rebound_contested",
     [winner],
-    reboundOutcome.kind === "secured"
+    (reboundOutcome.kind === "secured"
       ? offensive
         ? `${winner} captura el rebote ofensivo (el tiro tocó aro).`
         : `${winner} asegura el rebote defensivo.`
-      : `${winner} controla el balón dividido tras el palmeo${offensive ? " (rebote ofensivo)" : " (rebote defensivo)"}.`,
-    { offensive, touchedRim: true, landingPoint: seed.landingPoint },
+      : `${winner} controla el balón dividido tras el palmeo${offensive ? " (rebote ofensivo)" : " (rebote defensivo)"}.`) +
+      boxOutText(reboundOutcome.trace),
+    { offensive, touchedRim: true, landingPoint: seed.landingPoint, ...boxOutDetail(reboundOutcome.trace) },
+  );
+  auditReboundContest(
+    ctx,
+    tControl,
+    reboundOutcome,
+    winner,
+    reboundOutcome.kind === "secured" ? "rebound_secured" : "rebound_contested",
   );
   return finalize(
     ctx,

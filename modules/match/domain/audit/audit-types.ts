@@ -38,7 +38,9 @@ export type AuditDecisionPoint =
   | "seleccion_cobertura"
   | "seleccion_orden_sin_balon"
   // ME-07A §3.2: transición con tiro de tres del propio portador.
-  | "lectura_transicion";
+  | "lectura_transicion"
+  // ME-07B v2 §2.1: disputa del rebote con cierres legales y próximos.
+  | "disputa_rebote";
 
 /**
  * Motivo estructurado y estable de cada opción. Uno por causa real del
@@ -117,7 +119,11 @@ export type AuditReasonCode =
   // ME-07A §3.2: triple del portador en transición.
   | "transition_three_point_window_open"
   | "transition_three_point_window_closed"
-  | "transition_three_point_ineligible_skill";
+  | "transition_three_point_ineligible_skill"
+  // ME-07B v2 §2.1: disputa del rebote (llegada efectiva tras cierre).
+  | "rebound_boxed_out_by_rival"
+  | "rebound_arrival_in_window"
+  | "rebound_arrival_outside_window";
 
 export interface AuditOptionRecord {
   /** Identificador estable de la opción dentro de este punto (p. ej. "pase_o5", "finalizar"). */

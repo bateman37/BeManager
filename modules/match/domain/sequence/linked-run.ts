@@ -1750,13 +1750,15 @@ export abstract class LinkedRun {
       const p = this.profile(id);
       return {
         playerId: id,
+        teamId: this.teamOf.get(id)!,
+        position: this.positionAt(id, t0),
         arrivalTimeSeconds: timeToReach(this.positionAt(id, t0), ball, REBOUND_CANDIDATE_SPEED_MPS),
-        closedOut: false,
         t19: p.attributes.T19,
         f05: p.attributes.F05,
         t20: p.attributes.T20,
       };
     });
+    // Balón ya en el suelo: sin vuelo no hay cierre de rebote (ME-07B v2 §2.1).
     const outcome = resolveRebound({ landingPoint: ball, flightTimeSeconds: 0 }, candidates, this.rng);
     if (outcome.kind === "out_of_bounds") {
       this.guardianStop(t0, "balón suelto sin candidatos para recuperarlo.");

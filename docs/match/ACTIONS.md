@@ -5,7 +5,7 @@
 **Debe leerse cuando:** vayas a modificar `possession-core.ts` o a añadir una tercera acción táctica, otra cobertura u otra orden defensiva.
 **No cubre:** ninguna otra familia táctica (poste, zonas, todas las variantes de mano a mano) ni otras coberturas de bloqueo (switch, ICE/veer...): llegan en entregas posteriores (ver `docs/match/roadmap.md`). La transición de ME-03 no es una táctica nueva: solo decide si existe ventana y reutiliza las ejecuciones ya existentes (sección final).
 **Documentos relacionados:** `docs/match/reference/BeManager-capitulo-tacticas-integradas-al-motor-v1.md`, `CAPABILITIES.md`, `RULES.md`.
-**Última actualización:** 2026-09-30 (ME-07A).
+**Última actualización:** 2026-09-30 (ME-07B v2, rebote).
 
 ## Disposición y roles fijos
 
@@ -220,6 +220,14 @@ de la ventana de vuelo, o los más próximos si nadie llega dentro de ella:
 un balón que sigue en la cancha nunca se declara "fuera" solo porque nadie
 llegó a tiempo); el palmeo se decide por T20 únicamente entre esos
 candidatos reales, no entre los diez jugadores sin filtrar (HF-002 §1.4).
+**ME-07B v2 §2.1:** la llegada que decide ventana, primer optante e
+instante de control es la **efectiva**: un rival cerrado de forma legal y
+próxima llega más tarde (ver `CAPABILITIES.md`), y el tirador sale hacia
+el rebote al caer de su salto (LAB-0.4), sin cerrar a nadie durante su
+gesto. Los defensores todavía **no** reaccionan al tiro desplazándose a
+cerrar a los cargadores: una primera versión se probó y se retiró porque
+eliminaba la única fuente natural de faltas del fixture (faltas de tiro en la
+segunda oportunidad); queda pendiente junto a las faltas (§2.5).
 
 ## Falta ordinaria de tiro y libres
 

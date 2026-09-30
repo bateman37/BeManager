@@ -5,7 +5,7 @@
 **Debe leerse cuando:** vayas a activar una nueva capacidad o a calibrar un coeficiente existente.
 **No cubre:** las 45 capacidades candidatas completas del catálogo (ver `docs/match/reference/BeManager-capitulo-atributos-y-motor-v2.md` §2.2–2.4).
 **Documentos relacionados:** `ACTIONS.md`, `docs/decisions/ADR-0004-detailed-engine-analytic-timing.md`.
-**Última actualización:** 2026-09-30 (ME-07A).
+**Última actualización:** 2026-09-30 (ME-07B v2, rebote).
 
 ## 27 capacidades activas (de 45 candidatas)
 
@@ -202,6 +202,23 @@ El tramo enlazado no activa capacidades nuevas ni coeficientes nuevos:
   compromiso menos estricta, o posiciones defensivas iniciales más
   agresivas, si Dennis quiere que la trampa `auto` sea alcanzable desde el
   arranque de la posesión.
+
+## ME-07B v2 §2.1: T19/F05 llegan de verdad al rebote; LAB-0.4
+
+- **Defecto corregido:** `closeoutReboundDelaySeconds(T19, F05)` (LAB-0.1)
+  no llegaba nunca al resolvedor (retraso siempre cero). Ahora lo aplica un
+  **cerrador** a su **rival**: cerrador más cerca del aro que el rival en el
+  instante del fallo, contacto (distancia − 2 × 0,35 m, a la velocidad de
+  llegada al rebote) alcanzable durante el vuelo y antes de que el rival
+  llegue; uno a uno, rivales por orden de llegada
+  (`computeReboundBoxOuts`, `rebound-resolver.ts`). Subir T19/F05 del
+  cerrador alarga el retraso del rival; los del rival cerrado no cuentan.
+  Sin cierre (balón suelto en el suelo, sin vuelo) no hay efecto. Quien
+  lanza no puede iniciar un cierre mientras completa su gesto.
+- **LAB-0.4** (`lab-0-4-parameters.ts`): `shooterLandingSeconds(F06) =
+  √(2·jumpCeiling(F06)/g)`, [0,235; 0,335] s, neutro ≈ 0,289 s. El motor ya
+  suelta el tiro en el vértice del salto ejecutado; el tirador no sale hacia
+  el rebote hasta tocar el suelo. F06 no se suma a captura ni cierre.
 
 ## Editor de equilibrio
 

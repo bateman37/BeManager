@@ -5,7 +5,7 @@
 **Debe leerse cuando:** vayas a cambiar el comportamiento del motor en ME-07B v2 o a comparar una muestra nueva.
 **No cubre:** la interpretación completa del diagnóstico (ver `ME-07A-diagnostico-20-auditorias.md`) ni el diseño táctico.
 **Documentos relacionados:** `ME-07A-diagnostico-20-auditorias.md`, `docs/prompts/implementation/ME-07B-PROGRESS.md`.
-**Última actualización:** 2026-09-30 (ME-07B v2, sesión 1).
+**Última actualización:** 2026-09-30 (ME-07B v2, sesión 1, tras §2.1).
 
 ## Procedencia y fidelidad de la réplica
 
@@ -77,3 +77,44 @@ Cada fila nueva se añade con su commit; las anteriores no se reescriben.
 | Commit | Cambio | Efecto medido (mismas 20 semillas/fotos) |
 |---|---|---|
 | `7b7eedd` | Basal | Cuadro de arriba |
+| sesión v2-1 | §2.1 rebote: retraso real del cierre + tirador sin cierre durante su gesto + caída LAB-0.4 | Ver «Tras §2.1» |
+
+## Tras §2.1 (rebote), mismas 20 semillas y fotos
+
+Todos `final`, actas conciliadas. Descomposición medida en la foto seed
+(OREB tras fallo de campo vivo, Sierra / Puerto), activando las piezas en
+orden sobre el mismo código:
+
+| Variante | Sierra | Puerto | PF+FTA combinados |
+|---|---:|---:|---:|
+| Basal (retraso siempre 0) | 362/537 (67 %) | 374/617 (61 %) | 20 PF, 33 FTA |
+| Solo el retraso corregido, cierre simétrico (el tirador bajo el aro «cierra») | 505/603 (84 %) | 298/572 (52 %) | 24 PF, 36 FTA |
+| + el tirador no cierra durante su gesto | 336/528 (64 %) | 225/586 (38 %) | 26 PF, 37 FTA |
+| + defensores que corren a cerrar a los cargadores (**retirada**) | 335/527 | 246/605 | **0 PF, 0 FTA** |
+| + caída del tirador LAB-0.4 (sin la pieza retirada) = **commit** | 167/518 (32 %) | 103/534 (19 %) | 27 PF, 40 FTA |
+
+El defecto literal de §2.1 no explicaba por sí solo la anomalía (el
+encargo lo advertía): una vez corregido, el mayor contribuyente era que el
+tirador de una bandeja fallada «llegaba» al rebote desde el aro en el mismo
+instante del fallo. La respuesta defensiva «cerrar» se retiró porque dejaba
+el fixture sin ninguna falta natural (todas nacían de faltas de tiro en la
+segunda oportunidad); vuelve con §2.5.
+
+| Métrica | seed Sierra | seed Puerto | +3 Sierra | +3 Puerto | +5 Sierra | +5 Puerto |
+|---|---:|---:|---:|---:|---:|---:|
+| Puntos | 1.255 | 1.380 | 866 | 715 | 465 | 337 |
+| Posesiones / s por posesión | 1.181 / 11,6 | 1.178 / 11,2 | 623 / 10,4 | 624 / 13,6 | 316 / 10,0 | 317 / 13,5 |
+| Fases organizado / 2ª oport. / temprana | 1.251 / 127 / 4 | 1.227 / 75 / 130 | 626 / 69 / 38 | 798 / 85 / 0 | 318 / 49 / 22 | 410 / 44 / 0 |
+| 2FGM/2FGA · 3FGM/3FGA | 514/946 · 70/237 | 584/1.054 · 67/205 | 334/527 · 54/120 | 38/69 · 203/579 | 187/288 · 24/56 | 52/90 · 73/243 |
+| FTM/FTA · PF | 17/24 · 11 | 11/16 · 16 | 36/44 · 30 | 30/46 · 28 | 19/22 · 13 | 14/19 · 13 |
+| OREB tras fallo de campo vivo | 167/518 | 103/534 | 81/227 | 120/303 | 57/119 | 61/158 |
+| OREB tras último libre fallado | 0/5 | 0/3 | 1/6 | 0/11 | 0/0 | 0/4 |
+| Familias PnR / DHO | 1.173 / 61 | 1.214 / 2 | 620 / 0 | 783 / 8 | 314 / 0 | 405 / 4 |
+| Cobertura auto: drop / total (trampa no elegible) | 1.216 / 1.216 | 1.234 / 1.234 | 791 / 791 | 620 / 620 | 409 / 409 | 314 / 314 |
+| 1ª lectura PnR: pase O5 / triple O1 | 1.169 / 4 | 1.214 / 0 | 600 / 20 | 685 / 98 | 303 / 11 | 350 / 55 |
+
+Parejas: semilla 91 seed 120–140 (Puerto 99/12 2FGA/3FGA) → Sierra +3
+146–119 (Puerto 12/95); semilla 102 seed 118–122 (Puerto 100/13) → Sierra +5
+146–120 (Puerto 28/81). El fix de rebote reduce las segundas oportunidades
+y el marcador, pero **no cambia** el monopolio de familia, drop ni el giro
+de Puerto al triple con Sierra aumentada: eso es §2.2–§2.4.

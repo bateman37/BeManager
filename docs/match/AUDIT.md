@@ -11,9 +11,8 @@ hechos (ver `MODEL.md`) ni el acta (ver `BOXSCORE.md`): este documento solo
 describe cómo se observa y se exporta lo que esos documentos ya definen.
 **Documentos relacionados:** `MODEL.md`, `ACTIONS.md`, `BOXSCORE.md`,
 `docs/decisions/DECISION-REQUERIDA-ME-04-alcance-natural-faltas-y-segunda-entrada.md`.
-**Última actualización:** 2026-09-30 (ME-07A: esquema `ME-07A-AUDIT-1`,
-corrige el `phaseIndex` de `byFamily`, defensa `auto` y decisión de
-creador/tendencia generalizada — ver más abajo).
+**Última actualización:** 2026-09-30 (ME-07B v2: esquema `ME-07B-AUDIT-1`,
+punto `disputa_rebote`).
 
 ## Qué es y qué no es
 
@@ -101,7 +100,22 @@ archivos `ME-06-AUDIT-1` ya descargados).
   `fingerprint` del equipo: cambiarlos invalida un resultado anterior,
   igual que `offensivePlan`.
 
-## Esquema (`schemaVersion: "ME-07A-AUDIT-1"`)
+## ME-07B v2: `ME-07B-AUDIT-1` y disputa de rebote
+
+Esquema versionado a `"ME-07B-AUDIT-1"` (no reinterpreta los archivos
+`ME-07A-AUDIT-1`). Nuevo punto `disputa_rebote`, emitido tras cada rebote
+de tiro o libre que toca aro: una opción por candidato real (ID en pista)
+con `rawArrivalSeconds`, `effectiveArrivalSeconds`, `inPool`,
+`boxedOutBy`/`boxOutDelaySeconds`/`closerT19`/`closerF05` si un rival le
+cerró, `boxesOut` si él cerró, y sus T19/F05/T20 consultados. Motivos
+`rebound_boxed_out_by_rival`, `rebound_arrival_in_window`,
+`rebound_arrival_outside_window`; elegida = quien controló. El hecho
+`rebound_secured`/`rebound_contested` lleva los mismos cierres en
+`detail.boxOuts`. Sigue pendiente de este encargo (§6): enlace de cada FGA a
+su acción efectiva anterior, candidatos viables/inviables por decisión y
+los demás puntos nuevos.
+
+## Esquema (`schemaVersion: "ME-07B-AUDIT-1"`)
 
 | Sección | Contenido |
 |---|---|
@@ -122,7 +136,7 @@ instante absoluto en ms, punto de observación (`point`, uno de
 `sustitucion`, desde ME-06 `seleccion_familia`, `entrada_mano_a_mano`,
 `transferencia_mano_a_mano`, `bloqueo_indirecto_o3`,
 `lectura_mano_a_mano`, y desde ME-07A `seleccion_cobertura` y
-`seleccion_orden_sin_balon`), posesión/fase si existía, poseedor, participantes, las
+`seleccion_orden_sin_balon`, y desde ME-07B v2 `disputa_rebote`), posesión/fase si existía, poseedor, participantes, las
 opciones realmente evaluadas y cuál se eligió. Cada opción lleva:
 
 - `status`: `elegida`, `descartada_por_condicion` (se evaluó y perdió) o

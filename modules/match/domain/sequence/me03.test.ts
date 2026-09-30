@@ -529,8 +529,10 @@ describe("ME-03 (7): posesión individual y lotes rápidos conservan su recorrid
     // cambio intencional de la mecánica deportiva, no una regresión. Si un
     // futuro bloque cambia de nuevo el árbol de decisión o las fórmulas de
     // contacto/oposición, esta huella debe recalcularse otra vez aquí mismo.
+    // Recalculada otra vez en ME-07B v2 §2.1 (retraso real del cierre de
+    // rebote, tirador sin cierre durante su gesto y caída LAB-0.4).
     expect(createHash("sha256").update(JSON.stringify(out)).digest("hex")).toBe(
-      "1792a9e38a1bbc7a729afa4525c3bcb31fb39bd0dc43c0b1661844773b9f2494",
+      "deca48e297f7d302b510e5dabe0dff96684d7fd6613a085dfccaff0932be1221",
     );
   });
 
