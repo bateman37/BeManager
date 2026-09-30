@@ -346,8 +346,11 @@ Las 20 terminan `final`, actas conciliadas. Frente a `f4fe5f8`:
   (antes 119/213; con el WIP 20/319). **No es efecto del under** (la
   proyección de familia es siempre contra drop): la mediana de la brecha
   PnR–DHO es −0,012/−0,012/−0,001 por partido (antes −0,033/0,000/−0,001),
-  un empate de filo en el que cada partido se va entero a un lado. Defecto
-  abierto de §2.2 (selector sin banda ante empate proyectado).
+  un empate de filo en el que cada partido se va entero a un lado. A
+  investigar en §2.2 (no se ha tocado): puede ser explotación legítima —
+  LAB-0.4 solo actualiza con muestras la familia que se usa y la otra se
+  queda en su proyección— o falta de una lectura que rompa el empate con
+  información visible; no se añade banda ni cuota sin decidirlo.
 - 60 semillas naturales: guardián en 1 (la 39: los dos bases declarados de
   Sierra excluidos). Ver decisión requerida.
 
@@ -384,7 +387,13 @@ cd BeManager && git fetch origin && git checkout claude/me-07b-v2-capitulo-tacti
 npm ci && npm run check
 npx tsx scripts/me07b-v2-baseline-20.ts
 ```
-Siguiente paso: banda de empate del selector de familia (§2.2, Sierra +5),
-at the level, después la ficha de libro de §3 (fase/condición, colocación,
-roles, primera acción, lecturas, seguridad) sobre las primitivas ya
-compartidas.
+Siguiente paso (no iniciado en esta sesión para no dejar otra vez trabajo
+a medias): (1) bloqueo directo **lateral** como segunda colocación real
+(hoy `SHORT_ROLL_SPOT`, `WEAK_CORNER_SPOT` y la disposición del escenario
+son fijos: 48 usos en `possession-core.ts`), que habilita el ICE
+ejecutable; (2) **at the level** separado del show: hoy el punto del show
+(0,7 m del punto de uso hacia el aro) ya es «a la altura», así que hace
+falta primero dar al show su profundidad propia en la trayectoria de salida
+de O1, o serían dos nombres con la misma geometría (§3); (3) la ficha de
+libro de §3 sobre las primitivas ya compartidas; (4) el empate de familia
+de Sierra +5.
