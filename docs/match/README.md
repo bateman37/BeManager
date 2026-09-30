@@ -5,9 +5,9 @@
 **Debe leerse cuando:** vayas a tocar cualquier código de `modules/match/` o a planificar la siguiente entrega del motor.
 **No cubre:** el razonamiento completo de diseño (ver `docs/match/reference/`) ni el orden de las diez entregas (ver `docs/match/roadmap.md`).
 **Documentos relacionados:** `docs/foundation/MATCH_CORE_PRINCIPLES.md`, `docs/architecture/MODULE_BOUNDARIES.md`.
-**Última actualización:** 2026-09-29 (ME-06, adelantada antes de ME-05).
+**Última actualización:** 2026-09-30 (ME-07A).
 
-## Qué existe hoy (ME-01 a ME-04B)
+## Qué existe hoy (ME-01 a ME-07A)
 
 Un Laboratorio de Partido con un único bloqueo directo central 5×5, ante el
 que la defensa puede responder con **drop** (con o sin ayuda de D3) o con
@@ -67,8 +67,27 @@ orden fija de defensa sin balón (`negar_primera_salida`/
 desde el fixture o aplicar un incremento masivo de atributos. Ver
 `ACTIONS.md`, `CAPABILITIES.md` y `AUDIT.md` (esquema `ME-06-AUDIT-1`).
 
+**ME-07A:** generaliza la decisión de jugador más allá de la primera
+lectura del bloqueo. Nueva tendencia de tiro por jugador
+(`prudente`/`equilibrada`/`decidida`, ortogonal a `pnrTendency`) y
+prioridad de creación por equipo (`equilibrado`/`buscar_aro`/
+`buscar_triple`): ambas se aplican, dentro de la misma banda de empate
+`FIRST_READ_TIE_BAND_POINTS`, a la primera lectura del bloqueo, a la de
+la mano a mano y a un tiro real de tres del propio portador en
+transición cuando el aro está contenido pero queda ventana detrás de la
+línea. El poseedor real puede conservar la iniciativa al organizar en
+vez de devolver siempre el balón al rol fijo O1. Cobertura
+(`auto`/`drop`/`trampa`) y orden sin balón (`auto`/`negar_primera_salida`/
+`guardar_espacio`) admiten `auto` para el partido completo: la defensa
+compara, sin RNG, la concesión de cada respuesta con la geometría real y
+conserva la de referencia si no distingue una claramente mejor. Corrige
+además el desfase de `phaseIndex` entre decisiones y hechos que rompía
+`byFamily`. Ver `ACTIONS.md`, `CAPABILITIES.md` y `AUDIT.md` (esquema
+`ME-07A-AUDIT-1`).
+
 **No implementado todavía:** dirección en vivo, fatiga, tiempos muertos,
-temporadas, coberturas de bloqueo distintas de drop/trampa,
+temporadas, estructuras/familias ofensivas más allá de bloqueo directo y
+mano a mano sin balón, respuestas defensivas más allá de drop/trampa,
 zonas, cualquier familia de ecosistema (ver
 `docs/foundation/COMPETITION_ECOSYSTEMS.md`), la mayoría de los 76 sucesos
 P01–P76 y 45 capacidades candidatas del estudio de atributos (ahora T21

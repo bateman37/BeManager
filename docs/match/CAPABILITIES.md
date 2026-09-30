@@ -5,7 +5,7 @@
 **Debe leerse cuando:** vayas a activar una nueva capacidad o a calibrar un coeficiente existente.
 **No cubre:** las 45 capacidades candidatas completas del catálogo (ver `docs/match/reference/BeManager-capitulo-atributos-y-motor-v2.md` §2.2–2.4).
 **Documentos relacionados:** `ACTIONS.md`, `docs/decisions/ADR-0004-detailed-engine-analytic-timing.md`.
-**Última actualización:** 2026-09-29 (ME-06, adelantada antes de ME-05).
+**Última actualización:** 2026-09-30 (ME-07A).
 
 ## 27 capacidades activas (de 45 candidatas)
 
@@ -168,6 +168,40 @@ El tramo enlazado no activa capacidades nuevas ni coeficientes nuevos:
 - Los **roles funcionales declarados** (1–5) del banquillo son datos del
   fixture para formar quintetos, no capacidades: no modifican ningún
   cálculo ni se deducen de la altura.
+
+## ME-07A: tendencia de tiro y prioridad de creación, sin coeficientes nuevos
+
+- **`shotTendency` (`prudente`/`equilibrada`/`decidida`)**: campo nuevo del
+  perfil, ortogonal a `pnrTendency` y a T04/T01 (la capacidad de convertir
+  el tiro no cambia). Dentro de `FIRST_READ_TIE_BAND_POINTS`, decide si un
+  tiro real compite con conservar/pasar en la lectura de la mano a mano y
+  en el triple de transición; `equilibrada` reutiliza
+  `secondOptionProbability(M03)`, ya calibrada, sin tirada nueva.
+  Persistido en Postgres con `DEFAULT 'equilibrada'` (perfiles anteriores
+  a ME-07A la reciben explícita); no se altera con el reset al fixture ni
+  el incremento masivo.
+- **Prioridad de creación (`equilibrado`/`buscar_aro`/`buscar_triple`)**:
+  campo de equipo, no de jugador; favorece primero una vía compatible
+  dentro de la misma banda de empate, antes de que decida la tendencia.
+  No es una capacidad ni un coeficiente: es una instrucción del
+  entrenador, igual de categoría que `offensivePlan`.
+- **`TRANSITION_THREE_DEPTH_BUFFER_METERS` (2 m, en `transition.ts`)**:
+  único parámetro numérico nuevo de esta entrega. Acota el triple de
+  transición a una posición ya de tiro real (cerca de la línea), no a
+  cualquier punto entre el medio campo y el arco; sin él, la vía se
+  ofrecía en casi cualquier transición sin ventaja. Declarado aquí, no
+  escondido en la interfaz.
+- **Cobertura y orden sin balón `auto`**: reutilizan únicamente fórmulas de
+  valor ya existentes (tiro cercano T01, triple T04, sin oposición) para
+  comparar la concesión de cada respuesta; ningún coeficiente nuevo.
+  Hallazgo de calibración: con la disposición inicial fija de los tres
+  escenarios de laboratorio, D5 arranca en la protección del aro y no
+  llega a tiempo a comprometer una trampa desde ahí con ningún valor
+  alcanzable de F04/M01/M05/T22; `auto` declara `coverage_trap_not_eligible`
+  y conserva `drop`. Pendiente para ME-07B: una referencia de tiempo de
+  compromiso menos estricta, o posiciones defensivas iniciales más
+  agresivas, si Dennis quiere que la trampa `auto` sea alcanzable desde el
+  arranque de la posesión.
 
 ## Editor de equilibrio
 

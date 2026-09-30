@@ -5,7 +5,7 @@
 **Debe leerse cuando:** vayas a añadir un escenario, una cobertura, o a entender por qué una rama concreta es alcanzable.
 **No cubre:** el modo rápido completo de ME-08 (aquí solo hay una aproximación limitada a este escenario).
 **Documentos relacionados:** `ACTIONS.md`, `RULES.md`.
-**Última actualización:** 2026-09-29 (ME-06, adelantada antes de ME-05).
+**Última actualización:** 2026-09-30 (ME-07A).
 
 ## Los tres escenarios (`domain/lab/scenario.ts`)
 
@@ -282,3 +282,39 @@ ver los casos construidos discriminantes en
 `domain/simulation/me06-diagnostico-me04b.test.ts` y
 `domain/audit/audit-export-me06.test.ts`, y el plan manual
 `docs/testing/manual/ME-06-manual-test-plan.md`.
+
+## Decisión de jugador generalizada y defensa `auto` (ME-07A)
+
+Muestra pequeña, semilla 82, fixture vigente, `coverage`/
+`offBallDefensiveCall: "auto"` salvo que se diga otra cosa:
+
+- **Creador ya no siempre O1:** de 219 decisiones `organizacion_creador`
+  de un partido completo, 5 conservan la iniciativa del poseedor real
+  (`creator_kept_by_real_holder`; incluye suplentes reales tras
+  sustitución, p. ej. `SC11`/`PA11`/`SC12`) y el resto sigue devolviendo
+  el balón al manejador cuando eso es más rápido
+  (`creator_pass_back_faster`): no es una política universal nueva en
+  ningún sentido, sigue siendo una comparación geométrica condicionada.
+- **Cobertura `auto`, hallazgo de calibración:** con la disposición
+  inicial fija de los tres escenarios de laboratorio, D5 arranca
+  protegiendo el aro y nunca llega a tiempo a comprometer una trampa
+  desde ahí (`coverage_trap_not_eligible` en el 100 % de las
+  `seleccion_cobertura` observadas, varias semillas). `drop` sigue
+  siendo un plan base correcto y auditado, no un valor oculto; una
+  trampa `auto` alcanzable exige una posición defensiva inicial más
+  agresiva (ME-07B, ver `CAPABILITIES.md`).
+- **Orden sin balón `auto`:** compara `negar_primera_salida` frente a
+  `guardar_espacio` con la geometría real de cada mano a mano
+  (`off_ball_call_lower_concession`/`off_ball_call_tied_base_kept`); ver
+  `domain/game/me07a.test.ts`.
+- **Triple de transición:** no aparece con el fixture natural (mismo
+  hallazgo de ME-03: D5 en `drop` llega antes que cualquier atacante en
+  tránsito), probado con geometría construida a mano
+  (`evaluateTransitionThreeOpportunity`).
+- **Integridad:** dos equipos completamente en `auto` (plan, cobertura,
+  orden sin balón, prioridad de creación) completan un partido
+  reproducible y conciliado, con paridad exacta de auditoría ON/OFF.
+
+Ver los casos construidos y la muestra completa en
+`domain/game/me07a.test.ts` y el plan manual
+`docs/testing/manual/ME-07A-manual-test-plan.md`.

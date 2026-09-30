@@ -3,6 +3,64 @@
 Formato libre en español, orden cronológico inverso. Los motivos de
 decisiones duraderas viven en `docs/decisions/`, no aquí.
 
+## ME-07A — Decisiones vivas de jugadores y partido táctico automático (sin fusionar)
+
+- Prompt guardado íntegro en
+  `docs/prompts/implementation/ME-07A-decisiones-vivas-y-partido-auto.md`
+  antes de modificar producto. Ejecutado en la rama `claude/new-session-p9xna7`
+  (el entorno de ejecución ya la tenía activa y sincronizada), no en la rama
+  propuesta `match/me-07a-decisiones-auto` (ver `docs/prompts/README.md`).
+- **Corrige el desfase de `phaseIndex`** entre decisiones (`seleccion_familia`,
+  `organizacion_creador`) y hechos reales (`pushEvent`/`phase.index`), que
+  rompía `result.summary.byFamily` sistemáticamente. Nuevo desglose
+  `byFamilyUnattributed` por equipo para verificar la invariante FGA
+  atribuidos + sin atribuir = FGA del acta. Regresión en
+  `domain/audit/phase-index-attribution.test.ts`.
+- **Tendencia individual de tiro** (`shotTendency`:
+  `prudente`/`equilibrada`/`decidida`), ortogonal a `pnrTendency` y a
+  T04/T01, añadida a los 24 perfiles del fixture, la persistencia
+  (Postgres, `DEFAULT 'equilibrada'`) y el editor de `/lab`.
+- **Prioridad de creación del entrenador** (`equilibrado`/`buscar_aro`/
+  `buscar_triple`, por equipo) y generalización de la banda de empate
+  `FIRST_READ_TIE_BAND_POINTS` (LAB-0.3) más allá de la primera lectura
+  del bloqueo directo: dentro de la banda, la prioridad favorece primero
+  una vía compatible; si sigue compitiendo un tiro con la continuación,
+  decide `shotTendency` (`pnrTendency` conserva su papel específico solo
+  en la primera lectura del bloqueo). Aplicado a la primera lectura de la
+  mano a mano (que no tenía ningún mecanismo de banda hasta ahora) y al
+  triple de transición.
+- **Triple del portador en transición**: cuando el aro está contenido pero
+  el portador queda detrás de la línea con separación y tiempo reales
+  (nuevo `TRANSITION_THREE_DEPTH_BUFFER_METERS`, declarado), la tendencia
+  de tiro decide si lo toma. Probado con geometría construida a mano
+  (`evaluateTransitionThreeOpportunity`).
+- **El poseedor real puede conservar la iniciativa al organizar**
+  (`organize()`): compara, con geometría real, si conservarla es al
+  menos tan rápido como el pase de vuelta al rol fijo O1; si lo es,
+  reasigna roles con `rebindFrame` (mismo mecanismo que la segunda
+  entrada). Confirmado con el fixture natural: jugadores reales (incluidos
+  suplentes) conservan la iniciativa en 5 de 219 decisiones de un partido
+  completo.
+- **Cobertura y orden sin balón `auto`** para el partido completo: la
+  defensa compara, sin RNG, la concesión de cada respuesta con fórmulas
+  de valor ya existentes y conserva `drop`/`guardar_espacio` como plan
+  base si no distingue una claramente mejor. Hallazgo de calibración
+  documentado (no oculto): con la disposición inicial fija de los
+  escenarios de laboratorio, la trampa `auto` nunca resulta elegible
+  (pendiente para ME-07B).
+- Corrige de paso un defecto real descubierto al construir el triple de
+  transición: la cuenta de 8 s (art. 28) no se comprobaba cuando una vía
+  nueva despachaba directo a `runCore` fuera del flujo habitual, lo que
+  podía disparar el guardián de progreso por hechos desordenados.
+- Esquema de auditoría versionado a `ME-07A-AUDIT-1` (nuevos puntos
+  `seleccion_cobertura`/`seleccion_orden_sin_balon`, `creationPriority`/
+  `shotTendency` en la huella); no reinterpreta `ME-06-AUDIT-1`. Ver
+  `docs/decisions/ADR-0009-generalized-tendency-priority-and-auto-defense.md`.
+- Reserva del identificador `ME-07` para táctica y decisiones
+  (`ME-07A`/`ME-07B`, decisión de Dennis); el generador de plantillas
+  ficticias queda aplazado con un identificador por decidir (ver
+  `docs/match/roadmap.md`).
+
 ## ME-06 — Mano a mano sin balón, correccion acotada de ME-04B y laboratorio comparativo (sin fusionar)
 
 - Prompt guardado íntegro en

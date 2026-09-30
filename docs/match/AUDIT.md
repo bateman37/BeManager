@@ -11,9 +11,9 @@ hechos (ver `MODEL.md`) ni el acta (ver `BOXSCORE.md`): este documento solo
 describe cómo se observa y se exporta lo que esos documentos ya definen.
 **Documentos relacionados:** `MODEL.md`, `ACTIONS.md`, `BOXSCORE.md`,
 `docs/decisions/DECISION-REQUERIDA-ME-04-alcance-natural-faltas-y-segunda-entrada.md`.
-**Última actualización:** 2026-09-29 (ME-06: esquema `ME-06-AUDIT-1`,
-selección de familia y mano a mano, resumen por familia/equipo, huella
-estable y diferencias frente al fixture — ver más abajo).
+**Última actualización:** 2026-09-30 (ME-07A: esquema `ME-07A-AUDIT-1`,
+corrige el `phaseIndex` de `byFamily`, defensa `auto` y decisión de
+creador/tendencia generalizada — ver más abajo).
 
 ## Qué es y qué no es
 
@@ -75,7 +75,33 @@ otra versión).
   `possessionsAffected`. `null` cuando la auditoría no estaba activada
   (mismo coste cero que el resto de `decisions`).
 
-## Esquema (`schemaVersion: "ME-06-AUDIT-1"`)
+## ME-07A: decisión generalizada, defensa `auto` y `phaseIndex` corregido
+
+Esquema versionado a `"ME-07A-AUDIT-1"` (no reinterpreta ni sobrescribe los
+archivos `ME-06-AUDIT-1` ya descargados).
+
+- **Corrige un defecto real de ME-06**: el `phaseIndex` de las decisiones
+  (`seleccion_familia`, `organizacion_creador`) estaba desfasado en uno
+  frente al de los hechos (`pushEvent`), así que `result.summary.byFamily`
+  nunca casaba un tiro con la decisión de familia de su propia fase.
+  Corregido en `linked-run.ts` (misma convención 1-based que `phase.index`);
+  regresión en `domain/audit/phase-index-attribution.test.ts`.
+- **`result.summary.byFamilyUnattributed`**: FGA por equipo que no
+  pertenecen a ninguna fase con `seleccion_familia` (separados en 2FGA/3FGA),
+  para poder verificar por equipo que atribuidos + sin atribuir = FGA del
+  acta.
+- **Nuevos puntos de `decisions.records`:** `seleccion_cobertura` y
+  `seleccion_orden_sin_balon` (defensa `auto`, ver `ACTIONS.md`);
+  `entrada_fase_transicion` añade el desenlace `triple_portador`.
+  `organizacion_creador` deja de tener una única opción fija: compara al
+  poseedor real contra el manejador de rol con motivo estable
+  (`creator_kept_by_real_holder`/`creator_pass_back_faster`).
+- **`input.teams[]`** añade `creationPriority`; cada jugador del roster
+  añade `shotTendency`. Ambos entran en `matchFingerprint`/
+  `fingerprint` del equipo: cambiarlos invalida un resultado anterior,
+  igual que `offensivePlan`.
+
+## Esquema (`schemaVersion: "ME-07A-AUDIT-1"`)
 
 | Sección | Contenido |
 |---|---|
@@ -93,9 +119,10 @@ instante absoluto en ms, punto de observación (`point`, uno de
 `entrada_fase_transicion`, `organizacion_creador`, `lectura_bloqueo_o1`,
 `lectura_segunda_o5`, `lectura_trampa`, `segunda_entrada`,
 `resolucion_tiro`, `asignacion_rebote`, `puerta_falta_sin_tiro`,
-`sustitucion`, y desde ME-06 `seleccion_familia`, `entrada_mano_a_mano`,
+`sustitucion`, desde ME-06 `seleccion_familia`, `entrada_mano_a_mano`,
 `transferencia_mano_a_mano`, `bloqueo_indirecto_o3`,
-`lectura_mano_a_mano`), posesión/fase si existía, poseedor, participantes, las
+`lectura_mano_a_mano`, y desde ME-07A `seleccion_cobertura` y
+`seleccion_orden_sin_balon`), posesión/fase si existía, poseedor, participantes, las
 opciones realmente evaluadas y cuál se eligió. Cada opción lleva:
 
 - `status`: `elegida`, `descartada_por_condicion` (se evaluó y perdió) o

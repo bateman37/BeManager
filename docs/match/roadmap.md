@@ -45,12 +45,22 @@ La pantalla evoluciona con lo que podemos probar. No diseñamos toda la interfaz
 | ME-04 | Partido FIBA 2026 | Jugar un encuentro entero con acta y rotación básica | Medio-alto |
 | ME-05 | Dirección durante el partido | Sustituir, pedir tiempo y modificar órdenes; ver cuándo se aplican | Medio |
 | ME-06 | Segunda familia ofensiva y defensa sin balón | Ejecutar mano a mano y corte/bloqueo indirecto con lecturas y salidas | Medio |
-| ME-07 | Población y plantillas ficticias creíbles | Crear plantillas completas con perfiles coherentes y editables | Medio |
+| ME-07A | Decisiones vivas de jugadores y partido táctico auto | Tendencia/prioridad de creación generalizadas, defensa `auto`, partido completo automático auditable | Medio-alto |
+| ME-07B | Estructuras, libro y defensas ampliadas | 5-out/3-out/2-in/Horns/Delay, variantes ofensivas, zonas/presión/switch/ICE/show, controles tácticos completos | Medio-alto |
+| ME-07 (población, ID definitivo por decidir) | Población y plantillas ficticias creíbles | Crear plantillas completas con perfiles coherentes y editables | Medio |
 | ME-08 | Partido rápido y ojeo | Simular encuentros completos sin relato, con estadísticas trazables | Medio-alto |
 | ME-09 | Recuperación del partido | Interrumpir, continuar y auditar ambos modos sin duplicar hechos | Medio |
 | ME-10 | Jornada mixta y rendimiento | Elegir rivales, resolver calendario mixto y medir 240 partidos | Medio-alto |
 
-El camino crítico es `ME-01 → ME-03 → ME-04 → ME-08 → ME-09 → ME-10`. `ME-02`, `ME-05`, `ME-06` y `ME-07` añaden defensas, dirección, variedad y poblaciones antes de que el rápido y la jornada pretendan representar un partido creíble. Antes de cada prompt se revisarán dependencias exactas, sin reordenar silenciosamente el alcance deportivo.
+**Decisión de Dennis (ME-07A, 2026-09-30):** el identificador `ME-07`
+que este mapa asignaba al generador de plantillas queda **reservado
+para táctica y decisiones** en dos entregas, `ME-07A` (implementada) y
+`ME-07B` (estructuras/libro/defensas ampliadas, pendiente). El
+generador de plantillas ficticias descrito más abajo (§5) no se declara
+implementado y queda aplazado con un identificador por decidir; no se
+reutiliza `ME-07` para él sin otro aviso explícito de Dennis.
+
+El camino crítico es `ME-01 → ME-03 → ME-04 → ME-08 → ME-09 → ME-10`. `ME-02`, `ME-05`, `ME-06`, `ME-07A/ME-07B` y el generador de plantillas añaden defensas, dirección, variedad y poblaciones antes de que el rápido y la jornada pretendan representar un partido creíble. Antes de cada prompt se revisarán dependencias exactas, sin reordenar silenciosamente el alcance deportivo.
 
 ## 4. Alcance de cada entrega
 
@@ -182,7 +192,22 @@ Ver `docs/match/{ACTIONS,CAPABILITIES,AUDIT,SCENARIOS}.md`.
 
 **Fuera:** libro completo, Spain y todas las variantes de mano a mano o bloqueo indirecto; sustituciones/órdenes en vivo, fatiga, tiempos muertos (siguen en ME-05); faltas sin tiro y segunda entrada del bloqueo directo, que siguen sin producirse de forma natural con el fixture (decisión pendiente de ME-04, sin resolver).
 
-### ME-07 — Equipos y población de jugadores
+### ME-07A — Decisiones vivas de jugadores y partido táctico automático (implementada)
+
+**Alcance:** política de decisión de las posesiones (entrenador,
+tendencia individual, percepción, elección y ejecución separadas, ver
+`docs/prompts/implementation/ME-07A-decisiones-vivas-y-partido-auto.md`),
+generalizada más allá de la primera lectura del bloqueo directo; defensa
+`auto` (cobertura y orden sin balón) para el partido completo; triple del
+portador en transición; el poseedor real puede conservar la iniciativa al
+organizar. Detalle en `ACTIONS.md`, `CAPABILITIES.md` y `AUDIT.md`.
+
+**Fuera (queda para ME-07B):** estructuras 5-out/3-out/2-in/Horns/Delay,
+libro y variantes ofensivas más allá de bloqueo directo/mano a mano,
+respuestas defensivas más allá de drop/trampa (zonas, presión,
+switch/ICE/show), controles tácticos completos.
+
+### ME-07 (generador de plantillas, ID definitivo por decidir) — Equipos y población de jugadores
 
 **Alcance:** pasar de diez perfiles de laboratorio a plantillas ficticias completas y editables. Generador **condicionado por arquetipo, rol, competición objetivo y nivel de equipo**, con relaciones plausibles entre medidas, técnica, físico y lectura; reproducible por semilla y parametrizado con una población de referencia documentada. La talla, peso, envergadura y alcance no se sortean independientemente. Bases y pívots generados por defecto son capaces de desempeñar su función; el usuario puede crear excepciones deliberadas que se señalen como atípicas.
 

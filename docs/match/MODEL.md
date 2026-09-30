@@ -5,7 +5,7 @@
 **Debe leerse cuando:** vayas a leer o modificar `modules/match/domain/simulation/`.
 **No cubre:** las reglas de reloj, faltas y reanudación (ver `RULES.md`) ni el acta (ver `BOXSCORE.md`).
 **Documentos relacionados:** `RULES.md`, `ACTIONS.md`, `docs/architecture/DATA_AND_PERSISTENCE.md`.
-**Última actualización:** 2026-09-29 (ME-06, adelantada antes de ME-05).
+**Última actualización:** 2026-09-30 (ME-07A).
 
 ## Entidades de estado (`MatchState`)
 
@@ -75,6 +75,13 @@ en `GameTeamInput` con valor por defecto `auto`) y
 por defecto `guardar_espacio`), ambos independientes de `coverage` y del
 escenario: la misma disposición admite las dos familias ofensivas y
 cualquier combinación de cobertura/orden (ver `ACTIONS.md`).
+
+**ME-07A:** `coverage` y `offBallDefensiveCall` admiten `"auto"` (ver
+`ACTIONS.md`, resuelto de forma pura antes del árbol); `GameTeamInput`
+añade `creationPriority` (`"equilibrado" | "buscar_aro" | "buscar_triple"`,
+por defecto `equilibrado`). `PlayerProfile` añade `shotTendency`
+(`"prudente" | "equilibrada" | "decidida"`, por defecto `equilibrada` en
+los perfiles ya persistidos), ortogonal a `pnrTendency`.
 
 ## Continuidad entre posesiones: el tramo de ME-03
 
