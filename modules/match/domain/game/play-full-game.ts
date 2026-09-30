@@ -26,7 +26,12 @@ import {
 } from "../geometry/frame";
 import { truncateTrajectory } from "../geometry/trajectory";
 import { secondsToMs, type Milliseconds } from "../time/clock";
-import type { DefensiveCoverage, OffensivePlanChoice, OffBallDefensiveCall } from "../lab/match-input";
+import type {
+  OffensivePlanChoice,
+  DefensiveCoverageChoice,
+  OffBallDefensiveCallChoice,
+  OffensiveCreationPriority,
+} from "../lab/match-input";
 import { PASS_FLIGHT_SPEED_MPS } from "../lab/lab-0-1-parameters";
 import type { PlayerProfile } from "../players/player-profile";
 import { FUNCTIONAL_ROLE_LABELS, type FunctionalRole } from "../players/functional-roles";
@@ -215,7 +220,7 @@ class GameRun extends LinkedRun {
     return attackDirectionForPeriod(this.rules, teamId === this.teamIds[0] ? 0 : 1, this.period);
   }
 
-  protected coverageWhenDefending(teamId: string): DefensiveCoverage {
+  protected coverageWhenDefending(teamId: string): DefensiveCoverageChoice {
     return this.teamInputs.get(teamId)!.coverage;
   }
 
@@ -231,8 +236,12 @@ class GameRun extends LinkedRun {
     return this.teamInputs.get(teamId)!.offensivePlan;
   }
 
-  protected offBallCallWhenDefending(teamId: string): OffBallDefensiveCall {
+  protected offBallCallWhenDefending(teamId: string): OffBallDefensiveCallChoice {
     return this.teamInputs.get(teamId)!.offBallDefensiveCall;
+  }
+
+  protected creationPriorityWhenAttacking(teamId: string): OffensiveCreationPriority {
+    return this.teamInputs.get(teamId)!.creationPriority;
   }
 
   protected coreRules(): LinkedGameRules {

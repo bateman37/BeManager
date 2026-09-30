@@ -32,7 +32,13 @@ import {
 import { positionOnTrajectory, truncateTrajectory, type TrajectoryPoint } from "../geometry/trajectory";
 import { createResumableRandom, type ResumableRandom } from "../random/seeded-random";
 import { secondsToMs, type Milliseconds } from "../time/clock";
-import type { DefensiveCoverage, MatchInput, OffensivePlanChoice, OffBallDefensiveCall } from "../lab/match-input";
+import type {
+  MatchInput,
+  OffensivePlanChoice,
+  DefensiveCoverageChoice,
+  OffBallDefensiveCallChoice,
+  OffensiveCreationPriority,
+} from "../lab/match-input";
 import { getScenario } from "../lab/scenario";
 import type { LAB_0_3_PARAMETERS_VERSION } from "../lab/lab-0-3-parameters";
 import {
@@ -302,8 +308,8 @@ export abstract class LinkedRun {
   protected abstract lineup(teamId: string): readonly PlayerProfile[];
   /** Sentido de ataque vigente del equipo. */
   protected abstract attackDirection(teamId: string): AttackDirection;
-  /** Cobertura con la que defiende el equipo. */
-  protected abstract coverageWhenDefending(teamId: string): DefensiveCoverage;
+  /** Cobertura con la que defiende el equipo (ME-07A §4: admite `"auto"`). */
+  protected abstract coverageWhenDefending(teamId: string): DefensiveCoverageChoice;
   /** Qué hacer cuando un hecho alcanza el agotamiento del reloj de partido; `true` si el hecho se registra. */
   protected abstract onGameClockExpired(e: EmitArgs, expiryMs: Milliseconds): boolean;
 
@@ -332,12 +338,21 @@ export abstract class LinkedRun {
   }
   /**
    * Orden de defensa sin balón del equipo que defiende ante la mano a
-   * mano (ME-06 §3.1). Sin efecto cuando la familia resuelta es el
-   * bloqueo directo.
+   * mano (ME-06 §3.1; ME-07A §4: admite `"auto"`). Sin efecto cuando la
+   * familia resuelta es el bloqueo directo.
    */
-  protected offBallCallWhenDefending(teamId: string): OffBallDefensiveCall {
+  protected offBallCallWhenDefending(teamId: string): OffBallDefensiveCallChoice {
     void teamId;
     return "guardar_espacio";
+  }
+  /**
+   * Prioridad de creación del equipo que ataca (ME-07A §3.1). Por defecto
+   * `"equilibrado"`: los modos que no la declaren conservan exactamente su
+   * comportamiento anterior a ME-07A.
+   */
+  protected creationPriorityWhenAttacking(teamId: string): OffensiveCreationPriority {
+    void teamId;
+    return "equilibrado";
   }
   /** Tiempo de juego transcurrido con el reloj en marcha, para minutos. */
   protected onClockRan(deltaMs: Milliseconds): void {
@@ -788,6 +803,7 @@ export abstract class LinkedRun {
       defensePlayers: frame.defending.players,
       offensivePlan: this.offensivePlanWhenAttacking(frame.attacking.id),
       offBallDefensiveCall: this.offBallCallWhenDefending(frame.defending.id),
+      creationPriority: this.creationPriorityWhenAttacking(frame.attacking.id),
     };
     const rules = this.coreRules();
     const possession = this.possessionRef();
@@ -1261,7 +1277,11 @@ export abstract class LinkedRun {
     // desde donde están de verdad. Los que el árbol del bloqueo usa como
     // origen de una ayuda, reparación o protección del aro parten de esa
     // posición real (así el retraso tiene efecto causal); el resto sigue
-    // su carrera hacia su marca mientras se juega.
+    // su carrera hacia su marca mientras se juega. Con cobertura `auto`
+    // (ME-07A §4) se posiciona igual que en `drop`: la resolución real de
+    // `auto` ocurre dentro del núcleo, con su propia geometría en ese
+    // instante; D2 solo se preposiciona aquí cuando ya se sabe con
+    // certeza que la cobertura es `trampa`.
     const positionalDefenders = coverage === "trampa" ? ["D2", "D3", "D4", "D5"] : ["D3", "D4", "D5"];
     const legs: Record<string, PlannedLeg> = {};
     const late: string[] = [];
@@ -1287,7 +1307,7 @@ export abstract class LinkedRun {
         actors: [frame.slotToId.O1!, frame.slotToId.O5!],
         text:
           entryText ??
-          `Los cinco atacantes están situados: ${frame.slotToId.O1} y ${frame.slotToId.O5} inician el bloqueo directo central (${coverage === "trampa" ? "trampa" : "drop"}) con ${(remaining / 1000).toFixed(1)} s de lanzamiento.${lateText}`,
+          `Los cinco atacantes están situados: ${frame.slotToId.O1} y ${frame.slotToId.O5} inician el bloqueo directo central (${coverage === "trampa" ? "trampa" : coverage === "auto" ? "cobertura automática" : "drop"}) con ${(remaining / 1000).toFixed(1)} s de lanzamiento.${lateText}`,
         detail: { shotClockMs: remaining, lateDefenders: late },
         ball: { status: "held", holderId: frame.slotToId.O1!, fixed: null },
       })

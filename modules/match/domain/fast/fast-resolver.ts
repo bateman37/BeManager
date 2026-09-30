@@ -12,7 +12,7 @@ import { computePossessionCore } from "../simulation/possession-core";
 import { LAB_PARAMETERS_VERSION } from "../lab/lab-0-1-parameters";
 import { LAB_0_2_PARAMETERS_VERSION } from "../lab/lab-0-2-parameters";
 import { LAB_0_3_PARAMETERS_VERSION } from "../lab/lab-0-3-parameters";
-import type { MatchInput, DefensiveCoverage } from "../lab/match-input";
+import type { MatchInput, DefensiveCoverageChoice } from "../lab/match-input";
 import type { ScenarioId } from "../lab/scenario";
 
 /**
@@ -55,7 +55,7 @@ export interface ScenarioBatchCategories {
 
 export interface ScenarioBatchResult {
   readonly scenarioId: ScenarioId;
-  readonly coverage: DefensiveCoverage;
+  readonly coverage: DefensiveCoverageChoice;
   readonly sampleSize: number;
   readonly seedStart: number;
   readonly seedEnd: number;

@@ -8,7 +8,12 @@
  */
 import type { Milliseconds } from "../time/clock";
 import type { PlayerProfile } from "../players/player-profile";
-import type { DefensiveCoverage, OffensivePlanChoice, OffBallDefensiveCall } from "../lab/match-input";
+import type {
+  DefensiveCoverageChoice,
+  OffensivePlanChoice,
+  OffBallDefensiveCallChoice,
+  OffensiveCreationPriority,
+} from "../lab/match-input";
 import { LAB_0_3_PARAMETERS_VERSION } from "../lab/lab-0-3-parameters";
 import type { ReboundPriority } from "../simulation/possession-core";
 import { LAB_STARTER_IDS } from "../players/lab-roster-fixture";
@@ -32,12 +37,14 @@ export interface GameTeamInput {
   /** Roles funcionales declarados de cada inscrito (uno o dos). */
   readonly declaredRoles: Readonly<Record<string, readonly FunctionalRole[]>>;
   readonly priority: ReboundPriority;
-  /** Cobertura con la que este equipo defiende el bloqueo directo. */
-  readonly coverage: DefensiveCoverage;
+  /** Cobertura con la que este equipo defiende el bloqueo directo (ME-07A §4: admite `"auto"`). */
+  readonly coverage: DefensiveCoverageChoice;
   /** Plan ofensivo previo de este equipo para todo el partido (ME-06 §3.2). */
   readonly offensivePlan: OffensivePlanChoice;
-  /** Orden de defensa sin balón de este equipo ante la mano a mano (ME-06 §3.1). */
-  readonly offBallDefensiveCall: OffBallDefensiveCall;
+  /** Orden de defensa sin balón de este equipo ante la mano a mano (ME-06 §3.1; ME-07A §4: admite `"auto"`). */
+  readonly offBallDefensiveCall: OffBallDefensiveCallChoice;
+  /** Prioridad de creación de este equipo para todo el partido (ME-07A §3.1). */
+  readonly creationPriority: OffensiveCreationPriority;
 }
 
 export interface GameInput {
@@ -62,13 +69,16 @@ export interface BuildGameTeamArgs {
   readonly name: string;
   readonly players: readonly PlayerProfile[];
   readonly priority: ReboundPriority;
-  readonly coverage: DefensiveCoverage;
+  /** ME-07A §4: admite `"auto"`; sin valor por defecto, igual que antes. */
+  readonly coverage: DefensiveCoverageChoice;
   readonly starters?: readonly string[];
   readonly declaredRoles?: Readonly<Record<string, readonly FunctionalRole[]>>;
   /** ME-06 §3.2: por defecto `"auto"`, igual que en `/lab`. */
   readonly offensivePlan?: OffensivePlanChoice;
   /** ME-06 §3.1: por defecto `"guardar_espacio"`. */
-  readonly offBallDefensiveCall?: OffBallDefensiveCall;
+  readonly offBallDefensiveCall?: OffBallDefensiveCallChoice;
+  /** ME-07A §3.1: por defecto `"equilibrado"`. */
+  readonly creationPriority?: OffensiveCreationPriority;
 }
 
 function buildTeam(args: BuildGameTeamArgs): GameTeamInput {
@@ -98,6 +108,7 @@ function buildTeam(args: BuildGameTeamArgs): GameTeamInput {
     coverage: args.coverage,
     offensivePlan: args.offensivePlan ?? "auto",
     offBallDefensiveCall: args.offBallDefensiveCall ?? "guardar_espacio",
+    creationPriority: args.creationPriority ?? "equilibrado",
   };
 }
 
