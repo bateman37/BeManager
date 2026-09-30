@@ -24,6 +24,7 @@ describe("checkPlayerCoherence", () => {
       measures: { heightCm: 190, weightKg: 90, wingspanCm: 195, standingReachCm: 240 },
       attributes: buildAttributeRatings("B", {}),
       pnrTendency: "priorizar_primera_opcion",
+      shotTendency: "equilibrada",
     };
 
     const warnings = checkPlayerCoherence(shortCenter);
@@ -40,6 +41,7 @@ describe("checkPlayerCoherence", () => {
       measures: { heightCm: 195, weightKg: 55, wingspanCm: 200, standingReachCm: 250 },
       attributes: buildAttributeRatings("W", {}),
       pnrTendency: "priorizar_primera_opcion",
+      shotTendency: "equilibrada",
     };
 
     const warnings = checkPlayerCoherence(light);

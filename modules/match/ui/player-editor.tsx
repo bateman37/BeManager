@@ -145,6 +145,24 @@ export function PlayerEditor({ player, onSave, onDuplicate, saving }: PlayerEdit
         </select>
       </label>
 
+      <label className="flex items-center gap-2 text-sm">
+        Tendencia de tiro:
+        <select
+          className="rounded border border-slate-300 bg-transparent px-2 py-1 dark:border-slate-700"
+          value={draft.shotTendency}
+          onChange={(e) =>
+            setDraft((prev) => ({
+              ...prev,
+              shotTendency: e.target.value as PlayerProfile["shotTendency"],
+            }))
+          }
+        >
+          <option value="prudente">Prudente</option>
+          <option value="equilibrada">Equilibrada</option>
+          <option value="decidida">Decidida</option>
+        </select>
+      </label>
+
       {warnings.length > 0 && (
         <ul className="space-y-1 rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300">
           {warnings.map((w) => (

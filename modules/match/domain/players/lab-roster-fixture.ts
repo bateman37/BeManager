@@ -38,6 +38,7 @@ export const SIERRA_CLARA: LabTeamFixture = {
       measures: { heightCm: 189, weightKg: 85, wingspanCm: 195, standingReachCm: 248 },
       attributes: buildAttributeRatings("G", { T09: 13, M01: 12, T06: 11 }),
       pnrTendency: "explorar_segunda_opcion",
+      shotTendency: "decidida",
     },
     {
       id: "O2",
@@ -48,6 +49,7 @@ export const SIERRA_CLARA: LabTeamFixture = {
       measures: { heightCm: 195, weightKg: 87, wingspanCm: 202, standingReachCm: 255 },
       attributes: buildAttributeRatings("W", { T04: 13, T11: 12, T22: 8 }),
       pnrTendency: "priorizar_primera_opcion",
+      shotTendency: "decidida",
     },
     {
       id: "O3",
@@ -58,6 +60,7 @@ export const SIERRA_CLARA: LabTeamFixture = {
       measures: { heightCm: 201, weightKg: 96, wingspanCm: 209, standingReachCm: 263 },
       attributes: buildAttributeRatings("W", { T21: 12, M05: 12, T01: 11 }),
       pnrTendency: "priorizar_primera_opcion",
+      shotTendency: "equilibrada",
     },
     {
       id: "O4",
@@ -74,6 +77,7 @@ export const SIERRA_CLARA: LabTeamFixture = {
         T23: 9,
       }),
       pnrTendency: "priorizar_primera_opcion",
+      shotTendency: "equilibrada",
     },
     {
       id: "O5",
@@ -84,6 +88,7 @@ export const SIERRA_CLARA: LabTeamFixture = {
       measures: { heightCm: 211, weightKg: 113, wingspanCm: 223, standingReachCm: 282 },
       attributes: buildAttributeRatings("B", { T13: 13, T01: 12, T20: 12, F05: 13 }),
       pnrTendency: "priorizar_primera_opcion",
+      shotTendency: "prudente",
     },
     // --- Suplentes (ME-04 §4) ---------------------------------------------
     {
@@ -96,6 +101,7 @@ export const SIERRA_CLARA: LabTeamFixture = {
       measures: { heightCm: 184, weightKg: 80, wingspanCm: 190, standingReachCm: 241 },
       attributes: buildAttributeRatings("G", { T09: 12, T07: 12, F01: 12, M01: 11, T04: 8, T22: 8, T18: 2 }),
       pnrTendency: "explorar_segunda_opcion",
+      shotTendency: "prudente",
     },
     {
       // Exterior tirador: buen triple y libres, defensa exterior floja.
@@ -107,6 +113,7 @@ export const SIERRA_CLARA: LabTeamFixture = {
       measures: { heightCm: 193, weightKg: 86, wingspanCm: 199, standingReachCm: 252 },
       attributes: buildAttributeRatings("W", { T04: 12, T05: 12, T07: 9, T22: 7, F04: 8 }),
       pnrTendency: "priorizar_primera_opcion",
+      shotTendency: "decidida",
     },
     {
       // Exterior defensivo: largo y con pies, tiro exterior irregular.
@@ -118,6 +125,7 @@ export const SIERRA_CLARA: LabTeamFixture = {
       measures: { heightCm: 197, weightKg: 90, wingspanCm: 206, standingReachCm: 258 },
       attributes: buildAttributeRatings("W", { T22: 11, T15: 10, F04: 10, F03: 10, T04: 8 }),
       pnrTendency: "priorizar_primera_opcion",
+      shotTendency: "prudente",
     },
     {
       // Ala anotador cerca del aro y cortador; lento lateralmente.
@@ -129,6 +137,7 @@ export const SIERRA_CLARA: LabTeamFixture = {
       measures: { heightCm: 200, weightKg: 97, wingspanCm: 205, standingReachCm: 262 },
       attributes: buildAttributeRatings("W", { T01: 11, T21: 11, T04: 9, F01: 9, F04: 7 }),
       pnrTendency: "priorizar_primera_opcion",
+      shotTendency: "equilibrada",
     },
     {
       // Ala grande: rebote y defensa interior aceptables, abre algo el campo.
@@ -140,6 +149,7 @@ export const SIERRA_CLARA: LabTeamFixture = {
       measures: { heightCm: 203, weightKg: 101, wingspanCm: 212, standingReachCm: 268 },
       attributes: buildAttributeRatings("W", { T19: 10, T23: 9, T04: 10, F05: 10, T09: 7 }),
       pnrTendency: "priorizar_primera_opcion",
+      shotTendency: "equilibrada",
     },
     {
       // Interior que tira desde fuera a ratos; buen bloqueador, poca velocidad.
@@ -151,6 +161,7 @@ export const SIERRA_CLARA: LabTeamFixture = {
       measures: { heightCm: 207, weightKg: 108, wingspanCm: 214, standingReachCm: 274 },
       attributes: buildAttributeRatings("B", { T04: 8, T13: 11, T20: 10, F06: 9, T18: 9, F01: 8 }),
       pnrTendency: "priorizar_primera_opcion",
+      shotTendency: "equilibrada",
     },
     {
       // Pívot joven: taponador y reboteador, malo en libres y lento de pies.
@@ -162,6 +173,7 @@ export const SIERRA_CLARA: LabTeamFixture = {
       measures: { heightCm: 213, weightKg: 117, wingspanCm: 224, standingReachCm: 285 },
       attributes: buildAttributeRatings("B", { T18: 12, T20: 12, T01: 10, T05: 6, F04: 5, M01: 7 }),
       pnrTendency: "priorizar_primera_opcion",
+      shotTendency: "prudente",
     },
   ],
 };
@@ -179,6 +191,7 @@ export const PUERTO_AMBAR: LabTeamFixture = {
       measures: { heightCm: 188, weightKg: 83, wingspanCm: 194, standingReachCm: 246 },
       attributes: buildAttributeRatings("G", { T22: 12, T16: 12, T15: 11, M09: 12 }),
       pnrTendency: "priorizar_primera_opcion",
+      shotTendency: "prudente",
     },
     {
       id: "D2",
@@ -189,6 +202,7 @@ export const PUERTO_AMBAR: LabTeamFixture = {
       measures: { heightCm: 194, weightKg: 89, wingspanCm: 202, standingReachCm: 254 },
       attributes: buildAttributeRatings("W", { T22: 11, T17: 10, T04: 9 }),
       pnrTendency: "priorizar_primera_opcion",
+      shotTendency: "equilibrada",
     },
     {
       id: "D3",
@@ -199,6 +213,7 @@ export const PUERTO_AMBAR: LabTeamFixture = {
       measures: { heightCm: 200, weightKg: 95, wingspanCm: 210, standingReachCm: 265 },
       attributes: buildAttributeRatings("W", { M05: 11, T18: 8, F01: 11, M09: 11 }),
       pnrTendency: "priorizar_primera_opcion",
+      shotTendency: "equilibrada",
     },
     {
       id: "D4",
@@ -215,6 +230,7 @@ export const PUERTO_AMBAR: LabTeamFixture = {
         M09: 11,
       }),
       pnrTendency: "priorizar_primera_opcion",
+      shotTendency: "prudente",
     },
     {
       id: "D5",
@@ -225,6 +241,7 @@ export const PUERTO_AMBAR: LabTeamFixture = {
       measures: { heightCm: 210, weightKg: 111, wingspanCm: 222, standingReachCm: 280 },
       attributes: buildAttributeRatings("B", { T23: 13, T18: 12, F06: 11, T04: 4, M09: 10 }),
       pnrTendency: "priorizar_primera_opcion",
+      shotTendency: "prudente",
     },
     // --- Suplentes (ME-04 §4) ---------------------------------------------
     {
@@ -237,6 +254,7 @@ export const PUERTO_AMBAR: LabTeamFixture = {
       measures: { heightCm: 182, weightKg: 78, wingspanCm: 186, standingReachCm: 237 },
       attributes: buildAttributeRatings("G", { T09: 13, M03: 12, T15: 10, T22: 11, F01: 12, T04: 7 }),
       pnrTendency: "priorizar_primera_opcion",
+      shotTendency: "prudente",
     },
     {
       // Exterior anotador tras bote; persigue mal los bloqueos.
@@ -248,6 +266,7 @@ export const PUERTO_AMBAR: LabTeamFixture = {
       measures: { heightCm: 191, weightKg: 84, wingspanCm: 197, standingReachCm: 249 },
       attributes: buildAttributeRatings("W", { T04: 11, T06: 11, T07: 10, T16: 7 }),
       pnrTendency: "explorar_segunda_opcion",
+      shotTendency: "decidida",
     },
     {
       // Exterior de líneas de pase: rápido y largo, tiro exterior pobre.
@@ -259,6 +278,7 @@ export const PUERTO_AMBAR: LabTeamFixture = {
       measures: { heightCm: 198, weightKg: 92, wingspanCm: 208, standingReachCm: 260 },
       attributes: buildAttributeRatings("W", { T17: 11, T15: 11, F01: 11, T04: 7 }),
       pnrTendency: "priorizar_primera_opcion",
+      shotTendency: "prudente",
     },
     {
       // Ala tirador veterano: fiable desde fuera y en libres, lento de pies.
@@ -270,6 +290,7 @@ export const PUERTO_AMBAR: LabTeamFixture = {
       measures: { heightCm: 201, weightKg: 98, wingspanCm: 207, standingReachCm: 264 },
       attributes: buildAttributeRatings("W", { T04: 11, T05: 11, M05: 11, F01: 8, F04: 7 }),
       pnrTendency: "priorizar_primera_opcion",
+      shotTendency: "decidida",
     },
     {
       // Ala grande defensivo y saltador; pasa poco.
@@ -281,6 +302,7 @@ export const PUERTO_AMBAR: LabTeamFixture = {
       measures: { heightCm: 204, weightKg: 102, wingspanCm: 213, standingReachCm: 270 },
       attributes: buildAttributeRatings("W", { T22: 10, T23: 10, T19: 10, F06: 10, T09: 7 }),
       pnrTendency: "priorizar_primera_opcion",
+      shotTendency: "equilibrada",
     },
     {
       // Interior físico: rebote y bloqueo, sin tiro exterior.
@@ -292,6 +314,7 @@ export const PUERTO_AMBAR: LabTeamFixture = {
       measures: { heightCm: 208, weightKg: 109, wingspanCm: 217, standingReachCm: 276 },
       attributes: buildAttributeRatings("B", { T19: 12, F05: 12, T13: 12, T04: 4, T01: 10 }),
       pnrTendency: "priorizar_primera_opcion",
+      shotTendency: "prudente",
     },
     {
       // Pívot veterano de posición: protege el aro y comunica, muy lento.
@@ -303,6 +326,7 @@ export const PUERTO_AMBAR: LabTeamFixture = {
       measures: { heightCm: 211, weightKg: 115, wingspanCm: 220, standingReachCm: 281 },
       attributes: buildAttributeRatings("B", { T23: 12, M01: 10, T18: 10, F01: 6, F04: 5, M09: 11 }),
       pnrTendency: "priorizar_primera_opcion",
+      shotTendency: "prudente",
     },
   ],
 };

@@ -45,6 +45,8 @@ export interface AuditExportTeamPlayer {
   readonly attributes: Readonly<Record<string, number>>;
   readonly measures: Readonly<Record<string, number>>;
   readonly pnrTendency: string;
+  /** ME-07A §2.2: tendencia individual de tiro (`prudente`/`equilibrada`/`decidida`). */
+  readonly shotTendency: string;
   /**
    * Diferencias reales de atributos frente a `LAB_ROSTER_FIXTURE` (ME-06
    * §5), `delta = actual - fixture`, solo los atributos que difieren.
@@ -337,6 +339,7 @@ function teamFingerprint(team: GameInput["teams"][number]): string {
           age: p.age,
           template: p.template,
           pnrTendency: p.pnrTendency,
+          shotTendency: p.shotTendency,
           attributes: p.attributes,
           measures: p.measures,
         }))
@@ -443,6 +446,7 @@ function exportTeam(team: GameInput["teams"][number]): AuditExportTeam {
       attributes: { ...p.attributes } as unknown as Record<string, number>,
       measures: { ...p.measures } as unknown as Record<string, number>,
       pnrTendency: p.pnrTendency,
+      shotTendency: p.shotTendency,
       fixtureDiff: attributeFixtureDiff(p),
     })),
     fingerprint: teamFingerprint(team),
