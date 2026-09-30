@@ -5,7 +5,7 @@
 **Debe leerse cuando:** vayas a guardar un nuevo prompt de implementación o hotfix.
 **No cubre:** el contenido de cada prompt (son registros inmutables, no se resumen aquí).
 **Documentos relacionados:** `docs/prompts/hotfix/README.md`, `docs/process/DOCUMENTATION_STANDARD.md`.
-**Última actualización:** 2026-09-29 (ME-04A).
+**Última actualización:** 2026-09-30 (ME-07A).
 
 ## Convención
 
@@ -41,6 +41,16 @@
   `match/me-06-variedad-y-laboratorio`; el entorno de ejecución ya tenía
   activa y sincronizada `claude/new-session-p9xna7`, así que la entrega
   se hizo ahí (una sola rama, una sola PR), igual que en ME-04B.
+- `implementation/ME-07A-decisiones-vivas-y-partido-auto.md` — primera
+  de dos entregas integradas (ME-07A/ME-07B): cambia la política de
+  decisión de las posesiones (entrenador, tendencia individual,
+  percepción, elección y ejecución/respuesta separadas), amplía la
+  cobertura y la defensa sin balón a `auto` para ambos equipos, corrige
+  el desfase de `phaseIndex` en la auditoría y exige un partido completo
+  automático auditable desde `/lab`. El prompt propone la rama
+  `match/me-07a-decisiones-auto`; el entorno de ejecución ya tenía activa
+  y sincronizada `claude/new-session-p9xna7`, así que la entrega se hace
+  ahí (una sola rama, una sola PR), igual que en ME-04B y ME-06.
 
 ## Hotfixes existentes
 
