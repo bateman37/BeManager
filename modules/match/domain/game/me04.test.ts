@@ -185,10 +185,11 @@ describe("ME-04 (2): bocina, tiro en el aire, reset del reloj de lanzamiento y r
   });
 
   it("partido natural: un triple soltado 0,04 s antes de la bocina entra y cuenta; después solo se resuelve ese tiro", () => {
-    // Semilla recalculada en ME-04B (§§3.1-3.3): sigue siendo un tiro
-    // soltado antes de la bocina final del partido que entra y solo se
-    // resuelve ese tiro.
-    const r = game(125);
+    // Semilla recalculada en ME-07A (§3.2, organize() cambia qué
+    // posesiones llegan a la bocina final): sigue siendo un tiro soltado
+    // antes de la bocina final del partido que entra y solo se resuelve
+    // ese tiro.
+    const r = game(738);
     const i = r.events.findIndex((e) => e.kind === "buzzer" && e.detail.shotInFlight === true);
     expect(i).toBeGreaterThan(0);
     const buzzer = r.events[i]!;
@@ -203,8 +204,10 @@ describe("ME-04 (2): bocina, tiro en el aire, reset del reloj de lanzamiento y r
   });
 
   it("partido natural: un fallo soltado a tiempo no inventa rebote tras la bocina", () => {
-    // Semilla recalculada en ME-04B (§§3.1-3.3).
-    const r = game(14);
+    // Semilla recalculada en ME-07A (§3.2, organize() cambia qué posesiones
+    // llegan a la bocina): PUBLISHED_SEED sigue produciendo un fallo
+    // soltado a tiempo sin rebote inventado tras la bocina final.
+    const r = game(PUBLISHED_SEED);
     const i = r.events.findIndex((e) => e.kind === "buzzer" && e.detail.shotInFlight === true);
     const next = r.events.slice(i + 1, i + 4).map((e) => e.kind);
     expect(next).toEqual(["field_goal_attempt", "possession_ended", "period_ended"]);
@@ -606,10 +609,12 @@ describe("ME-04 (7): regresión de ME-01/02/03 y segunda entrada del bloqueo", (
         );
         out.push([t.events.map((e) => [e.kind, e.atMs, e.actors, e.text, e.positions, e.gameClockMs, e.shotClockMs, e.score]), t.stop, t.box]);
       }
-    // Huella recalculada en ME-04B (desplazamiento real de O1/D1, primera
-    // lectura ponderada por valor y modelo R_contest de oposición, §§3.1-
-    // 3.3): un cambio intencional de la mecánica compartida, no una
-    // regresión. Antes: calculada sobre main tras ME-03 (a9b8644).
+    // Huella recalculada en ME-07A (§3.2: el poseedor real puede conservar
+    // la iniciativa en `organize()` en vez de devolver siempre el balón al
+    // rol fijo O1 — el propio tramo pasa por ese mismo `organize()` tras un
+    // rebote/robo): un cambio intencional de la mecánica compartida, no una
+    // regresión. Antes: recalculada en ME-04B (desplazamiento real de
+    // O1/D1, primera lectura ponderada por valor y R_contest, §§3.1-3.3).
     expect(hash(out)).toBe(TRAMO_FINGERPRINT);
   });
 
@@ -688,4 +693,4 @@ describe("ME-04 (7): regresión de ME-01/02/03 y segunda entrada del bloqueo", (
   });
 });
 
-const TRAMO_FINGERPRINT = "dfef8023c66f36df1cc3b703bc68a7502a640f58316a92cdeaa2821854e8987b";
+const TRAMO_FINGERPRINT = "b913e75b322fdd478ca13735101bec6e94a3a7ce1b2a4e3b7a491d558ec982e6";

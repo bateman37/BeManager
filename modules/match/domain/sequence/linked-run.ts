@@ -1220,36 +1220,63 @@ export abstract class LinkedRun {
         `La posesión continúa y se reorganiza con ${(this.shotRemainingAt(t0) / 1000).toFixed(1)} s de lanzamiento, desde las posiciones que ya ocupaban.`,
       );
     }
-    const arrivals = this.planOrganizeLegs(frame, t0, []);
-    const holderSlot = frame.idToSlot[holderId]!;
+
+    // ME-07A §3.2: el poseedor real puede conservar la iniciativa en vez de
+    // devolver siempre el balón al rol fijo O1. Compara, con la misma
+    // geometría real (F01 del portador, T09/T11/flight del pase), si le
+    // sale más a cuenta llegar él mismo al puesto de creador que esperar el
+    // pase de vuelta; en empate exacto se conserva devolver a O1 (mismo
+    // criterio de plan base que el resto de esta entrega). Si conserva la
+    // iniciativa, se reasigna su rol y el de O1 (`rebindFrame`, ya usado
+    // por la segunda entrada del bloqueo, ME-04): los otros tres atacantes
+    // mantienen su tarea de espaciado/corte/balance sin cambios.
+    const originalHandlerId = frame.slotToId.O1!;
+    let effectiveFrame = frame;
+    let creatorReasonCode: import("../audit/audit-types").AuditReasonCode = "role_fixed_no_ranking";
+    let creatorNote = "El manejador es el rol fijo O1 del quinteto vigente; no se compara contra otros candidatos.";
+    if (holderId !== originalHandlerId) {
+      const holderSlot0 = frame.idToSlot[holderId]!;
+      const o1TargetGlobal = toGlobal(frame.dir, this.dispositionTargets().O1!);
+      const keepSeconds = timeToReach(this.positionAt(holderId, t0), o1TargetGlobal, attackerMoveSpeedMps(this.profile(holderId).attributes.F01));
+      const passSeconds = PASS_RELEASE_SECONDS + distance(this.positionAt(holderId, t0), this.positionAt(originalHandlerId, t0)) / PASS_FLIGHT_SPEED_MPS;
+      if (keepSeconds <= passSeconds) {
+        effectiveFrame = rebindFrame(frame, { ...frame.slotToId, O1: holderId, [holderSlot0]: originalHandlerId });
+        creatorReasonCode = "creator_kept_by_real_holder";
+        creatorNote = `${holderId} conserva la iniciativa: llega a su puesto de creador en ${keepSeconds.toFixed(2)} s, no más lento que el pase de vuelta a ${originalHandlerId} (${passSeconds.toFixed(2)} s).`;
+      } else {
+        creatorReasonCode = "creator_pass_back_faster";
+        creatorNote = `Devuelve el balón a ${originalHandlerId}: ${passSeconds.toFixed(2)} s frente a ${keepSeconds.toFixed(2)} s si ${holderId} conservara la iniciativa.`;
+      }
+    }
+
+    const arrivals = this.planOrganizeLegs(effectiveFrame, t0, []);
+    const holderSlot = effectiveFrame.idToSlot[holderId]!;
     // La acción organizada empieza cuando los cinco atacantes están
     // situados; el ataque no espera a una defensa que llega tarde.
-    const attackerIds = OFFENSE_SLOTS.map((slot) => frame.slotToId[slot]!);
+    const attackerIds = OFFENSE_SLOTS.map((slot) => effectiveFrame.slotToId[slot]!);
     const tAllSet = Math.max(t0, ...attackerIds.map((id) => arrivals[id]!));
-    const handlerId = frame.slotToId.O1!;
+    const handlerId = effectiveFrame.slotToId.O1!;
     this.auditDecision(t0, {
       point: "organizacion_creador",
       holderId,
-      participants: [handlerId],
+      participants: [...new Set([holderId, originalHandlerId])],
       chosenOptionId: handlerId,
       options: [
-        {
-          id: handlerId,
-          status: "elegida",
-          reasonCode: "role_fixed_no_ranking",
-          reasonNote: "El manejador es el rol fijo O1 del quinteto vigente; no se compara contra otros candidatos.",
-        },
+        { id: handlerId, status: "elegida", reasonCode: creatorReasonCode, reasonNote: creatorNote },
+        ...(handlerId !== originalHandlerId
+          ? [{ id: originalHandlerId, status: "descartada_por_condicion" as const, reasonCode: "situational_value_lower" as const }]
+          : []),
       ],
     });
 
     // Cuenta de 8 s si el control empezó en pista trasera (art. 28).
     if (this.backcourt) {
-      const from = toLocal(frame.dir, this.positionAt(holderId, t0));
+      const from = toLocal(effectiveFrame.dir, this.positionAt(holderId, t0));
       const to = this.dispositionTargets()[holderSlot]!;
       const offset = frontcourtEntryOffsetSeconds(from, to, (arrivals[holderId]! - t0) / 1000);
       const crossingMs = offset === null ? null : t0 + secondsToMs(offset);
       const count = evaluateBackcourtCount(this.backcourt.startMs, crossingMs, this.backcourt.elapsedBeforeMs);
-      if (count.violation && count.violationAtMs! <= tAllSet) return this.backcourtViolation(frame, count.violationAtMs!, holderId);
+      if (count.violation && count.violationAtMs! <= tAllSet) return this.backcourtViolation(effectiveFrame, count.violationAtMs!, holderId);
       this.backcourt = null;
     }
 
@@ -1265,7 +1292,7 @@ export abstract class LinkedRun {
     const expiry = this.shotExpiryMs();
     if (expiry <= tReady) {
       const holderAtExpiry = passNeeded && expiry > releaseMs ? handlerId : holderId;
-      return this.shotClockViolationDuringPlay(frame, expiry, holderAtExpiry);
+      return this.shotClockViolationDuringPlay(effectiveFrame, expiry, holderAtExpiry);
     }
 
     if (passNeeded) {
@@ -1275,9 +1302,9 @@ export abstract class LinkedRun {
       if (!this.emit({ atMs: tReady, phase: "concedido", kind: "pass_received", actors: [handlerId], text: `${handlerId} recibe en su puesto.`, ball: { status: "held", holderId: handlerId, fixed: null } }))
         return null;
       if (outcome.kind === "awkward_control") tReady += secondsToMs(outcome.extraDelaySeconds);
-      if (this.shotExpiryMs() <= tReady) return this.shotClockViolationDuringPlay(frame, this.shotExpiryMs(), handlerId);
+      if (this.shotExpiryMs() <= tReady) return this.shotClockViolationDuringPlay(effectiveFrame, this.shotExpiryMs(), handlerId);
     }
-    return this.runSet(frame, tReady);
+    return this.runSet(effectiveFrame, tReady);
   }
 
   protected runSet(

@@ -78,6 +78,10 @@ export type AuditReasonCode =
   | "transition_advantage_found"
   | "transition_no_advantage"
   | "role_fixed_no_ranking"
+  // ME-07A §3.2: el poseedor real puede conservar la iniciativa en vez de
+  // devolver siempre el balón al rol fijo O1.
+  | "creator_kept_by_real_holder"
+  | "creator_pass_back_faster"
   | "not_evaluated_short_circuit"
   | "situational_value_lower"
   | "tie_band_resolved_by_tendency"
