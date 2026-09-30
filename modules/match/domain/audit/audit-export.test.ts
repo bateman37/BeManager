@@ -237,7 +237,13 @@ describe("ME-04A: rutas de drop y trampa realmente evaluadas (semilla 1, fixture
   it("no aparece una falta sin tiro ni una segunda entrada inventadas: el sumario de motivos viene de la traza", () => {
     const result = playFullGame(input(1, ["drop", "drop"], ["proteger_balance", "proteger_balance"], true));
     const exported = buildAuditExport(result.input, result);
-    expect(result.fouls.some((f) => f.type === "sin_tiro")).toBe(false);
+    // ME-07B v2 §2.5: las faltas sin tiro ya pueden nacer de contactos reales
+    // (trampa, rebote por encima de la espalda); cada una tiene su hecho y su
+    // decisión adjudicada en la traza, nunca una falta sin contacto.
+    const nonShootingFacts = result.events.filter((e) => e.kind === "non_shooting_foul");
+    expect(result.fouls.filter((f) => f.type === "sin_tiro").length).toBe(nonShootingFacts.length);
+    const illegalGates = result.audit!.decisions.filter((d) => d.point === "puerta_falta_sin_tiro" && d.chosenOptionId === "ilegal");
+    expect(illegalGates.length).toBe(nonShootingFacts.length);
     const secondEntryRejections = exported.result.summary.rejectionReasons!.find((r) => r.point === "segunda_entrada")!;
     // ME-07B v2 §2.4: con la ayuda de D3 leída, el continuador puede quedar
     // contenido y la segunda entrada llega a evaluarse; el sumario debe

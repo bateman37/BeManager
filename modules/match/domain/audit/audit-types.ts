@@ -94,6 +94,9 @@ export type AuditReasonCode =
   | "receiver_value_higher"
   | "receiver_value_lower"
   | "receiver_option_not_viable"
+  // ME-07B v2 §2.5: contacto defensivo real sancionado (LAB-0.6).
+  | "contact_foul_drawn"
+  | "contact_foul_not_drawn"
   | "not_evaluated_short_circuit"
   | "situational_value_lower"
   | "tie_band_resolved_by_tendency"

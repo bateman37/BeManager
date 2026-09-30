@@ -65,6 +65,7 @@ import {
 import { blendProjectionWithObservation, shooterLandingSeconds, type ObservedOutcome } from "../lab/lab-0-4-parameters";
 import { contestReachMeters, evaluateContestLevel, FIRST_READ_TIE_BAND_POINTS } from "../lab/lab-0-3-parameters";
 import { isFloaterZone, isMidRangeZone } from "../lab/lab-0-5-parameters";
+import { contactFoulProbability } from "../lab/lab-0-6-parameters";
 import type { TerminalOutcome, BallState } from "./match-state";
 import type { FactPhase, FactKind } from "./fact";
 import { resolvePass } from "./resolvers/pass-resolver";
@@ -222,6 +223,8 @@ export type LinkedEntry =
        * contenido pero queda una ventana real detrás de la línea.
        */
       readonly shotType?: ShotType;
+      /** Preparación explícita (p. ej. tiro tras bote, T06); por defecto la del tipo. */
+      readonly prepSeconds?: number;
       readonly pass: {
         readonly passerSlot: string;
         readonly releaseSeconds: number;
@@ -1000,7 +1003,8 @@ function runDirectFinish(
   }
 
   const shotType = entry.shotType ?? "close_finish";
-  const prepSeconds = shotType === "three_point" || shotType === "mid_range" ? CATCH_AND_SHOOT_PREP_SECONDS : CLOSE_FINISH_PREP_SECONDS;
+  const prepSeconds =
+    entry.prepSeconds ?? (shotType === "three_point" || shotType === "mid_range" ? CATCH_AND_SHOOT_PREP_SECONDS : CLOSE_FINISH_PREP_SECONDS);
   return resolveShotAttempt(ctx, {
     shooterId: entry.shooterSlot,
     shooterSkill: shotSkill(shooter, shotType),
@@ -2118,6 +2122,36 @@ function runTrapPhase(ctx: CoreContext): PossessionCoreResult {
     // los dos comprometidos): reutiliza el mecanismo de presión ya vigente,
     // no un robo global nuevo. Una trampa cerrada no garantiza robo.
     const worstT15 = Math.min(d1.attributes.T15, d5.attributes.T15);
+    // ME-07B v2 §2.5 (LAB-0.6): la trampa cerrada es contacto real sobre el
+    // balón; con reglas de partido puede ser falta sin tiro del trampeador
+    // menos disciplinado (M07), antes de resolver la presión.
+    if (ctx.linked?.rules?.ordinaryFouls && !ctx.projecting) {
+      const fouler = d5.attributes.M07 < d1.attributes.M07 ? "D5" : "D1";
+      const foulProb = contactFoulProbability("trampa", player(ctx, fouler).attributes.M07);
+      const rngBeforeFoul = rngStateOf(ctx.rng);
+      if (ctx.rng.next() < foulProb) {
+        event(ctx, tDecision, "concedido", "non_shooting_foul", [fouler, "O1"], `Falta personal sin tiro de ${fouler} en la trampa: contacto sobre O1 al cerrarla.`, {
+          foulerId: fouler,
+          fouledId: "O1",
+          situation: "trampa",
+          foulProbability: foulProb,
+        });
+        auditDecision(ctx, tDecision, {
+          point: "puerta_falta_sin_tiro",
+          holderId: "O1",
+          participants: [fouler, "O1"],
+          chosenOptionId: "ilegal",
+          factLinkKind: "non_shooting_foul",
+          rngStateBefore: rngBeforeFoul,
+          rngStateAfter: rngStateOf(ctx.rng),
+          options: [
+            { id: "legal", status: "descartada_por_condicion", reasonCode: "containment_gate_legal", values: { situation: "trampa", foulProbability: foulProb } },
+            { id: "ilegal", status: "elegida", reasonCode: "contact_foul_drawn", values: { situation: "trampa", foulProbability: foulProb, foulerM07: player(ctx, fouler).attributes.M07 } },
+          ],
+        });
+        return finalize(ctx, { kind: "non_shooting_foul", foulerId: fouler, fouledId: "O1" }, { status: "dead", holderId: null, position: screenPoint });
+      }
+    }
     const rngBeforeSteal = rngStateOf(ctx.rng);
     const isStripped = resolvesTurnoverUnderPressure(o1.attributes.T07, worstT15, ctx.rng);
     auditDecision(ctx, tDecision, {
@@ -3226,7 +3260,19 @@ function resolveShotAttempt(ctx: CoreContext, args: ShotAttemptArgs): Possession
   // ya una falta ilegal, y solo si además llega a la altura de liberación;
   // C01/C04 (altura) no reciben un segundo premio aparte del ya usado por
   // `contestLevel`.
-  const blockEligible = contestLevel > 0 && legality !== "late_illegal_contact" && shotTouchable;
+  // ME-07B v2 §2.5 (LAB-0.6): un cierre legal con solape corporal es un
+  // contacto real; con reglas de partido puede ser falta según la
+  // disciplina (M07) del defensor y la situación (finalización frente a
+  // tiro exterior). Un contacto tardío sigue siendo falta por tiempo, igual
+  // que antes. La falta, si la hay, anula el tapón.
+  let contactFoulProb: number | null = null;
+  let contactFoul = false;
+  if (legality === "legal_contest" && ctx.linked?.rules?.ordinaryFouls) {
+    const situation = args.shotType === "close_finish" || args.shotType === "floater" ? "finalizacion" : "tiro_exterior";
+    contactFoulProb = contactFoulProbability(situation, contester.attributes.M07);
+    contactFoul = ctx.rng.next() < contactFoulProb;
+  }
+  const blockEligible = contestLevel > 0 && legality !== "late_illegal_contact" && !contactFoul && shotTouchable;
 
   event(
     ctx,
@@ -3263,7 +3309,13 @@ function resolveShotAttempt(ctx: CoreContext, args: ShotAttemptArgs): Possession
           id: "legal_contest",
           status: legality === "legal_contest" ? "elegida" : "descartada_por_condicion",
           reasonCode: "shot_contact_legal",
-          values: { arrivalMarginSeconds: arrivalMargin, brakingExtraSeconds: args.contesterGeometry.brakingExtraSeconds },
+          values: {
+            arrivalMarginSeconds: arrivalMargin,
+            brakingExtraSeconds: args.contesterGeometry.brakingExtraSeconds,
+            contactFoulProbability: contactFoulProb,
+            contactFoul,
+            contesterM07: contester.attributes.M07,
+          },
         },
         {
           id: "late_illegal_contact",
@@ -3299,7 +3351,7 @@ function resolveShotAttempt(ctx: CoreContext, args: ShotAttemptArgs): Possession
     );
   }
 
-  const isFoul = legality === "late_illegal_contact";
+  const isFoul = legality === "late_illegal_contact" || contactFoul;
 
   if (isFoul) {
     const madeShot = shotOutcome.kind === "made";
@@ -3672,6 +3724,44 @@ function resolveLinkedRebound(ctx: CoreContext, args: LiveReboundArgs): Possessi
       { kind: "out_of_bounds", lastTouchPlayerId: args.shooterId },
       { status: "dead", holderId: null, position: seed.landingPoint },
     );
+  }
+
+  // ME-07B v2 §2.5 (LAB-0.6): un defensor al que un atacante le ha cerrado
+  // el rebote (posición interior real) y que aun así llega a disputar el
+  // balón lo hace por encima de la espalda del cerrador: contacto real que
+  // puede ser falta sin tiro según su disciplina (M07). La falta de rebote
+  // del atacante cerrado (falta en ataque) todavía no está modelada.
+  if (ctx.linked?.rules?.ordinaryFouls) {
+    const inPool = new Set(reboundOutcome.trace.arrivals.filter((x) => x.inPool).map((x) => x.playerId));
+    const overTheBack = [...reboundOutcome.trace.boxOuts]
+      .filter((b) => isOffensivePlayer(b.closerId) && !isOffensivePlayer(b.rivalId) && inPool.has(b.rivalId))
+      .sort((x, y) => x.contactSeconds - y.contactSeconds || (x.rivalId < y.rivalId ? -1 : 1));
+    for (const b of overTheBack) {
+      const foulProb = contactFoulProbability("rebote_sobre_espalda", player(ctx, b.rivalId).attributes.M07);
+      const rngBefore = rngStateOf(ctx.rng);
+      const fouled = ctx.rng.next() < foulProb;
+      auditDecision(ctx, args.atSeconds + seed.flightTimeSeconds, {
+        point: "puerta_falta_sin_tiro",
+        holderId: null,
+        participants: [b.rivalId, b.closerId],
+        chosenOptionId: fouled ? "ilegal" : "legal",
+        rngStateBefore: rngBefore,
+        rngStateAfter: rngStateOf(ctx.rng),
+        options: [
+          { id: "legal", status: fouled ? "descartada_por_condicion" : "elegida", reasonCode: "contact_foul_not_drawn", values: { situation: "rebote_sobre_espalda", foulProbability: foulProb } },
+          { id: "ilegal", status: fouled ? "elegida" : "descartada_por_condicion", reasonCode: "contact_foul_drawn", values: { situation: "rebote_sobre_espalda", foulProbability: foulProb, foulerM07: player(ctx, b.rivalId).attributes.M07 } },
+        ],
+      });
+      if (!fouled) continue;
+      const tFoul = args.atSeconds + seed.flightTimeSeconds;
+      event(ctx, tFoul, "concedido", "non_shooting_foul", [b.rivalId, b.closerId], `Falta personal sin tiro de ${b.rivalId} en el rebote: disputa por encima de la espalda de ${b.closerId}, que le había cerrado.`, {
+        foulerId: b.rivalId,
+        fouledId: b.closerId,
+        situation: "rebote_sobre_espalda",
+        foulProbability: foulProb,
+      });
+      return finalize(ctx, { kind: "non_shooting_foul", foulerId: b.rivalId, fouledId: b.closerId }, { status: "dead", holderId: null, position: seed.landingPoint });
+    }
   }
 
   const winner = reboundOutcome.kind === "secured" ? reboundOutcome.playerId : pickTipWinner(ctx, reboundOutcome);

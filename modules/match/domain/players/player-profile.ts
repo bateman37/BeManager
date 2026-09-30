@@ -74,6 +74,7 @@ export const TEMPLATE_BASE_RATINGS: Record<PlayerTemplate, Partial<AttributeRati
     M03: 10,
     M04: 10,
     M05: 9,
+    M07: 8,
     F01: 11,
     F03: 10,
     F04: 10,
@@ -105,6 +106,7 @@ export const TEMPLATE_BASE_RATINGS: Record<PlayerTemplate, Partial<AttributeRati
     M03: 9,
     M04: 9,
     M05: 10,
+    M07: 8,
     F01: 10,
     F03: 9,
     F04: 8,
@@ -136,6 +138,7 @@ export const TEMPLATE_BASE_RATINGS: Record<PlayerTemplate, Partial<AttributeRati
     M03: 8,
     M04: 10,
     M05: 9,
+    M07: 8,
     F01: 7,
     F03: 7,
     F04: 6,
@@ -165,6 +168,7 @@ export const NEUTRAL_BACKFILL_RATINGS: Readonly<Partial<Record<ActiveAttributeId
   M09: M09_BACKFILL_NEUTRAL_RATING,
   T02: 8,
   T03: 8,
+  M07: 8,
 };
 
 /**

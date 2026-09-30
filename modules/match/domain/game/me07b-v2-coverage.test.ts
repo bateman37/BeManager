@@ -51,7 +51,9 @@ describe("ME-07B v2 §2.3: defensa auto con drop y trampa en competencia", () =>
     for (const d of coverage.filter((x) => x.chosenOptionId === "trampa")) {
       const projected = d.options.find((o) => o.id === "trampa")!.values!.tD5TrapArrivalSeconds as number;
       const fact = r.events.find(
-        (e) => e.kind === "trap_committed" && e.possessionIndex === d.possessionIndex && e.atMs >= d.atMs,
+        // Misma posesión y misma fase: una falta en la trampa (ME-07B v2 §2.5)
+        // puede cortar la fase antes del hecho y la siguiente trampa es otra decisión.
+        (e) => e.kind === "trap_committed" && e.possessionIndex === d.possessionIndex && e.phaseIndex === d.phaseIndex && e.atMs >= d.atMs,
       );
       if (!fact) continue;
       expect(fact.atMs - d.atMs).toBeCloseTo(Math.round(projected * 1000), -1);

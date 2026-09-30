@@ -49,16 +49,19 @@ function sierraChoices(r: ReturnType<typeof play>, point: string): Record<string
 describe("ME-07B v2 §2.4: lecturas del receptor del roll y del manejador", () => {
   const base = play(92);
 
-  it("un partido natural produce varias primeras y segundas lecturas y los cuatro tipos de tiro de campo", () => {
+  it("los partidos naturales producen varias primeras y segundas lecturas y los cuatro tipos de tiro de campo", () => {
     const first = sierraChoices(base, "lectura_bloqueo_o1");
     const second = sierraChoices(base, "lectura_segunda_o5");
     expect(Object.keys(first).length).toBeGreaterThanOrEqual(2);
     expect(Object.keys(second).length).toBeGreaterThanOrEqual(2);
-    const exported = buildAuditExport(base.input, base);
-    const types = new Set(exported.result.summary.shots!.map((s) => s.shotType));
+    const types = new Set<string>();
+    for (const r of [base, play(93), play(94)]) {
+      const exported = buildAuditExport(r.input, r);
+      for (const shot of exported.result.summary.shots!) types.add(shot.shotType);
+      // Floater y tiro medio son tiros de dos en el acta (la conciliación del acta ya lo exige).
+      expect(exported.result.reconciliation.every((c) => c.ok)).toBe(true);
+    }
     for (const t of ["close_finish", "floater", "mid_range", "three_point"]) expect(types.has(t)).toBe(true);
-    // Floater y tiro medio son tiros de dos en el acta (la conciliación del acta ya lo exige).
-    expect(exported.result.reconciliation.every((c) => c.ok)).toBe(true);
   });
 
   it("cada vía del receptor declara quién la cierra y con qué oposición real", () => {
