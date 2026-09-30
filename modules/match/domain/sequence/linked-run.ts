@@ -18,7 +18,7 @@
  */
 import type { Point2D } from "../geometry/point";
 import { distance, timeToReach } from "../geometry/point";
-import { ATTACKED_HOOP, isInsideCourt, isBehindThreePointLine, distanceToHoop, FIBA_THREE_POINT_RADIUS_METERS } from "../geometry/court";
+import { ATTACKED_HOOP, isInsideCourt } from "../geometry/court";
 import {
   toGlobal,
   toLocal,
@@ -47,7 +47,6 @@ import {
   closeoutBrakingExtraSeconds,
   PASS_FLIGHT_SPEED_MPS,
   PASS_RELEASE_SECONDS,
-  CATCH_AND_SHOOT_PREP_SECONDS,
   THREE_POINT_BASE_PROBABILITY,
   shotProbability,
   secondOptionProbability,
@@ -80,6 +79,7 @@ import {
   readSecondChance,
   readOutlet,
   frontcourtEntryOffsetSeconds,
+  evaluateTransitionThreeOpportunity,
   type RaceParticipant,
 } from "./transition";
 import {
@@ -124,18 +124,6 @@ export interface LinkedRunSettings {
   /** Colector de auditoría (ME-04A); por defecto no hace nada (mismo coste que antes). */
   readonly audit?: AuditCollector;
 }
-
-/**
- * ME-07A §3.2: profundidad máxima detrás de la línea de tres para
- * considerar el triple de transición del propio portador. Sin este
- * límite, "detrás de la línea" incluye todo el espacio entre el medio
- * campo y el arco (>5 m de margen), lo que ofrecía la vía en casi
- * cualquier transición sin ventaja y disparaba el volumen de tiro de
- * forma irreal. Parámetro nuevo, declarado aquí explícitamente (no
- * escondido en la interfaz): acota la vía a una posición ya de tiro
- * real, no a "en algún punto del camino hacia el aro".
- */
-export const TRANSITION_THREE_DEPTH_BUFFER_METERS = 2;
 
 export const OFFENSE_SLOTS = ["O1", "O2", "O3", "O4", "O5"] as const;
 export const DEFENSE_SLOTS = ["D1", "D2", "D3", "D4", "D5"] as const;
@@ -1491,24 +1479,9 @@ export abstract class LinkedRun {
       // sembrada `secondOptionProbability(M03)` que el resto del motor).
       const remaining = this.shotRemainingAt(t1) / 1000;
       const carrierPos = local[carrierSlot]!;
-      // El defensor real que contestaría el triple no es necesariamente
-      // `read.firstDefender` (el que protege el aro): es el que puede
-      // llegar antes hasta el propio portador desde su posición real. Usar
-      // el protector del aro por defecto subestimaría sistemáticamente la
-      // contestación siempre que alguien más cercano ya esté recuperando
-      // sobre el tirador.
-      const nearestDefender = [...defenders].sort(
-        (a, b) => timeToReach(a.position, carrierPos, a.lateralSpeedMps) - timeToReach(b.position, carrierPos, b.lateralSpeedMps),
-      )[0]!;
-      const closeoutArrivalSeconds = timeToReach(nearestDefender.position, carrierPos, nearestDefender.lateralSpeedMps);
-      const windowMarginSeconds = closeoutArrivalSeconds - CATCH_AND_SHOOT_PREP_SECONDS;
-      const depthBehindLineMeters = distanceToHoop(carrierPos) - FIBA_THREE_POINT_RADIUS_METERS;
-      const tripleEligible =
-        remaining > 2 &&
-        isBehindThreePointLine(carrierPos) &&
-        depthBehindLineMeters <= TRANSITION_THREE_DEPTH_BUFFER_METERS &&
-        windowMarginSeconds >= 0.25;
-      if (tripleEligible) {
+      const opportunity = evaluateTransitionThreeOpportunity(carrierPos, defenders, remaining);
+      const { windowMarginSeconds, closeoutArrivalSeconds, nearestDefender } = opportunity;
+      if (opportunity.eligible) {
         const carrierProfile = this.profile(carrierId);
         let takeTriple: boolean;
         if (carrierProfile.shotTendency === "decidida") {

@@ -16,9 +16,11 @@ import {
   interiorArrivalAdjustmentSeconds,
   PASS_FLIGHT_SPEED_MPS,
   PASS_RELEASE_SECONDS,
+  CATCH_AND_SHOOT_PREP_SECONDS,
 } from "../lab/lab-0-1-parameters";
 import type { Rating } from "../players/attribute";
 import { BODY_CONTACT_RADIUS_METERS } from "../lab/lab-0-2-parameters";
+import { isBehindThreePointLine, distanceToHoop, FIBA_THREE_POINT_RADIUS_METERS } from "../geometry/court";
 
 /**
  * Carrera de intercepción sobre una línea de pase recta: ¿puede algún
@@ -289,6 +291,58 @@ export function readTransition(
       ? "el primer defensor llega al aro antes que el portador y el segundo antes que cualquier compañero"
       : "el primer defensor llega al aro antes que cualquier atacante con balón",
   };
+}
+
+/**
+ * ME-07A §3.2: profundidad máxima detrás de la línea de tres para
+ * considerar el triple de transición del propio portador. Sin este
+ * límite, "detrás de la línea" incluye todo el espacio entre el medio
+ * campo y el arco (>5 m de margen), lo que ofrecía la vía en casi
+ * cualquier transición sin ventaja y disparaba el volumen de tiro de
+ * forma irreal. Parámetro nuevo, declarado aquí explícitamente (no
+ * escondido en la interfaz): acota la vía a una posición ya de tiro
+ * real, no a "en algún punto del camino hacia el aro".
+ */
+export const TRANSITION_THREE_DEPTH_BUFFER_METERS = 2;
+
+export interface TransitionThreeOpportunity {
+  readonly eligible: boolean;
+  readonly windowMarginSeconds: number;
+  readonly depthBehindLineMeters: number;
+  readonly closeoutArrivalSeconds: number;
+  readonly nearestDefender: RaceParticipant;
+}
+
+/**
+ * Ventana real de triple del propio portador cuando el aro está contenido
+ * pero la transición no ofrece penetración, pase adelantado ni
+ * superioridad (ME-07A §3.2): el defensor que de verdad contestaría no es
+ * necesariamente el protector del aro (`firstDefender` de `readTransition`),
+ * sino el que puede llegar antes hasta el propio portador desde su
+ * posición real. Elegible solo si el portador está detrás de la línea, a
+ * una profundidad razonable tras ella (`TRANSITION_THREE_DEPTH_BUFFER_METERS`)
+ * y con el mismo margen de 0,25 s que usa la primera lectura del bloqueo
+ * directo entre el tiro listo y el cierre del defensor. Pura: no decide
+ * si se toma (eso es la tendencia de tiro del jugador, fuera de esta
+ * función) ni consume el generador.
+ */
+export function evaluateTransitionThreeOpportunity(
+  carrierPos: Point2D,
+  defenders: readonly RaceParticipant[],
+  shotClockRemainingSeconds: number,
+): TransitionThreeOpportunity {
+  const nearestDefender = [...defenders].sort(
+    (a, b) => timeToReach(a.position, carrierPos, a.lateralSpeedMps) - timeToReach(b.position, carrierPos, b.lateralSpeedMps),
+  )[0]!;
+  const closeoutArrivalSeconds = timeToReach(nearestDefender.position, carrierPos, nearestDefender.lateralSpeedMps);
+  const windowMarginSeconds = closeoutArrivalSeconds - CATCH_AND_SHOOT_PREP_SECONDS;
+  const depthBehindLineMeters = distanceToHoop(carrierPos) - FIBA_THREE_POINT_RADIUS_METERS;
+  const eligible =
+    shotClockRemainingSeconds > 2 &&
+    isBehindThreePointLine(carrierPos) &&
+    depthBehindLineMeters <= TRANSITION_THREE_DEPTH_BUFFER_METERS &&
+    windowMarginSeconds >= 0.25;
+  return { eligible, windowMarginSeconds, depthBehindLineMeters, closeoutArrivalSeconds, nearestDefender };
 }
 
 export interface SecondChanceRead {
