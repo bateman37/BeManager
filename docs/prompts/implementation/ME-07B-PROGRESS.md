@@ -117,3 +117,58 @@ el defecto de atribución conocido) los defectos de §2 de ME-07B:
 No se compara contra el resumen por familias de ME-06 (histórico, con
 defecto de atribución); esta tabla es la única referencia basal fiable
 para medir el cierre de estos defectos.
+
+## Sesión 1 (continuación) — defecto de §2 cerrado parcialmente
+
+### Hecho
+- **Veto absoluto T04>=9 eliminado** en `possession-core.ts`
+  (`runDropPhase` línea ~1015 y `estimateBloqueoDirectoOpportunity` línea
+  ~1874): un triple legal detrás de la línea ahora es siempre una vía
+  real; su valor depende de `shotProbability` (calidad continua) y de la
+  oposición geométrica real de D5 (ventana de cierre), nunca de un
+  umbral binario de capacidad. Cambio explícitamente autorizado por el
+  prompt §2.
+- Actualizado `me04b.test.ts` (el caso que fijaba el veto anterior) para
+  exigir la nueva conducta: T04 bajo compite por valor situacional
+  (`reasonCode: situational_value_lower`), no se excluye por capacidad.
+- Recalculada con causa documentada la huella de `me04.test.ts` (7) — la
+  posesión de regresión pasa por la misma lectura del bloqueo.
+- `npm run check` completo (lint+typecheck+test 231/231+docs:check+build)
+  en verde tras el cambio.
+- Foto basal re-ejecutada tras el cambio: **sin variación** en la muestra
+  natural (mismos conteos de `seleccion_familia`/FGA por semilla) — los
+  jugadores del fixture natural ya tenían T04>=9 donde importaba, así que
+  este cierre por sí solo no resuelve el monopolio de familia ni el resto
+  de defectos de §2; son mecanismos independientes que siguen abiertos.
+
+### Por qué el resto de §2 no se cierra en esta sesión (evidencia, no excusa)
+Diagnóstico con datos reales (no solo lectura del código): instrumenté
+`seleccion_familia` en la semilla 82 y los valores comparados
+(`situationalValue`) son **casi constantes entre posesiones** (bloqueo
+directo ≈1.30-1.34, mano a mano ≈1.234, siempre en ese orden). La causa
+raíz es el "guion de disposición fija" que el propio prompt señala en
+§3: cada posesión nueva reevalúa `estimateBloqueoDirectoOpportunity`/
+`estimateHandoffOpportunity` casi siempre desde la misma geometría de
+partida (no hay variedad real de espaciamiento entre posesiones porque no
+existe todavía una capa de estructuras/espaciamiento real, §4). Resolver
+esto bien exige construir primero la capa táctica compartida de §3 (los
+"diez posiciones y trayectorias" que persisten con estructura real,
+quinteto y lecturas hasta ese instante) — no un ajuste de umbral o un
+factor de variedad artificial, que el prompt prohíbe explícitamente
+("no imponer una cuota ni mover jugadores de forma ficticia"). Intentar
+un parche rápido aquí habría sido precisamente el cierre superficial que
+el prompt prohíbe. Por eso quedan abiertas las tareas #2, #3, #4, #6 (y
+con ellas dependen las de §§3-9), documentadas como siguiente paso de la
+próxima sesión, no como "ya se ha corregido".
+
+### Siguiente sesión — orden recomendado
+1. Diseñar la capa táctica compartida mínima de §3 (operaciones comunes +
+   tipo de datos de ficha de jugada) — es prerrequisito real de las
+   tareas #2, #3, #4, #6 y de todo §4-§5, no una tarea aparte que se
+   pueda posponer.
+2. Reconstruir `estimateBloqueoDirectoOpportunity`/`estimateHandoffOpportunity`
+   (y el resto de estimadores `auto`) sobre esa capa, con geometría que sí
+   varíe entre posesiones según lo que de verdad ocurrió antes.
+3. Recapturar la foto basal tras cada cambio de comportamiento real (no
+   solo al final) para verificar causalmente cada cierre de §2 antes de
+   avanzar a §4-§9.

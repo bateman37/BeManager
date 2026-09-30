@@ -609,12 +609,13 @@ describe("ME-04 (7): regresión de ME-01/02/03 y segunda entrada del bloqueo", (
         );
         out.push([t.events.map((e) => [e.kind, e.atMs, e.actors, e.text, e.positions, e.gameClockMs, e.shotClockMs, e.score]), t.stop, t.box]);
       }
-    // Huella recalculada en ME-07A (§3.2: el poseedor real puede conservar
-    // la iniciativa en `organize()` en vez de devolver siempre el balón al
-    // rol fijo O1 — el propio tramo pasa por ese mismo `organize()` tras un
-    // rebote/robo): un cambio intencional de la mecánica compartida, no una
-    // regresión. Antes: recalculada en ME-04B (desplazamiento real de
-    // O1/D1, primera lectura ponderada por valor y R_contest, §§3.1-3.3).
+    // Huella recalculada en ME-07B (§2: elimina el veto absoluto T04>=9 del
+    // triple de O1 en la primera lectura del bloqueo — ahora compite por
+    // valor situacional con oposición geométrica en vez de excluirse por
+    // capacidad; el tramo pasa por esa misma lectura). Antes: recalculada
+    // en ME-07A (§3.2, `organize()` conserva al poseedor real). Antes de
+    // eso: recalculada en ME-04B (desplazamiento real de O1/D1, primera
+    // lectura ponderada por valor y R_contest, §§3.1-3.3).
     expect(hash(out)).toBe(TRAMO_FINGERPRINT);
   });
 
@@ -693,4 +694,4 @@ describe("ME-04 (7): regresión de ME-01/02/03 y segunda entrada del bloqueo", (
   });
 });
 
-const TRAMO_FINGERPRINT = "b913e75b322fdd478ca13735101bec6e94a3a7ce1b2a4e3b7a491d558ec982e6";
+const TRAMO_FINGERPRINT = "47dfe426d37f19f73e5849da67807d33987d281c460ff82524a5e935db8980ea";

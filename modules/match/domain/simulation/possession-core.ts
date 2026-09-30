@@ -1012,14 +1012,21 @@ function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition): Possessio
     ? 3 * shotProbability(THREE_POINT_BASE_PROBABILITY, o3.attributes.T04, o3PassOpposition)
     : -Infinity;
 
-  // Vía "triple_o1": O1 detrás de la línea, ventana de D5 >=0,25 s y T04>=9.
+  // Vía "triple_o1": O1 detrás de la línea con reloj suficiente (ya
+  // comprobado arriba). ME-07B §2 elimina el veto absoluto de capacidad
+  // (T04>=9): un triple legal siempre es una vía real; calidad (T04 en
+  // `shotProbability`), oposición (ventana de cierre de D5) y reloj deciden
+  // su conveniencia frente a las demás vías, no una capacidad binaria.
   const behindLine = isBehindThreePointLine(ctx.positions.O1!);
   const tShotReadyO1 = tDecision + movingShotPrepSeconds(o1.attributes.T06);
   const d5RawContestTime = d5RawTimeToHoop;
   const tD5Contest = Math.max(0, tDecision + d5RawContestTime - perimeterArrivalAdjustmentSeconds(d5.attributes.T22));
   const windowD5 = tD5Contest - tShotReadyO1;
-  const tripleViable = behindLine && windowD5 >= 0.25 && o1.attributes.T04 >= 9;
-  const tripleValue = tripleViable ? 3 * shotProbability(THREE_POINT_BASE_PROBABILITY, o1.attributes.T04, 0) : -Infinity;
+  const tripleViable = behindLine;
+  const tripleOpposition: EffectiveOpposition = windowD5 >= 0.25 ? 0 : 1;
+  const tripleValue = tripleViable
+    ? 3 * shotProbability(THREE_POINT_BASE_PROBABILITY, o1.attributes.T04, tripleOpposition)
+    : -Infinity;
 
   // Vía "salida_segura": último recurso, siempre viable, sin puntos
   // esperados (conserva el control, no arriesga un tiro).
@@ -1099,7 +1106,7 @@ function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition): Possessio
     pase_o3: { chosen: "corner_window_open", notViable: scenario.d3HelpsRoller ? "corner_window_closed" : "not_available" },
     triple_o1: {
       chosen: "three_point_eligible",
-      notViable: !behindLine ? "three_point_window_closed" : windowD5 < 0.25 ? "three_point_window_closed" : "three_point_ineligible_skill",
+      notViable: "three_point_window_closed",
     },
     salida_segura: { chosen: "safe_outlet_default", notViable: "not_available" },
   };
@@ -1119,7 +1126,7 @@ function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition): Possessio
       estimatedD3TrulyContaining: d3TrulyContainingEstimate,
     },
     pase_o3: { situationalValue: o3PassValue, marginSeconds: marginO3Direct, d3AlreadyLeft: rollDeniedBeforeDecision || scenario.startsWithHelpAlreadyCommitted },
-    triple_o1: { situationalValue: tripleValue, windowD5Seconds: windowD5, t04: o1.attributes.T04, behindLine },
+    triple_o1: { situationalValue: tripleValue, windowD5Seconds: windowD5, opposition: tripleOpposition, t04: o1.attributes.T04, behindLine },
     salida_segura: { situationalValue: safeOutletValue },
   };
   function firstReadOptionRecord(id: FirstReadOptionId): AuditOptionRecord {
@@ -1869,8 +1876,17 @@ function estimateBloqueoDirectoOpportunity(ctx: CoreContext): EntryOpportunity {
     screenContactAdjustmentSeconds(o5.measures.weightKg - d1.measures.weightKg);
   const o5PassValue = screenDelay >= 0.2 ? 2 * shotProbability(CLOSE_FINISH_BASE_PROBABILITY, o5.attributes.T01, 0) : -Infinity;
 
+  // ME-07B §2 elimina el veto absoluto de capacidad (T04>=9): un triple
+  // legal es siempre una vía real; calidad (T04 en `shotProbability`) y
+  // oposición (misma ventana de cierre de D5 que usa después la lectura
+  // real del bloqueo) deciden su valor, igual que en `runDropPhase`.
   const behindLine = isBehindThreePointLine(ctx.positions.O1!);
-  const tripleValue = behindLine && o1.attributes.T04 >= 9 ? 3 * shotProbability(THREE_POINT_BASE_PROBABILITY, o1.attributes.T04, 0) : -Infinity;
+  const tShotReadyO1 = movingShotPrepSeconds(o1.attributes.T06);
+  const tD5Contest = Math.max(0, d5RawTimeToHoop - perimeterArrivalAdjustmentSeconds(d5.attributes.T22));
+  const tripleOpposition: EffectiveOpposition = tD5Contest - tShotReadyO1 >= 0.25 ? 0 : 1;
+  const tripleValue = behindLine
+    ? 3 * shotProbability(THREE_POINT_BASE_PROBABILITY, o1.attributes.T04, tripleOpposition)
+    : -Infinity;
 
   const best = Math.max(finishValue, o5PassValue, tripleValue, 0);
   return { viable: Number.isFinite(best) && best > 0, value: best };

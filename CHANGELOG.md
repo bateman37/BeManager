@@ -3,6 +3,40 @@
 Formato libre en español, orden cronológico inverso. Los motivos de
 decisiones duraderas viven en `docs/decisions/`, no aquí.
 
+## ME-07B — Cierre de ME-07A y motor táctico integrado (en curso, sin fusionar)
+
+- Prompt guardado íntegro en
+  `docs/prompts/implementation/ME-07B-cierre-me-07a-motor-tactico-integrado.md`,
+  en la misma rama/PR de ME-07A (#10, Draft), sin crear rama ni PR nueva.
+- Foto basal reproducible de cuatro semillas naturales (1/37/82/156, ambos
+  equipos en auto) capturada con `scripts/me07b-baseline-snapshot.ts` antes
+  de tocar comportamiento; confirma con evidencia fresca los defectos de
+  §2 (monopolio de bloqueo directo 96–98 %, cobertura auto=drop siempre,
+  `organizacion_creador` casi inerte) y añade un hallazgo nuevo: la lectura
+  de triple de transición tiene **cero** decisiones auditadas en juego
+  natural, no solo cero aciertos. Detalle en
+  `docs/prompts/implementation/ME-07B-PROGRESS.md`.
+- **Elimina el veto absoluto T04>=9 de un triple legal** (§2), en la
+  primera lectura del bloqueo directo (`runDropPhase`) y en el estimador
+  de oportunidad de familia (`estimateBloqueoDirectoOpportunity`): un
+  triple detrás de la línea es siempre una vía real; calidad (T04 en
+  `shotProbability`) y oposición (ventana real de cierre de D5, la misma
+  que ya usaba la lectura del bloqueo) deciden su valor frente a las
+  demás vías, no una capacidad binaria. Huella de `me04.test.ts` (7)
+  recalculada con causa documentada (mismo precedente que ME-07A);
+  `me04b.test.ts` actualizado para exigir que un T04 bajo compita por
+  valor situacional en vez de excluirse por `reasonCode` de capacidad.
+- **Pendiente, no cerrado en esta sesión**: el resto de defectos de §2
+  (monopolio de familia por falta de comprobación de ventana inmediata,
+  triple de transición inalcanzable en juego natural, `organize()` casi
+  siempre vuelve a O1, `shotTendency` en la política común, trampa nunca
+  elegible por la posición inicial de D5, prueba de partido con guardián,
+  atribución de FGA por acción causal) y la totalidad de §§3-9 (capa
+  táctica compartida, estructuras/libro/familias nuevas, defensa
+  asentada/presión/cobertura ampliada, 45 atributos, UI de `/lab`,
+  auditoría ME-07B-AUDIT-1, documentación y plan manual). No se declara
+  ME-07B terminada; la PR permanece en Draft.
+
 ## ME-07A — Decisiones vivas de jugadores y partido táctico automático (sin fusionar)
 
 - Prompt guardado íntegro en
