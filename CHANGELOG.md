@@ -41,9 +41,13 @@ decisiones duraderas viven en `docs/decisions/`, no aquí.
   `blendProjectionWithObservation`). Foto seed: 484 trampas / 675 drops
   (Sierra defendiendo) y 443 / 733 (Puerto); Sierra +3 elige la mano a
   mano 128 veces. La trampa sube rebote ofensivo y pérdidas (pendiente).
+- **§2.6 Atribución.** `result.summary.shots` enlaza cada FGA a su acción
+  efectiva anterior y a la familia elegida antes que él en su fase;
+  `byFamily` usa esa atribución. Invariante atribuidos + sin atribuir = FGA
+  por equipo conservado.
 - Semillas naturales de cuatro pruebas (bocina ×2, dos prórrogas/guardián,
   tapón) y dos huellas de regresión recalculadas con causa documentada.
-- **Pendiente**: §2.4–§2.6, coberturas switch/show/ICE/under/at the level, respuesta defensiva «cerrar» tras el tiro
+- **Pendiente**: §2.4–§2.5, coberturas switch/show/ICE/under/at the level, respuesta defensiva «cerrar» tras el tiro
   (probada y retirada: eliminaba la única fuente natural de faltas),
   faltas y libres naturales, §§3–7 completos. ME-07B no está terminada.
 

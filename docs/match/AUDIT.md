@@ -114,9 +114,19 @@ cerró, `boxesOut` si él cerró, y sus T19/F05/T20 consultados. Motivos
 `detail.boxOuts`. `seleccion_familia` (§2.2) añade por familia
 `bestReadOption`, `bestReadRawValue`, `bestReadCompletion` y
 `projectedDecisionSeconds` de la primera lectura proyectada en seco
-(`projectedCoverage: "drop"` para el bloqueo directo). Sigue pendiente de este encargo (§6): enlace de cada FGA a
-su acción efectiva anterior, candidatos viables/inviables por decisión y
-los demás puntos nuevos.
+(`projectedCoverage: "drop"` para el bloqueo directo);
+`seleccion_cobertura` (§2.3) añade la concesión proyectada, la rama
+prevista de la trampa, `stealProbability`, llegadas de D5/pase y la
+mezcla con lo observado (`observedUses`, `observedPoints`,
+`blendedValue`). **§2.6:** `result.summary.shots` enlaza cada FGA a la
+familia elegida antes que él en su fase y a la última decisión de
+lectura/entrada anterior (`causingDecision` con id, punto, opción,
+instante y `factLink`), con tirador real, posición e instante; categorías
+`familia`/`transicion`/`segunda_oportunidad`/`otra_fase`. `byFamily`
+cuenta los tiros con esa atribución (antes: la última familia de la fase).
+Sigue pendiente de este encargo (§6):
+candidatos viables/inviables por decisión en todos los puntos y los
+demás puntos nuevos de §6.
 
 ## Esquema (`schemaVersion: "ME-07B-AUDIT-1"`)
 
