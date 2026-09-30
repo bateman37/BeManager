@@ -108,6 +108,8 @@ entrada del bloqueo siguen siendo la decisión pendiente de
 | Auditoría exportable del partido detallado (esquema, colector, cobertura) | `AUDIT.md` |
 | Diseño completo (no solo lo aprobado) | `reference/README.md` |
 | Próximas entregas | `roadmap.md` |
+| Diagnósticos cuantitativos y fotos basales (20 auditorías ME-07A, evolución ME-07B v2) | `analysis/README.md` |
+| Encargo vigente de ME-07B (capítulo táctico íntegro) | `docs/prompts/implementation/ME-07B-v2-capitulo-tactico-y-20-auditorias.md` |
 
 ## Estructura de código
 

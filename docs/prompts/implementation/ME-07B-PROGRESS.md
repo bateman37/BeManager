@@ -5,11 +5,23 @@ sesión/commit relevante. No sustituye a CAPABILITIES/ACTIONS/AUDIT/roadmap
 como fuente de verdad; cuando algo quede consolidado, se traslada allí y se
 borra de aquí.
 
-## Estado de la PR
+## Estado de la PR (vigente)
 
-PR #10, `claude/new-session-p9xna7` → `main`. **Draft.** No fusionar.
+- **PR #10** (`claude/new-session-p9xna7`) **ya está fusionada** en `main`
+  (`7b7eedd`, merge de 30-09-2026) con ME-07A y el comienzo parcial de
+  ME-07B (foto basal de cuatro semillas y eliminación del veto T04≥9). Su
+  rama y su PR **no se continúan**. Lo que decía más abajo («PR #10
+  Draft») era cierto en su sesión y queda como historial.
+- **Encargo vigente:** `ME-07B-v2-capitulo-tactico-y-20-auditorias.md`
+  (prevalece sobre los recortes del prompt anterior).
+- **Rama nueva:** `claude/me-07b-v2-capitulo-tactico`, creada desde
+  `origin/main` en `7b7eedd` (línea de base registrada). Una sola PR Draft
+  nueva hacia `main` para todo el trabajo de ME-07B v2. No fusionar.
 
-## Sesión 1 — 2026-09-30
+El registro de sesiones de ME-07B v2 está al final de este archivo
+(«ME-07B v2 — sesiones»).
+
+## Historial: sesión 1 del prompt anterior — 2026-09-30
 
 ### Hecho
 - Confirmado: main y la rama/PR de ME-07A siguen disponibles y en Draft
@@ -172,3 +184,12 @@ próxima sesión, no como "ya se ha corregido".
 3. Recapturar la foto basal tras cada cambio de comportamiento real (no
    solo al final) para verificar causalmente cada cierre de §2 antes de
    avanzar a §4-§9.
+
+## ME-07B v2 — sesiones
+
+### Sesión v2-1 — 2026-09-30 (en curso)
+
+- Base: `origin/main` = `7b7eedd`; rama `claude/me-07b-v2-capitulo-tactico`.
+- Guardados literalmente el encargo v2 y el diagnóstico de 20 auditorías,
+  enlazados desde `docs/prompts/README.md`, `docs/match/README.md` y el
+  nuevo índice `docs/match/analysis/README.md`.
