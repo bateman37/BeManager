@@ -191,8 +191,9 @@ describe("ME-04 (2): bocina, tiro en el aire, reset del reloj de lanzamiento y r
     // llegan a la bocina) y en §2.2 (el selector de familia proyecta cada
     // familia hasta su primera lectura): la semilla 151 conserva un tiro
     // (ahora de dos, antes un triple) soltado antes de la bocina final del
-    // partido que entra y solo se resuelve ese tiro.
-    const r = game(151);
+    // partido que entra y solo se resuelve ese tiro. §2.3 (trampa desde la
+    // preparación y defensa que aprende) lo lleva a la semilla 309.
+    const r = game(309);
     const i = r.events.findIndex((e) => e.kind === "buzzer" && e.detail.shotInFlight === true);
     expect(i).toBeGreaterThan(0);
     const buzzer = r.events[i]!;
@@ -211,8 +212,9 @@ describe("ME-04 (2): bocina, tiro en el aire, reset del reloj de lanzamiento y r
     // llegan a la bocina): PUBLISHED_SEED sigue produciendo un fallo
     // soltado a tiempo sin rebote inventado tras la bocina final.
     // ME-07B v2 §2.1 (cierre de rebote y caída del tirador) desplaza ese
-    // caso a la semilla 53.
-    const r = game(53);
+    // caso a la semilla 53, y §2.3 (defensa auto con trampa en competencia)
+    // a la 14.
+    const r = game(14);
     const i = r.events.findIndex((e) => e.kind === "buzzer" && e.detail.shotInFlight === true);
     const next = r.events.slice(i + 1, i + 4).map((e) => e.kind);
     expect(next).toEqual(["field_goal_attempt", "possession_ended", "period_ended"]);
@@ -548,10 +550,12 @@ describe("ME-04 (6): empate → prórroga, empate en prórroga → otra; guardi�
   });
 
   it("partido natural con dos prórrogas: 5:00 cada una, faltas contadas en C4, canastas de C4 y final sin empate", () => {
-    // Semilla recalculada en ME-04B (§§3.1-3.3) y en ME-07B v2 §2.1 (cierre
-    // de rebote y caída del tirador): sigue siendo un partido natural con
-    // dos prórrogas bajo trampa/trampa y «cargar rebote».
-    const r = game(16, TRAP_CRASH);
+    // Semilla recalculada en ME-04B (§§3.1-3.3) y en ME-07B v2 §2.1. Desde
+    // §2.3 (la trampa se decide al preparar la pantalla) ninguna semilla
+    // 1–3000 da dos prórrogas con trampa/trampa y «cargar rebote»; la
+    // semilla 225 con drop/drop y «proteger balance» sí es un partido
+    // natural con dos prórrogas.
+    const r = game(225);
     expect(r.periods.map((p) => p.label)).toEqual(["C1", "C2", "C3", "C4", "Prórroga 1", "Prórroga 2"]);
     const endOf = (period: number) => r.events.find((e) => e.kind === "period_ended" && e.period === period)!;
     expect(endOf(4).score[SC]).toBe(endOf(4).score[PA]);
@@ -569,7 +573,7 @@ describe("ME-04 (6): empate → prórroga, empate en prórroga → otra; guardi�
   });
 
   it("el guardián de prórrogas señala la anomalía sin cerrar el empate ni inventar ganador", () => {
-    const r = game(16, TRAP_CRASH, { maxOvertimes: 1 });
+    const r = game(225, BASE, { maxOvertimes: 1 });
     expect(r.stop.cause).toBe("guardian");
     expect(r.winnerTeamId).toBeNull();
     expect(r.finalScore[SC]).toBe(r.finalScore[PA]);
@@ -703,5 +707,7 @@ describe("ME-04 (7): regresión de ME-01/02/03 y segunda entrada del bloqueo", (
 // Recalculada en ME-07B v2 §2.1: el rebote aplica de verdad el retraso del
 // cierre (antes siempre cero), el tirador no cierra mientras completa su
 // gesto y cae de su salto antes de ir al rebote (LAB-0.4). Cambio
-// intencional de la mecánica deportiva del rebote, no una regresión.
-const TRAMO_FINGERPRINT = "c6831be56ad8113d40e1b6492f80b9894f936322ed792b472d08409ebe7a952c";
+// intencional de la mecánica deportiva del rebote, no una regresión. Otra
+// vez en §2.3: la trampa sale al preparar la pantalla (el tramo incluye
+// posesiones con trampa).
+const TRAMO_FINGERPRINT = "b9bd921491314926c5aa91ae95887935d23cdc20f0be63b4a8f90fbae2c13bf3";

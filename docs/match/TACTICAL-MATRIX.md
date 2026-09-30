@@ -155,10 +155,10 @@ auditoría** · **Prueba** · **Estado**. «—» = no existe todavía.
 | Deny | Receptores | `negar_primera_salida` | DHO | D3 persigue apretado | — | idem | `me06` | parcial: solo en DHO |
 | Top-lock | Receptores | — | — | — | — | — | — | pendiente |
 | Criterio de closeout | Receptores | — | — | — | — | — | — | pendiente |
-| Drop | Cobertura | `coverage` | Bloqueo directo | D5 protege aro, D3 ayuda opcional | — | `seleccion_cobertura` | `me02`, `me04b` | parcial: 100 % en `auto` (§2.3) |
+| Drop | Cobertura | `coverage` | Bloqueo directo | D5 protege aro, D3 ayuda opcional | — | `seleccion_cobertura` | `me02`, `me04b` | parcial: compite con trampa en `auto` (§2.3); sin orden visible de ayuda |
 | At the level | Cobertura | — | — | — | — | — | — | pendiente |
 | Show / hedge | Cobertura | — | — | — | — | — | — | pendiente |
-| Trap | Cobertura | `coverage=trampa` | Bloqueo directo | D1+D5 al balón, D3 low man, D4 rota | Recuperar | `lectura_trampa` | `me02` | parcial: nunca elegible en `auto` (§2.3) |
+| Trap | Cobertura | `coverage=trampa` | Bloqueo directo | D1+D5 al balón, D3 low man, D4 rota | Recuperar | `lectura_trampa`, `seleccion_cobertura` | `me02`, `me07b-v2-coverage.test.ts` | parcial: elegible y elegida en `auto` desde la preparación (§2.3); sin lugar/disparador configurable |
 | Switch | Cobertura | — | — | — | — | — | — | pendiente |
 | ICE lateral | Cobertura | — | — | — | — | — | — | pendiente |
 | Under | Cobertura | — | — | — | — | — | — | pendiente |

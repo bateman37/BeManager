@@ -32,6 +32,7 @@ import type { PlayerProfile } from "../players/player-profile";
 import {
   attackerMoveSpeedMps,
   deflectionProbability,
+  turnoverUnderPressureProbability,
   defenderLateralSpeedMps,
   recognitionLatencySeconds,
   screenInterceptDelaySeconds,
@@ -61,7 +62,7 @@ import {
   DEEP_CONTINUATION_SPOT,
   m09CoordinationLatencySeconds,
 } from "../lab/lab-0-2-parameters";
-import { shooterLandingSeconds } from "../lab/lab-0-4-parameters";
+import { blendProjectionWithObservation, shooterLandingSeconds, type ObservedOutcome } from "../lab/lab-0-4-parameters";
 import { contestReachMeters, evaluateContestLevel, FIRST_READ_TIE_BAND_POINTS } from "../lab/lab-0-3-parameters";
 import type { TerminalOutcome, BallState } from "./match-state";
 import type { FactPhase, FactKind } from "./fact";
@@ -157,6 +158,8 @@ export interface PossessionCoreResult {
   readonly shotClockMs: Milliseconds;
   readonly possessionPhase: number;
   readonly ball: BallState;
+  /** Familia y cobertura efectivamente aplicadas si este tramo fue un ataque organizado (ME-07B v2). */
+  readonly organizedChoice?: { readonly plan: OffensivePlan; readonly coverage: DefensiveCoverage };
 }
 
 export interface ComputePossessionCoreOptions {
@@ -271,6 +274,15 @@ export interface LinkedSegmentOptions {
   readonly t0?: Milliseconds;
   readonly possessionIndex?: number | null;
   readonly phaseIndex?: number | null;
+  /**
+   * ME-07B v2 §2.3/§5: lo que cada equipo ha visto en este partido hasta
+   * ahora (usos y puntos por familia al atacar y por cobertura al
+   * defender). Solo resultados ya ocurridos y visibles, nunca ratings.
+   */
+  readonly observations?: {
+    readonly offenseByFamily: Readonly<Partial<Record<OffensivePlan, ObservedOutcome>>>;
+    readonly defenseByCoverage: Readonly<Partial<Record<DefensiveCoverage, ObservedOutcome>>>;
+  };
 }
 
 /**
@@ -562,6 +574,36 @@ class ReadProjectionReached {
   constructor(readonly projection: ReadProjection) {}
 }
 
+/**
+ * Concesión proyectada de la trampa (ME-07B v2 §2.3): la misma función
+ * `runTrapPhase` avanza en seco hasta la decisión de O1 (desplazamientos,
+ * aviso M09, low man y rotación desde posiciones reales) y, desde esa misma
+ * geometría, se valora cada rama del árbol ya existente por la probabilidad
+ * de sus sorteos (presión T07/T15, desvío de pase T17/T09), sin sortear.
+ */
+interface TrapProjection {
+  readonly trapClosed: boolean;
+  readonly concession: number;
+  readonly branch: "carril_o1" | "trap_broken_o4" | "invertir_o3" | "finalizar_bajo_contencion";
+  readonly stealProbability: number;
+  readonly tD5TrapArrivalSeconds: number;
+  readonly tPassArrivalToO5Seconds: number;
+}
+
+class TrapProjectionReached {
+  constructor(readonly projection: TrapProjection) {}
+}
+
+function projectTrapConcession(ctx: CoreContext): TrapProjection | null {
+  try {
+    runTrapPhase(dryContext(ctx));
+    return null;
+  } catch (e) {
+    if (e instanceof TrapProjectionReached) return e.projection;
+    throw e;
+  }
+}
+
 const DRY_RUN_RNG: SeededRandom = {
   next(): number {
     throw new Error("Proyección en seco: una familia intentó consumir azar antes de su primera lectura.");
@@ -736,10 +778,15 @@ export function computePossessionCore(
     // estimadores distintos que suponían recepciones limpias futuras.
     const bloqueoOpportunity = familyOpportunity(projectFamilyRead(ctx, (dry) => runDropPhase(dry, scenario)));
     const handoffOpportunity = familyOpportunity(projectFamilyRead(ctx, (dry) => runHandoffPhase(dry)));
+    // ME-07B v2 §5: el ataque combina esa proyección con lo que ya ha visto
+    // en este partido de cada familia (puntos por uso), LAB-0.4.
+    const seenFamily = linked?.observations?.offenseByFamily;
+    const bloqueoBlended = bloqueoOpportunity.viable ? blendProjectionWithObservation(bloqueoOpportunity.value, seenFamily?.bloqueo_directo) : -Infinity;
+    const handoffBlended = handoffOpportunity.viable ? blendProjectionWithObservation(handoffOpportunity.value, seenFamily?.mano_a_mano_sin_balon) : -Infinity;
     // Empate exacto: regla estable vinculada a las opciones reales (no una
     // alternancia por número de posesión) — se conserva el bloqueo directo,
     // la familia central ya versionada.
-    resolvedPlan = handoffOpportunity.value > bloqueoOpportunity.value ? "mano_a_mano_sin_balon" : "bloqueo_directo";
+    resolvedPlan = handoffBlended > bloqueoBlended ? "mano_a_mano_sin_balon" : "bloqueo_directo";
     auditDecision(ctx, 0, {
       point: "seleccion_familia",
       holderId: "O1",
@@ -750,13 +797,24 @@ export function computePossessionCore(
           id: "bloqueo_directo",
           status: resolvedPlan === "bloqueo_directo" ? "elegida" : "descartada_por_condicion",
           reasonCode: resolvedPlan === "bloqueo_directo" ? "family_opportunity_higher" : "family_opportunity_lower",
-          values: { ...familyAuditValues(bloqueoOpportunity), projectedCoverage: "drop" },
+          values: {
+            ...familyAuditValues(bloqueoOpportunity),
+            projectedCoverage: "drop",
+            observedUses: seenFamily?.bloqueo_directo?.uses ?? 0,
+            observedPoints: seenFamily?.bloqueo_directo?.points ?? 0,
+            blendedValue: bloqueoBlended,
+          },
         },
         {
           id: "mano_a_mano_sin_balon",
           status: resolvedPlan === "mano_a_mano_sin_balon" ? "elegida" : "descartada_por_condicion",
           reasonCode: resolvedPlan === "mano_a_mano_sin_balon" ? "family_opportunity_higher" : "family_opportunity_lower",
-          values: familyAuditValues(handoffOpportunity),
+          values: {
+            ...familyAuditValues(handoffOpportunity),
+            observedUses: seenFamily?.mano_a_mano_sin_balon?.uses ?? 0,
+            observedPoints: seenFamily?.mano_a_mano_sin_balon?.points ?? 0,
+            blendedValue: handoffBlended,
+          },
         },
       ],
     });
@@ -776,10 +834,15 @@ export function computePossessionCore(
 
   const coverageChoice: DefensiveCoverageChoice = ctx.input.coverage;
   if (coverageChoice === "auto") {
-    const estimate = estimateCoverageChoice(ctx);
+    const estimate = estimateCoverageChoice(ctx, scenario);
+    // ME-07B v2 §2.3/§5: la defensa combina la concesión proyectada con lo
+    // que ya ha concedido de verdad con cada cobertura en este partido.
+    const seenCoverage = linked?.observations?.defenseByCoverage;
+    const dropBlended = blendProjectionWithObservation(estimate.dropConcessionValue, seenCoverage?.drop);
+    const trapBlended = estimate.trapEligible ? blendProjectionWithObservation(estimate.trapConcessionValue, seenCoverage?.trampa) : Infinity;
     // Empate exacto, trampa no elegible o concesión indistinguible
     // conservan `drop` como plan base (ME-07A §4).
-    ctx.resolvedCoverage = estimate.trapEligible && estimate.trapConcessionValue < estimate.dropConcessionValue ? "trampa" : "drop";
+    ctx.resolvedCoverage = estimate.trapEligible && trapBlended < dropBlended ? "trampa" : "drop";
     auditDecision(ctx, 0, {
       point: "seleccion_cobertura",
       holderId: null,
@@ -791,17 +854,33 @@ export function computePossessionCore(
           status: ctx.resolvedCoverage === "drop" ? "elegida" : "descartada_por_condicion",
           reasonCode:
             ctx.resolvedCoverage === "drop"
-              ? estimate.trapConcessionValue === estimate.dropConcessionValue
+              ? trapBlended === dropBlended
                 ? "coverage_tied_base_kept"
                 : "coverage_lower_concession"
               : "coverage_higher_concession",
-          values: { concessionValue: estimate.dropConcessionValue },
+          values: {
+            concessionValue: estimate.dropConcessionValue,
+            offenseBestReadOption: estimate.dropBestReadOption,
+            observedUses: seenCoverage?.drop?.uses ?? 0,
+            observedPoints: seenCoverage?.drop?.points ?? 0,
+            blendedValue: dropBlended,
+          },
         },
         {
           id: "trampa",
           status: ctx.resolvedCoverage === "trampa" ? "elegida" : "descartada_por_condicion",
           reasonCode: !estimate.trapEligible ? "coverage_trap_not_eligible" : ctx.resolvedCoverage === "trampa" ? "coverage_lower_concession" : "coverage_higher_concession",
-          values: { concessionValue: estimate.trapConcessionValue, trapEligible: estimate.trapEligible },
+          values: {
+            concessionValue: estimate.trapConcessionValue,
+            trapEligible: estimate.trapEligible,
+            projectedBranch: estimate.trap?.branch ?? null,
+            stealProbability: estimate.trap?.stealProbability ?? null,
+            tD5TrapArrivalSeconds: estimate.trap?.tD5TrapArrivalSeconds ?? null,
+            tPassArrivalToO5Seconds: estimate.trap?.tPassArrivalToO5Seconds ?? null,
+            observedUses: seenCoverage?.trampa?.uses ?? 0,
+            observedPoints: seenCoverage?.trampa?.points ?? 0,
+            blendedValue: Number.isFinite(trapBlended) ? trapBlended : null,
+          },
         },
       ],
     });
@@ -809,8 +888,13 @@ export function computePossessionCore(
     ctx.resolvedCoverage = coverageChoice;
   }
 
-  if (resolvedPlan === "mano_a_mano_sin_balon") return runHandoffPhase(ctx);
-  return ctx.resolvedCoverage === "trampa" ? runTrapPhase(ctx) : runDropPhase(ctx, scenario);
+  const organized =
+    resolvedPlan === "mano_a_mano_sin_balon"
+      ? runHandoffPhase(ctx)
+      : ctx.resolvedCoverage === "trampa"
+        ? runTrapPhase(ctx)
+        : runDropPhase(ctx, scenario);
+  return { ...organized, organizedChoice: { plan: resolvedPlan, coverage: ctx.resolvedCoverage } };
 }
 
 /**
@@ -1607,7 +1691,12 @@ function runTrapPhase(ctx: CoreContext): PossessionCoreResult {
   });
 
   // --- D5 sale a comprometer a O1 (aviso: emisor D5) ----------------------
-  const tTrapCall = tUseScreen + recognitionLatencySeconds(d5.attributes.M01, d5.attributes.M05);
+  // ME-07B v2 §2.3: la respuesta se decide cuando empieza a prepararse la
+  // acción (O5 va a bloquear desde el instante 0 de la fase organizada), no
+  // cuando O1 ya usa la pantalla: D5 sale tras su propia latencia de
+  // reconocimiento desde ese inicio. Si aun así no llega antes del pase, la
+  // trampa sigue siendo tardía (rama «trampa no cerrada»).
+  const tTrapCall = recognitionLatencySeconds(d5.attributes.M01, d5.attributes.M05);
   const d5TrapSpeed = defenderLateralSpeedMps(d5.attributes.F04);
   const d5TrapOrigin = ctx.positions.D5!;
   const rawD5TrapArrival = tTrapCall + timeToReach(d5TrapOrigin, screenPoint, d5TrapSpeed);
@@ -1702,6 +1791,46 @@ function runTrapPhase(ctx: CoreContext): PossessionCoreResult {
     speedMps: d4RepairSpeed,
     brakingExtraSeconds: d4BrakingExtra,
   };
+
+  if (ctx.projecting) {
+    const base = { tD5TrapArrivalSeconds: tD5TrapArrival, tPassArrivalToO5Seconds: tPassArrivalToO5 };
+    if (!trapClosed) {
+      // Trampa tardía: D5 no protege el aro y O1 tiene el carril (misma rama de abajo).
+      throw new TrapProjectionReached({
+        ...base,
+        trapClosed: false,
+        branch: "carril_o1",
+        stealProbability: 0,
+        concession: shotClockRemainingSeconds > 2 ? 2 * shotProbability(CLOSE_FINISH_BASE_PROBABILITY, o1.attributes.T01, 0) : 0,
+      });
+    }
+    const stealProbability = turnoverUnderPressureProbability(o1.attributes.T07, Math.min(d1.attributes.T15, d5.attributes.T15));
+    const passToO5 = 1 - deflectionProbability(d3.attributes.T17, o1.attributes.T09);
+    const tO5ReadyProjected = tPassArrivalToO5 + CLOSE_FINISH_PREP_SECONDS;
+    const tPrepReadyO3Projected =
+      tO5ReadyProjected + PASS_RELEASE_SECONDS + distanceSeconds(SHORT_ROLL_SPOT, WEAK_CORNER_SPOT) + CATCH_AND_SHOOT_PREP_SECONDS;
+    let branch: TrapProjection["branch"];
+    let next: number;
+    if (tD3LowManArrival > tO5ReadyProjected) {
+      branch = "trap_broken_o4";
+      next = isBehindThreePointLine(ctx.positions.O4!)
+        ? 3 * shotProbability(THREE_POINT_BASE_PROBABILITY, o4.attributes.T04, 0)
+        : 2 * shotProbability(CLOSE_FINISH_BASE_PROBABILITY, o4.attributes.T01, 0);
+    } else if (tD4ArriveAtCorner - tPrepReadyO3Projected >= 0.25) {
+      branch = "invertir_o3";
+      next = (1 - deflectionProbability(d3.attributes.T17, o5.attributes.T09)) * 3 * shotProbability(THREE_POINT_BASE_PROBABILITY, o3.attributes.T04, 0);
+    } else {
+      branch = "finalizar_bajo_contencion";
+      next = 2 * shotProbability(CLOSE_FINISH_BASE_PROBABILITY, o5.attributes.T01, 1);
+    }
+    throw new TrapProjectionReached({
+      ...base,
+      trapClosed: true,
+      branch,
+      stealProbability,
+      concession: (1 - stealProbability) * passToO5 * next,
+    });
+  }
 
   if (trapClosed) {
     // Presión real de dos defensores sobre el balón (T07 vs el peor T15 de
@@ -2004,30 +2133,30 @@ interface CoverageEstimate {
   readonly trapEligible: boolean;
   readonly dropConcessionValue: number;
   readonly trapConcessionValue: number;
+  readonly trap: TrapProjection | null;
+  readonly dropBestReadOption: string | null;
 }
 
-function estimateCoverageChoice(ctx: CoreContext): CoverageEstimate {
-  const o1 = player(ctx, "O1");
-  const o5 = player(ctx, "O5");
-  const o4 = player(ctx, "O4");
-  const d1 = player(ctx, "D1");
-  const d5 = player(ctx, "D5");
-
-  const screenPoint = ctx.positions.O5!;
-  const o1UsePoint = pointShortOfTarget(ctx.positions.O1!, screenPoint, COMBINED_CONTACT_RADIUS_METERS);
-  const tHandlerArrival = timeToReach(ctx.positions.O1!, o1UsePoint, attackerMoveSpeedMps(o1.attributes.F01));
-  const tUseScreen = Math.max(SCREEN_SET_AFTER_ARRIVAL_SECONDS, tHandlerArrival);
-
-  const screenDelay = screenInterceptDelaySeconds(o5.attributes.T13, o5.attributes.F05, d1.attributes.T16) + screenContactAdjustmentSeconds(o5.measures.weightKg - d1.measures.weightKg);
-  const dropConcessionValue = screenDelay >= 0.2 ? 2 * shotProbability(CLOSE_FINISH_BASE_PROBABILITY, o5.attributes.T01, 0) : 0;
-
-  const tTrapCall = tUseScreen + recognitionLatencySeconds(d5.attributes.M01, d5.attributes.M05);
-  const rawD5TrapArrival = tTrapCall + timeToReach(ctx.positions.D5!, screenPoint, defenderLateralSpeedMps(d5.attributes.F04));
-  const tD5TrapArrival = Math.max(0, rawD5TrapArrival - perimeterArrivalAdjustmentSeconds(d5.attributes.T22));
-  const trapEligible = tD5TrapArrival <= tUseScreen + screenDelay;
-  const trapConcessionValue = trapEligible ? 3 * shotProbability(THREE_POINT_BASE_PROBABILITY, o4.attributes.T04, 0) : Infinity;
-
-  return { trapEligible, dropConcessionValue, trapConcessionValue };
+/**
+ * ME-07B v2 §2.3: ambas concesiones salen de la misma frontera y de la
+ * propia ejecución de cada cobertura, proyectada en seco: `drop` concede la
+ * mejor vía de la primera lectura del bloqueo (con riesgo de pase, igual que
+ * el selector de familia); `trampa` concede el valor esperado de la rama que
+ * su propia geometría alcanza. La trampa solo es elegible si se cierra antes
+ * de que llegue el pase a O5; una trampa tardía concede el carril de O1.
+ */
+function estimateCoverageChoice(ctx: CoreContext, scenario: ScenarioDefinition): CoverageEstimate {
+  const drop = familyOpportunity(projectFamilyRead(ctx, (dry) => runDropPhase(dry, scenario)));
+  const trap = projectTrapConcession(ctx);
+  const dropConcessionValue = Number.isFinite(drop.value) ? drop.value : 0;
+  const trapEligible = trap !== null && trap.trapClosed;
+  return {
+    trapEligible,
+    dropConcessionValue,
+    trapConcessionValue: trap ? trap.concession : Infinity,
+    trap,
+    dropBestReadOption: drop.bestOptionId,
+  };
 }
 
 /**

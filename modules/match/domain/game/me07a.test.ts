@@ -103,21 +103,27 @@ describe("ME-07A §3.2: el poseedor real puede conservar la iniciativa (partido 
 });
 
 describe("ME-07A §4: cobertura y orden sin balón en auto, con denominadores reales", () => {
-  it("con la disposición inicial estándar del fixture, auto reconoce que la trampa no es elegible (D5 no llega a tiempo desde drop) y conserva drop como plan base", () => {
-    // Hallazgo de calibración (a documentar en la PR, ME-07B): con las
-    // posiciones iniciales fijas de los tres escenarios de laboratorio,
-    // D5 arranca en la protección del aro, lejos del punto de pantalla;
-    // ninguna combinación de atributos alcanzables (F04/M01/M05/T22 en su
-    // máximo) lo hace llegar a tiempo para comprometer antes de que O1 use
-    // la pantalla. La política sigue siendo real y auditable (nunca un
-    // bono oculto): declara `coverage_trap_not_eligible` en vez de fingir
-    // una comparación imposible.
-    const gameInput = input(1);
+  it("si ningún D5 puede cerrar la trampa antes del pase, auto declara la trampa no elegible y conserva drop", () => {
+    // ME-07B v2 §2.3 sustituye el hallazgo de ME-07A («la trampa nunca es
+    // elegible con la disposición estándar»): D5 decide ya al empezar a
+    // prepararse la pantalla y, con los perfiles del fixture, la trampa sí
+    // puede cerrar a tiempo (ver `me07b-v2-coverage.test.ts`). La regla de
+    // elegibilidad sigue viva: con todos los jugadores lentos en reconocer
+    // y desplazarse (F04/M01/M05/T22 = 1), la trampa llegaría tarde y `auto`
+    // declara `coverage_trap_not_eligible` en vez de fingir una comparación.
+    const slow = (players: typeof SIERRA_CLARA.players) =>
+      players.map((p) => ({ ...p, attributes: { ...p.attributes, F04: 1, M01: 1, M05: 1, T22: 1 } }));
+    const gameInput = buildGameInput({
+      seed: 1,
+      auditEnabled: true,
+      home: { id: SC, name: SIERRA_CLARA.name, players: slow(SIERRA_CLARA.players), priority: "proteger_balance", coverage: "auto", offBallDefensiveCall: "auto" },
+      away: { id: PA, name: PUERTO_AMBAR.name, players: slow(PUERTO_AMBAR.players), priority: "proteger_balance", coverage: "auto", offBallDefensiveCall: "auto" },
+    });
     const result = playFullGame(gameInput);
     const decisions = result.audit!.decisions.filter((d) => d.point === "seleccion_cobertura");
     expect(decisions.length).toBeGreaterThan(0);
     expect(decisions.every((d) => d.chosenOptionId === "drop")).toBe(true);
-    expect(decisions.every((d) => d.options.find((o) => o.id === "drop")!.status === "elegida")).toBe(true);
+    expect(decisions.every((d) => d.options.find((o) => o.id === "trampa")!.reasonCode === "coverage_trap_not_eligible")).toBe(true);
   });
 
   it("la orden sin balón en auto compara negar_primera_salida frente a guardar_espacio con la geometría real de cada mano a mano y declara un motivo estable", () => {

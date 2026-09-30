@@ -530,9 +530,10 @@ describe("ME-03 (7): posesión individual y lotes rápidos conservan su recorrid
     // futuro bloque cambia de nuevo el árbol de decisión o las fórmulas de
     // contacto/oposición, esta huella debe recalcularse otra vez aquí mismo.
     // Recalculada otra vez en ME-07B v2 §2.1 (retraso real del cierre de
-    // rebote, tirador sin cierre durante su gesto y caída LAB-0.4).
+    // rebote, tirador sin cierre durante su gesto y caída LAB-0.4) y en §2.3
+    // (el lote de trampa: D5 sale al preparar la pantalla).
     expect(createHash("sha256").update(JSON.stringify(out)).digest("hex")).toBe(
-      "deca48e297f7d302b510e5dabe0dff96684d7fd6613a085dfccaff0932be1221",
+      "00632ae575f48625c7b7c9787ad9f6d28528543469762ce6c616bc3cd49bf365",
     );
   });
 

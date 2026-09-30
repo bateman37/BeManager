@@ -32,3 +32,36 @@ export const GRAVITY_MPS2 = 9.81;
 export function shooterLandingSeconds(f06: Rating): number {
   return Math.sqrt((2 * jumpCeilingMeters(f06)) / GRAVITY_MPS2);
 }
+
+/**
+ * Peso previo de la proyección frente a lo observado en el propio partido,
+ * en «usos equivalentes» (ME-07B v2 §2.3 y §5: el rival automático aprende
+ * de muestras visibles, nunca de datos ocultos ni de la tirada futura).
+ *
+ * Valor efectivo de una opción ya usada `n` veces con `p` puntos concedidos
+ * (defensa) o anotados (ataque) en esas posesiones desde la decisión:
+ * `(p + K · proyección) / (n + K)`.
+ *
+ * - Unidad: usos (posesiones con esa decisión). Intervalo razonable [2, 20].
+ * - Caso neutro: sin muestras (`n = 0`) el valor es la proyección pura.
+ * - Sensibilidad: `K → ∞` reproduce el comportamiento sin aprendizaje;
+ *   `K` pequeño reacciona más a rachas (probado en `lab-0-4-parameters.test.ts`).
+ * - No duplicación: la proyección solo valora la primera acción; lo
+ *   observado incluye además rebotes, faltas y segundas acciones que esa
+ *   proyección no contiene. No toca ningún acierto ni ritmo.
+ */
+export const OBSERVATION_PRIOR_WEIGHT_USES = 6;
+
+export interface ObservedOutcome {
+  readonly uses: number;
+  readonly points: number;
+}
+
+export function blendProjectionWithObservation(
+  projection: number,
+  observed: ObservedOutcome | undefined,
+  priorWeight: number = OBSERVATION_PRIOR_WEIGHT_USES,
+): number {
+  if (!observed || observed.uses <= 0) return projection;
+  return (observed.points + priorWeight * projection) / (observed.uses + priorWeight);
+}

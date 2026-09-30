@@ -220,6 +220,17 @@ El tramo enlazado no activa capacidades nuevas ni coeficientes nuevos:
   suelta el tiro en el vértice del salto ejecutado; el tirador no sale hacia
   el rebote hasta tocar el suelo. F06 no se suma a captura ni cierre.
 
+- **LAB-0.4** `OBSERVATION_PRIOR_WEIGHT_USES = 6` y
+  `blendProjectionWithObservation`: valor efectivo de una familia (ataque)
+  o cobertura (defensa) ya usada `n` veces con `p` puntos
+  `= (p + 6 · proyección)/(n + 6)`; intervalo [2, 20] usos, neutro sin
+  muestras = proyección; `K → ∞` reproduce el comportamiento sin
+  aprendizaje. Solo resultados visibles del propio partido.
+- **ME-07B v2 §2.3:** el hallazgo de ME-07A («D5 nunca llega a comprometer
+  una trampa desde drop») queda superado: D5 sale al empezar a prepararse
+  la pantalla; con un D5 lento (F04/M01/M05/T22 mínimos) la trampa sigue
+  siendo no elegible (`me07a.test.ts`).
+
 ## Editor de equilibrio
 
 Los coeficientes son datos versionados por el desarrollo, no un panel de

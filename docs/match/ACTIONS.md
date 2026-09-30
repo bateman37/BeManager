@@ -121,7 +121,23 @@ Una trampa rota nunca garantiza tiro cómodo; una trampa cerrada nunca
 garantiza robo ni canasta (ver pruebas discriminantes en
 `domain/simulation/me02.test.ts`).
 
-**Cobertura `auto` (ME-07A §4).** Antes de despachar el árbol, si
+**ME-07B v2 §2.3 — defensa `auto` desde la preparación.** D5 decide la
+trampa cuando empieza a prepararse la pantalla (instante 0 de la fase
+organizada) y sale tras su latencia M01/M05, no cuando O1 ya la usa; una
+trampa que aun así llega después del pase a O5 sigue siendo tardía y
+concede el carril. `auto` proyecta en seco ambas ejecuciones desde la
+misma geometría: `drop` concede la mejor vía de la primera lectura del
+bloqueo (con riesgo de pase); `trampa`, el valor esperado de la rama que
+alcanza su propia geometría (presión T07/T15, desvío T17/T09, low man
+tardío → O4 libre, inversión a O3 o tiro contenido de O5). Cada concesión
+se combina con lo que esa defensa ya ha concedido de verdad con esa
+cobertura en el partido (`blendProjectionWithObservation`, LAB-0.4, peso
+previo 6 usos); el ataque hace lo mismo con cada familia. Así la defensa
+alterna por resultados visibles, sin cuotas: foto seed 484 trampas / 675
+drops (Sierra defendiendo) y 443 / 733 (Puerto). Pendiente: switch, show,
+at the level, ICE, under y la respuesta de zona (§5).
+
+**Cobertura `auto` (ME-07A §4, superado en parte por ME-07B v2).** Antes de despachar el árbol, si
 `coverage: "auto"`, compara de forma pura (sin RNG) qué concede `drop`
 (el short roll de O5 queda libre si la pantalla retiene a D1 lo
 suficiente) frente a si `trampa` es siquiera elegible (D5 debe poder

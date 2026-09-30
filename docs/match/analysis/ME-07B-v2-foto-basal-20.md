@@ -79,6 +79,7 @@ Cada fila nueva se añade con su commit; las anteriores no se reescriben.
 | `7b7eedd` | Basal | Cuadro de arriba |
 | sesión v2-1 | §2.1 rebote: retraso real del cierre + tirador sin cierre durante su gesto + caída LAB-0.4 | Ver «Tras §2.1» |
 | sesión v2-1 | §2.2 selector de familia por proyección en seco de la primera lectura + riesgo de pase | Monopolio intacto: seed PnR 1.197/1.235 (Sierra) y 1.216/1.217 (Puerto); +3 603/613 y 800/803; +5 302/316 y 401/401. Causa física: roll libre en 2.397/2.413 primeras lecturas (ver `ACTIONS.md`). Parejas: 91 seed 120–122 → +3 135–128; 102 seed 131–104 → +5 155–125 |
+| sesión v2-1 | §2.3 trampa decidida al preparar la pantalla + concesiones proyectadas + aprendizaje por muestras visibles (LAB-0.4) | Ver «Tras §2.3» |
 
 ## Tras §2.1 (rebote), mismas 20 semillas y fotos
 
@@ -119,3 +120,29 @@ Parejas: semilla 91 seed 120–140 (Puerto 99/12 2FGA/3FGA) → Sierra +3
 146–120 (Puerto 28/81). El fix de rebote reduce las segundas oportunidades
 y el marcador, pero **no cambia** el monopolio de familia, drop ni el giro
 de Puerto al triple con Sierra aumentada: eso es §2.2–§2.4.
+
+## Tras §2.3 (defensa auto), mismas 20 semillas y fotos
+
+Sin aprendizaje, la sola corrección de tiempo y concesión pasaba a un
+monopolio de trampa (1.094/1.096 y 1.108/1.108 en seed): la geometría de
+entrada organizada se repite y la trampa concede un triple libre de O4
+(≈0,83–1,01) frente al roll libre del drop (≈1,17–1,21). Con el
+aprendizaje por muestras visibles (lo concedido de verdad, incluidos
+rebotes ofensivos y libres que la proyección no ve) la defensa alterna:
+
+| Métrica | seed Sierra | seed Puerto | +3 Sierra | +3 Puerto | +5 Sierra | +5 Puerto |
+|---|---:|---:|---:|---:|---:|---:|
+| Puntos · posesiones | 1.323 · 1.104 | 1.315 · 1.106 | 794 · 597 | 686 · 598 | 488 · 307 | 276 · 305 |
+| 2FGM/2FGA · 3FGM/3FGA | 383/712 · 172/521 | 397/727 · 162/514 | 270/429 · 78/264 | 63/110 · 175/557 | 115/186 · 83/180 | 22/44 · 73/249 |
+| FTM/FTA · PF | 41/54 · 32 | 35/43 · 39 | 20/26 · 29 | 35/39 · 19 | 9/12 · 12 | 13/17 · 10 |
+| Pérdidas | 146 | 83 | 54 | 96 | 27 | 79 |
+| OREB tras fallo de campo vivo | 291/609 | 234/617 | 160/290 | 161/358 | 96/150 | 73/185 |
+| Familias PnR / DHO | 1.171 / 5 | 1.145 / 14 | 495 / 128 | 695 / 36 | 304 / 4 | 329 / 3 |
+| Cobertura como defensa: trampa / drop | 484 / 675 | 443 / 733 | 309 / 422 | 207 / 416 | 328 / 4 | 186 / 122 |
+
+Parejas: 91 seed 124–134 (Puerto 94/27) → +3 135–137 (Puerto 19/101); 102
+seed 114–108 (Puerto 76/43) → +5 158–67 (Puerto 14/77). **Limitaciones
+abiertas:** la trampa multiplica el rebote ofensivo (defensores fuera de
+sitio y sin carrera defensiva a cerrar, ver §2.1) y las pérdidas; la
+familia sigue siendo casi siempre PnR salvo con Sierra +3; solo existen
+dos coberturas. Nada de esto es objetivo numérico.

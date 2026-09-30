@@ -48,7 +48,9 @@ describe("ME-07B v2 §2.2: selección de familia sobre la misma frontera que su 
       expect(v.situationalValue as number).toBeCloseTo((v.bestReadRawValue as number) * (v.bestReadCompletion as number), 12);
       matched += 1;
     }
-    expect(matched).toBeGreaterThan(100);
+    // Desde §2.3 la defensa auto alterna drop/trampa; solo las posesiones en
+    // drop tienen `lectura_bloqueo_o1` con la que comparar.
+    expect(matched).toBeGreaterThan(10);
   });
 
   it("la mano a mano también se proyecta hasta su lectura, con el riesgo del pase de entrada", () => {

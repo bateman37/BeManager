@@ -34,12 +34,15 @@ import { createResumableRandom, type ResumableRandom } from "../random/seeded-ra
 import { secondsToMs, type Milliseconds } from "../time/clock";
 import type {
   MatchInput,
+  OffensivePlan,
+  DefensiveCoverage,
   OffensivePlanChoice,
   DefensiveCoverageChoice,
   OffBallDefensiveCallChoice,
   OffensiveCreationPriority,
 } from "../lab/match-input";
 import { getScenario } from "../lab/scenario";
+import type { ObservedOutcome } from "../lab/lab-0-4-parameters";
 import type { LAB_0_3_PARAMETERS_VERSION } from "../lab/lab-0-3-parameters";
 import {
   attackerMoveSpeedMps,
@@ -275,6 +278,23 @@ export abstract class LinkedRun {
   protected readonly rngStates: { atMs: Milliseconds; state: number }[] = [];
   protected readonly score: Record<string, number> = {};
   protected readonly audit: AuditCollector;
+  /**
+   * ME-07B v2 §2.3/§5: muestras visibles de este partido. Por equipo, usos y
+   * puntos (del atacante, desde la decisión hasta el fin de la posesión o la
+   * siguiente decisión organizada) por familia al atacar y por cobertura al
+   * defender. Solo resultados ya ocurridos.
+   */
+  protected readonly observations = new Map<
+    string,
+    { offenseByFamily: Partial<Record<OffensivePlan, ObservedOutcome>>; defenseByCoverage: Partial<Record<DefensiveCoverage, ObservedOutcome>> }
+  >();
+  protected pendingObservation: {
+    readonly attackingId: string;
+    readonly defendingId: string;
+    readonly plan: OffensivePlan;
+    readonly coverage: DefensiveCoverage;
+    readonly scoreAtDecision: number;
+  } | null = null;
 
   protected game: { ms: Milliseconds; running: boolean; ref: Milliseconds };
   protected shot: { ms: Milliseconds; running: boolean; ref: Milliseconds } | null;
@@ -700,6 +720,7 @@ export abstract class LinkedRun {
   }
 
   protected closePossession(atMs: Milliseconds, reason: string): boolean {
+    this.settleObservation();
     const p = this.currentPossession();
     p.endMs = atMs;
     p.endReason = reason;
@@ -829,12 +850,41 @@ export abstract class LinkedRun {
         // `seleccion_familia`) enlacen con los hechos de su propia fase.
         phaseIndex: possession ? possession.phases.length : null,
         ...(rules ? { rules } : {}),
+        observations: {
+          offenseByFamily: { ...(this.observations.get(frame.attacking.id)?.offenseByFamily ?? {}) },
+          defenseByCoverage: { ...(this.observations.get(frame.defending.id)?.defenseByCoverage ?? {}) },
+        },
       },
     });
   }
 
+  /** Cierra la muestra pendiente con los puntos anotados desde su decisión (ME-07B v2 §5). */
+  protected settleObservation(): void {
+    const pending = this.pendingObservation;
+    if (!pending) return;
+    this.pendingObservation = null;
+    const points = (this.score[pending.attackingId] ?? 0) - pending.scoreAtDecision;
+    const add = (o: ObservedOutcome | undefined): ObservedOutcome => ({ uses: (o?.uses ?? 0) + 1, points: (o?.points ?? 0) + points });
+    const off = this.observations.get(pending.attackingId) ?? { offenseByFamily: {}, defenseByCoverage: {} };
+    off.offenseByFamily[pending.plan] = add(off.offenseByFamily[pending.plan]);
+    this.observations.set(pending.attackingId, off);
+    const def = this.observations.get(pending.defendingId) ?? { offenseByFamily: {}, defenseByCoverage: {} };
+    def.defenseByCoverage[pending.coverage] = add(def.defenseByCoverage[pending.coverage]);
+    this.observations.set(pending.defendingId, def);
+  }
+
   protected runCore(frame: Frame, t0: Milliseconds, entry: LinkedEntry, legs?: Record<string, PlannedLeg>): Step | null {
     const core = this.computeCore(frame, t0, entry, legs);
+    if (core.organizedChoice) {
+      this.settleObservation();
+      this.pendingObservation = {
+        attackingId: frame.attacking.id,
+        defendingId: frame.defending.id,
+        plan: core.organizedChoice.plan,
+        coverage: core.organizedChoice.coverage,
+        scoreAtDecision: this.score[frame.attacking.id] ?? 0,
+      };
+    }
 
     // Historial local → trayectoria global continua desde t0.
     for (const [slot, entries] of Object.entries(core.positionHistory ?? {})) {
