@@ -68,13 +68,16 @@ describe("ME-07B v2 §2.4: asignación de creador y bloqueador al organizar", ()
     expect(entries.length).toBeGreaterThan(50);
     const pairsOf = (roles: Record<string, string>) =>
       [1, 2, 3, 4, 5].map((k) => `${roles[`O${k}`]}>${roles[`D${k}`]}`).sort().join(",");
-    const seen = new Map<string, { pairs: string; onCourt: string }>();
+    const seen = new Map<string, { pairs: string; onCourt: string; atMs: number }>();
     let compared = 0;
     for (const e of entries) {
       const key = String(e.possessionIndex);
-      const now = { pairs: pairsOf(e.detail.roles as Record<string, string>), onCourt: e.onCourtIds.join() };
+      const now = { pairs: pairsOf(e.detail.roles as Record<string, string>), onCourt: e.onCourtIds.join(), atMs: e.atMs };
       const prev = seen.get(key);
-      if (prev && prev.onCourt === now.onCourt) {
+      // Un cambio defensivo (switch, ME-07B v2 §5) sí cambia las parejas a
+      // propósito; se comprueba en `me07b-v2-switch-show.test.ts`.
+      const switched = r.events.some((x) => x.kind === "switch_committed" && x.possessionIndex === e.possessionIndex && prev && x.atMs >= prev.atMs && x.atMs <= e.atMs);
+      if (prev && prev.onCourt === now.onCourt && !switched) {
         expect(now.pairs).toBe(prev.pairs);
         compared += 1;
       }

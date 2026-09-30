@@ -12,8 +12,14 @@ import { LAB_0_3_PARAMETERS_VERSION } from "./lab-0-3-parameters";
  * parámetro de la corrida, no del escenario: la misma entrada de media
  * pista, quintetos y bloqueo central puede resolverse con cualquiera de
  * las dos.
+ *
+ * ME-07B v2 §5: `cambio` (switch) — D5 sale a tomar al manejador a la altura
+ * de la pantalla y D1 se queda con el bloqueador; el emparejamiento cambiado
+ * (posible desajuste) persiste el resto de la posesión. `show` (hedge) — D5
+ * sale a frenar al manejador delante de la pantalla y vuelve a su marca
+ * cuando D1 ha superado el bloqueo.
  */
-export type DefensiveCoverage = "drop" | "trampa";
+export type DefensiveCoverage = "drop" | "trampa" | "cambio" | "show";
 
 /**
  * Cobertura elegida desde `/lab` (ME-07A §4): `auto` deja que la defensa

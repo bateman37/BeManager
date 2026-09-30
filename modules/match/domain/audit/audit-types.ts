@@ -40,7 +40,10 @@ export type AuditDecisionPoint =
   // ME-07A §3.2: transición con tiro de tres del propio portador.
   | "lectura_transicion"
   // ME-07B v2 §2.1: disputa del rebote con cierres legales y próximos.
-  | "disputa_rebote";
+  | "disputa_rebote"
+  // ME-07B v2 §5: lecturas del manejador ante cambio (switch) y show.
+  | "lectura_cambio"
+  | "lectura_show";
 
 /**
  * Motivo estructurado y estable de cada opción. Uno por causa real del
@@ -97,6 +100,10 @@ export type AuditReasonCode =
   // ME-07B v2 §2.5: contacto defensivo real sancionado (LAB-0.6).
   | "contact_foul_drawn"
   | "contact_foul_not_drawn"
+  // ME-07B v2 §5: lectura genérica por valor (cambio, show).
+  | "read_value_higher"
+  | "read_value_lower"
+  | "read_option_not_viable"
   | "not_evaluated_short_circuit"
   | "situational_value_lower"
   | "tie_band_resolved_by_tendency"

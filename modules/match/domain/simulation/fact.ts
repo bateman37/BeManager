@@ -17,6 +17,10 @@ export type FactKind =
   | "help_left_assignment"
   | "help_repair_attempt"
   | "trap_committed"
+  // ME-07B v2 §5: cambio (switch) y show.
+  | "switch_committed"
+  | "show_committed"
+  | "show_recovery"
   | "trap_broken_advantage"
   | "trap_recovered"
   | "read_option"

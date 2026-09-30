@@ -915,7 +915,24 @@ export abstract class LinkedRun {
       if (!this.emitCoreEvent(frame, raw, atMs)) return null;
     }
     this.ball = this.globalBall(frame, core.ball);
-    return this.afterTerminal(frame, core.terminal, endMs);
+    const step = this.afterTerminal(frame, core.terminal, endMs);
+    // ME-07B v2 §5: tras un cambio, los dos defensores intercambiados siguen
+    // con su nueva marca mientras la misma posesión continúa (reorganizar o
+    // segunda oportunidad): el desajuste persiste hasta un balón muerto o una
+    // nueva posesión, donde la defensa vuelve a emparejarse.
+    if (core.defensiveSwap && step && (step.kind === "organize" || step.kind === "second_chance") && step.frame.attacking.id === frame.attacking.id) {
+      const x = frame.slotToId[core.defensiveSwap[0]]!;
+      const y = frame.slotToId[core.defensiveSwap[1]]!;
+      const map = { ...step.frame.slotToId };
+      const sx = step.frame.idToSlot[x];
+      const sy = step.frame.idToSlot[y];
+      if (sx && sy) {
+        map[sx] = y;
+        map[sy] = x;
+        return { ...step, frame: rebindFrame(step.frame, map) };
+      }
+    }
+    return step;
   }
 
   protected globalBall(frame: Frame, ball: BallState): BallMark {
@@ -1452,6 +1469,7 @@ export abstract class LinkedRun {
     // instante; D2 solo se preposiciona aquí cuando ya se sabe con
     // certeza que la cobertura es `trampa`.
     const positionalDefenders = coverage === "trampa" ? ["D2", "D3", "D4", "D5"] : ["D3", "D4", "D5"];
+    const coverageText: Record<string, string> = { trampa: "trampa", auto: "cobertura automática", drop: "drop", cambio: "cambio", show: "show" };
     const legs: Record<string, PlannedLeg> = {};
     const late: string[] = [];
     for (const slot of DEFENSE_SLOTS) {
@@ -1476,7 +1494,7 @@ export abstract class LinkedRun {
         actors: [frame.slotToId.O1!, frame.slotToId.O5!],
         text:
           entryText ??
-          `Los cinco atacantes están situados: ${frame.slotToId.O1} y ${frame.slotToId.O5} inician el bloqueo directo central (${coverage === "trampa" ? "trampa" : coverage === "auto" ? "cobertura automática" : "drop"}) con ${(remaining / 1000).toFixed(1)} s de lanzamiento.${lateText}`,
+          `Los cinco atacantes están situados: ${frame.slotToId.O1} y ${frame.slotToId.O5} inician el bloqueo directo central (${coverageText[coverage] ?? coverage}) con ${(remaining / 1000).toFixed(1)} s de lanzamiento.${lateText}`,
         detail: { shotClockMs: remaining, lateDefenders: late, roles: { ...frame.slotToId } },
         ball: { status: "held", holderId: frame.slotToId.O1!, fixed: null },
       })

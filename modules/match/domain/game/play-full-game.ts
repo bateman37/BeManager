@@ -927,7 +927,7 @@ class GameRun extends LinkedRun {
       second,
       tAllSet,
       targets,
-      `Segunda entrada situada: ${creatorId} y ${second.slotToId.O5} juegan el bloqueo directo desde el nuevo ángulo (${this.coverageWhenDefending(second.defending.id) === "trampa" ? "trampa" : "drop"}) con ${(this.shotRemainingAt(tAllSet) / 1000).toFixed(1)} s de lanzamiento.`,
+      `Segunda entrada situada: ${creatorId} y ${second.slotToId.O5} juegan el bloqueo directo desde el nuevo ángulo (${this.coverageWhenDefending(second.defending.id)}) con ${(this.shotRemainingAt(tAllSet) / 1000).toFixed(1)} s de lanzamiento.`,
     );
   }
 

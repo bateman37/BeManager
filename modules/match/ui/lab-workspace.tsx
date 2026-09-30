@@ -44,6 +44,8 @@ const SCENARIOS: { id: ScenarioId; label: string }[] = (
 const COVERAGE_LABELS: Record<DefensiveCoverage, string> = {
   drop: "Drop",
   trampa: "Trampa (doble sobre el bloqueo)",
+  cambio: "Cambio (switch)",
+  show: "Show (hedge y vuelta)",
 };
 
 /**

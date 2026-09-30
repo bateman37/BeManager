@@ -34,15 +34,14 @@ describe("ME-07B v2 §2.3: defensa auto con drop y trampa en competencia", () =>
     const chosen = new Set(coverage.map((d) => d.chosenOptionId));
     expect(chosen.has("drop")).toBe(true);
     expect(chosen.has("trampa")).toBe(true);
+    // ME-07B v2 §5: compiten drop, trampa, cambio y show; la elegida tiene la
+    // menor concesión combinada entre las elegibles (empate: plan base).
     for (const d of coverage) {
-      const drop = d.options.find((o) => o.id === "drop")!.values!;
-      const trap = d.options.find((o) => o.id === "trampa")!.values!;
-      if (d.chosenOptionId === "trampa") {
-        expect(trap.trapEligible).toBe(true);
-        expect(trap.blendedValue as number).toBeLessThan(drop.blendedValue as number);
-      } else if (trap.trapEligible) {
-        expect(trap.blendedValue as number).toBeGreaterThanOrEqual(drop.blendedValue as number);
-      }
+      const eligible = d.options.filter((o) => o.values!.blendedValue !== null);
+      const best = Math.min(...eligible.map((o) => o.values!.blendedValue as number));
+      const picked = d.options.find((o) => o.id === d.chosenOptionId)!;
+      expect(picked.values!.blendedValue as number).toBeCloseTo(best, 12);
+      if (d.chosenOptionId === "trampa") expect(picked.values!.trapEligible).toBe(true);
     }
   });
 
