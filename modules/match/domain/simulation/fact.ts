@@ -21,6 +21,7 @@ export type FactKind =
   | "switch_committed"
   | "show_committed"
   | "show_recovery"
+  | "coverage_not_applicable"
   | "trap_broken_advantage"
   | "trap_recovered"
   | "read_option"

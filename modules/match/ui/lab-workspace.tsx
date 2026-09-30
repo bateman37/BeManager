@@ -46,6 +46,8 @@ const COVERAGE_LABELS: Record<DefensiveCoverage, string> = {
   trampa: "Trampa (doble sobre el bloqueo)",
   cambio: "Cambio (switch)",
   show: "Show (hedge y vuelta)",
+  por_debajo: "Por debajo (under)",
+  ice: "ICE lateral (solo bloqueo lateral)",
 };
 
 /**

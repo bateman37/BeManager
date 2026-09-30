@@ -41,6 +41,10 @@ describe("ME-07B v2 §2.2: selección de familia sobre la misma frontera que su 
         (d) => d.point === "lectura_bloqueo_o1" && d.possessionIndex === fam.possessionIndex && d.phaseIndex === fam.phaseIndex,
       );
       if (!read) continue;
+      // Solo contra drop: el under (ME-07B v2 §5) también produce
+      // `lectura_bloqueo_o1`, pero es una respuesta que el ataque no proyecta.
+      const cov = decisions.find((d) => d.point === "seleccion_cobertura" && d.possessionIndex === fam.possessionIndex && d.phaseIndex === fam.phaseIndex);
+      if (cov && cov.chosenOptionId !== "drop") continue;
       const v = fam.options.find((o) => o.id === "bloqueo_directo")!.values!;
       const best = read.options.find((o) => o.id === v.bestReadOption)!;
       expect(best.values!.situationalValue).toBeCloseTo(v.bestReadRawValue as number, 12);

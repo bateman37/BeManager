@@ -104,6 +104,7 @@ export type AuditReasonCode =
   | "read_value_higher"
   | "read_value_lower"
   | "read_option_not_viable"
+  | "coverage_ice_central_not_eligible"
   | "not_evaluated_short_circuit"
   | "situational_value_lower"
   | "tie_band_resolved_by_tendency"

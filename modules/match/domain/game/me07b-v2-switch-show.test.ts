@@ -97,14 +97,66 @@ describe("ME-07B v2 §5: show (hedge)", () => {
   });
 });
 
-describe("ME-07B v2 §5: cuatro coberturas en competencia en auto", () => {
+describe("ME-07B v2 §5: por debajo (under) e ICE", () => {
+  it("por debajo, D1 no es bloqueado: niega roll y penetración, pero concede la preparación exterior (el cierre del triple llega más tarde y O1 lo elige más)", () => {
+    const sierraIds = new Set(SIERRA_CLARA.players.map((p) => p.id));
+    const reads = (res: ReturnType<typeof play>) =>
+      res.audit!.decisions.filter((d) => d.point === "lectura_bloqueo_o1" && d.possessionIndex !== null && sierraIds.has(d.holderId!));
+    const meanMargin = (res: ReturnType<typeof play>) => {
+      const xs = reads(res).map((d) => d.options.find((o) => o.id === "triple_o1")!.values!.d1CloseoutMarginSeconds as number);
+      return xs.reduce((a, b) => a + b, 0) / xs.length;
+    };
+    const chosenTriples = (res: ReturnType<typeof play>) => reads(res).filter((d) => d.chosenOptionId === "triple_o1").length;
+    const under = play(92, "por_debajo");
+    const over = play(92, "drop");
+    expect(under.events.some((e) => e.kind === "screen_navigated" && e.possessionTeamId === SC && e.detail.route === "por_debajo")).toBe(true);
+    const underReads = reads(under);
+    expect(underReads.length).toBeGreaterThan(50);
+    for (const d of underReads) {
+      // Sin retraso de pantalla no hay dos contra uno: el pase al roll no es viable.
+      const pass = d.options.find((o) => o.id === "pase_o5")!;
+      expect(pass.reasonCode === "screen_delay_insufficient" || pass.reasonCode === "roll_denied_before_decision").toBe(true);
+      expect(pass.values!.screenDelaySeconds).toBe(0);
+      // D1 espera entre O5 y su defensor: la entrada, si existe, queda contestada.
+      expect(d.options.find((o) => o.id === "finalizar")!.values!.d1WallsDrive).toBe(true);
+    }
+    // El cierre del triple tiene que rodear al bloqueador: llega claramente más tarde.
+    expect(meanMargin(under)).toBeGreaterThan(meanMargin(over) + 0.5);
+    // Con el bloqueador aún entre los dos al soltar, el triple queda sin contestar.
+    const meanOpposition = (res: ReturnType<typeof play>) => {
+      const xs = reads(res).map((d) => d.options.find((o) => o.id === "triple_o1")!.values!.opposition as number);
+      return xs.reduce((a, b) => a + b, 0) / xs.length;
+    };
+    expect(meanOpposition(under)).toBeLessThan(meanOpposition(over));
+    expect(chosenTriples(under)).toBeGreaterThan(3 * chosenTriples(over));
+    expect(under.stop.cause).toBe("final");
+  });
+
+  it("ICE ante el bloqueo central no es aplicable: se registra la orden solicitada y la aplicada (drop)", () => {
+    const r = play(92, "ice");
+    const notApplicable = r.events.filter((e) => e.kind === "coverage_not_applicable" && e.possessionTeamId === SC);
+    expect(notApplicable.length).toBeGreaterThan(20);
+    for (const e of notApplicable) {
+      expect(e.detail.requested).toBe("ice");
+      expect(e.detail.applied).toBe("drop");
+      expect(e.detail.lateral).toBe(false);
+    }
+    expect(r.stop.cause).toBe("final");
+  });
+});
+
+describe("ME-07B v2 §5: coberturas en competencia en auto", () => {
   it("en partidos naturales auto elige más de dos coberturas y cada una tiene su concesión auditada", () => {
     const chosen = new Set<string>();
     for (const seed of [91, 92, 93]) {
       const r = play(seed, "auto");
       for (const d of r.audit!.decisions.filter((x) => x.point === "seleccion_cobertura")) {
         chosen.add(d.chosenOptionId!);
-        expect(d.options.map((o) => o.id)).toEqual(["drop", "trampa", "cambio", "show"]);
+        expect(d.options.map((o) => o.id)).toEqual(["drop", "trampa", "cambio", "show", "por_debajo", "ice"]);
+        // Bloqueo central: ICE nunca es elegible y se declara con su motivo.
+        const ice = d.options.find((o) => o.id === "ice")!;
+        expect(ice.reasonCode).toBe("coverage_ice_central_not_eligible");
+        expect(d.chosenOptionId).not.toBe("ice");
       }
     }
     expect(chosen.size).toBeGreaterThanOrEqual(3);

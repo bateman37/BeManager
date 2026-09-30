@@ -1469,7 +1469,7 @@ export abstract class LinkedRun {
     // instante; D2 solo se preposiciona aquí cuando ya se sabe con
     // certeza que la cobertura es `trampa`.
     const positionalDefenders = coverage === "trampa" ? ["D2", "D3", "D4", "D5"] : ["D3", "D4", "D5"];
-    const coverageText: Record<string, string> = { trampa: "trampa", auto: "cobertura automática", drop: "drop", cambio: "cambio", show: "show" };
+    const coverageText: Record<string, string> = { trampa: "trampa", auto: "cobertura automática", drop: "drop", cambio: "cambio", show: "show", por_debajo: "por debajo", ice: "ICE" };
     const legs: Record<string, PlannedLeg> = {};
     const late: string[] = [];
     for (const slot of DEFENSE_SLOTS) {

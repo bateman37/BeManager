@@ -12,7 +12,7 @@
 import type { Point2D } from "../geometry/point";
 import { timeToReach, distance, moveToward, pointShortOfTarget } from "../geometry/point";
 import { positionOnTrajectory, truncateTrajectory, type TrajectoryPoint } from "../geometry/trajectory";
-import { ATTACKED_HOOP, FREE_THROW_LINE_SPOT, COURT_WIDTH_METERS, isBehindThreePointLine } from "../geometry/court";
+import { ATTACKED_HOOP, FREE_THROW_LINE_SPOT, COURT_WIDTH_METERS, isBehindThreePointLine, isLateralScreenSpot } from "../geometry/court";
 import { MIDCOURT_LINE_X } from "../geometry/frame";
 import { createSeededRandom, type SeededRandom } from "../random/seeded-random";
 import { secondsToMs, type Milliseconds } from "../time/clock";
@@ -926,8 +926,14 @@ export function computePossessionCore(
       },
       { id: "cambio", eligible: estimate.switchProjection.viable, projected: estimate.switchProjection.value, values: { offenseBestReadOption: estimate.switchProjection.bestOptionId } },
       { id: "show", eligible: estimate.showProjection.viable, projected: estimate.showProjection.value, values: { offenseBestReadOption: estimate.showProjection.bestOptionId } },
+      { id: "por_debajo", eligible: estimate.underProjection.viable, projected: estimate.underProjection.value, values: { offenseBestReadOption: estimate.underProjection.bestOptionId } },
+      { id: "ice", eligible: estimate.iceEligible, projected: Infinity, values: { lateralScreen: estimate.iceEligible } },
     ];
-    const blended = candidates.map((c) => (c.eligible ? blendProjectionWithObservation(c.projected, seenCoverage?.[c.id]) : Infinity));
+    // ME-07A §4: una cobertura cuya concesión proyectada es indistinguible de
+    // la de drop no es una alternativa distinta: se conserva drop como plan
+    // base (evita elegirla solo por ruido de lo observado).
+    const indistinguishable = (c: (typeof candidates)[number]) => c.id !== "drop" && c.eligible && Math.abs(c.projected - estimate.dropConcessionValue) < 1e-9;
+    const blended = candidates.map((c) => (c.eligible && !indistinguishable(c) ? blendProjectionWithObservation(c.projected, seenCoverage?.[c.id]) : Infinity));
     let bestIndex = 0;
     for (let i = 1; i < candidates.length; i++) if (blended[i]! < blended[bestIndex]!) bestIndex = i;
     ctx.resolvedCoverage = candidates[bestIndex]!.id;
@@ -939,10 +945,14 @@ export function computePossessionCore(
       options: candidates.map((c, i) => ({
         id: c.id,
         status: i === bestIndex ? "elegida" : "descartada_por_condicion",
-        reasonCode: !c.eligible
+        reasonCode: indistinguishable(c)
+          ? "coverage_tied_base_kept"
+          : !c.eligible
           ? c.id === "trampa"
             ? "coverage_trap_not_eligible"
-            : "read_option_not_viable"
+            : c.id === "ice"
+              ? "coverage_ice_central_not_eligible"
+              : "read_option_not_viable"
           : i === bestIndex
             ? blended.some((v, j) => j !== i && v === blended[i])
               ? "coverage_tied_base_kept"
@@ -970,7 +980,11 @@ export function computePossessionCore(
           ? runSwitchPhase(ctx)
           : ctx.resolvedCoverage === "show"
             ? runShowPhase(ctx, scenario)
-            : runDropPhase(ctx, scenario);
+            : ctx.resolvedCoverage === "por_debajo"
+              ? runDropPhase(ctx, scenario, "por_debajo")
+              : ctx.resolvedCoverage === "ice"
+                ? runIceOrFallback(ctx, scenario)
+                : runDropPhase(ctx, scenario);
   return { ...organized, organizedChoice: { plan: resolvedPlan, coverage: ctx.resolvedCoverage } };
 }
 
@@ -1200,7 +1214,41 @@ function chooseRollReceiverOption(ctx: CoreContext, receiverId: string, options:
   return { chosen, byTendency };
 }
 
-function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition): PossessionCoreResult {
+/**
+ * Recorrido de D1 ante la pantalla en drop (ME-07B v2 §5): `por_encima`
+ * navega por delante del bloqueo con el retraso real de la pantalla (drop de
+ * siempre); `por_debajo` (under) pasa por detrás del bloqueador, entre él y
+ * su defensor, sin ser bloqueado: no hay retraso de pantalla que cree el dos
+ * contra uno (el pase al roll y la penetración quedan negados si D1 ya está
+ * ahí), pero concede la preparación exterior de O1, que tira por encima del
+ * bloqueo mientras D1 tiene que rodear al bloqueador para cerrar.
+ */
+type ScreenRoute = "por_encima" | "por_debajo";
+
+/**
+ * Camino de `from` a `to` rodeando un cuerpo en `obstacle` de radio `radius`
+ * (un bloqueador): si el segmento recto pasa a menos de `radius` del
+ * obstáculo, se rodea por el lado más corto a través de un punto desplazado
+ * `radius` en perpendicular (`waypoint`); si no, el camino es recto
+ * (`waypoint` nulo). Geometría pura, sin parámetro nuevo.
+ */
+function detourAround(from: Point2D, to: Point2D, obstacle: Point2D, radius: number): { readonly waypoint: Point2D | null; readonly length: number } {
+  const straight = distance(from, to);
+  if (straight <= 0) return { waypoint: null, length: 0 };
+  const ux = (to.x - from.x) / straight;
+  const uy = (to.y - from.y) / straight;
+  const t = (obstacle.x - from.x) * ux + (obstacle.y - from.y) * uy;
+  if (t <= 0 || t >= straight) return { waypoint: null, length: straight };
+  const px = from.x + ux * t;
+  const py = from.y + uy * t;
+  const gap = Math.hypot(obstacle.x - px, obstacle.y - py);
+  if (gap >= radius) return { waypoint: null, length: straight };
+  const side = gap === 0 ? 1 : Math.sign((px - obstacle.x) * -uy + (py - obstacle.y) * ux) || 1;
+  const waypoint = { x: obstacle.x - uy * radius * side, y: obstacle.y + ux * radius * side };
+  return { waypoint, length: distance(from, waypoint) + distance(waypoint, to) };
+}
+
+function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition, d1Route: ScreenRoute = "por_encima"): PossessionCoreResult {
   const o1 = player(ctx, "O1");
   const o3 = player(ctx, "O3");
   const o5 = player(ctx, "O5");
@@ -1225,14 +1273,30 @@ function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition): Possessio
   const screenDelay =
     screenInterceptDelaySeconds(o5.attributes.T13, o5.attributes.F05, d1.attributes.T16) +
     screenContactAdjustmentSeconds(weightDiff);
+  const underRoute = d1Route === "por_debajo";
+  // Por debajo, D1 pasa entre el bloqueador y su defensor (D5), sin tocar a
+  // ninguno de los dos: el punto medio si caben dos contactos entre ellos; si
+  // D5 está pegado a la pantalla, justo detrás del bloqueador hacia el aro.
+  const d5AtScreen = ctx.positions.D5!;
+  const underPoint =
+    distance(screenPoint, d5AtScreen) >= 2 * COMBINED_CONTACT_RADIUS_METERS
+      ? { x: (screenPoint.x + d5AtScreen.x) / 2, y: (screenPoint.y + d5AtScreen.y) / 2 }
+      : moveToward(screenPoint, ATTACKED_HOOP, 1, COMBINED_CONTACT_RADIUS_METERS);
+  const tD1UnderCall = recognitionLatencySeconds(d1.attributes.M01, d1.attributes.M05);
+  const tD1Under = tD1UnderCall + distance(ctx.positions.D1!, underPoint) / defenderLateralSpeedMps(d1.attributes.F04);
+  // Punto e instante en que D1 queda de nuevo en disposición de defender a O1.
+  const d1SetPoint = underRoute ? underPoint : o1UsePoint;
+  const tD1Set = underRoute ? tD1Under : tUseScreen + screenDelay;
   event(
     ctx,
     tUseScreen,
     "ejecutado",
     "screen_navigated",
     ["O1", "D1"],
-    `O1 usa la pantalla de O5; D1 navega con un retraso de ${screenDelay.toFixed(2)} s.`,
-    { screenDelay },
+    underRoute
+      ? `O1 usa la pantalla de O5; D1 pasa por debajo del bloqueo, entre O5 y su defensor.`
+      : `O1 usa la pantalla de O5; D1 navega con un retraso de ${screenDelay.toFixed(2)} s.`,
+    underRoute ? { screenDelay: 0, route: "por_debajo", underPoint } : { screenDelay },
   );
   // O1 se desplaza de verdad hasta el punto de uso de la pantalla, saliendo
   // desde el principio del tramo de cálculo (nadie más lo mueve antes); si
@@ -1243,7 +1307,8 @@ function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition): Possessio
   // vez de quedarse inmóvil en su posición de partida durante todo el resto
   // de la posesión (ME-04B §2, diagnóstico de la auditoría 210 A).
   setArrival(ctx, "O1", tHandlerArrival, o1UsePoint, 0);
-  setArrival(ctx, "D1", tUseScreen + screenDelay, o1UsePoint, 0);
+  if (underRoute) setArrival(ctx, "D1", tD1Set, underPoint, tD1UnderCall);
+  else setArrival(ctx, "D1", tUseScreen + screenDelay, o1UsePoint, 0);
 
   // --- Continuación real de O5 (C1): O5 recorre su continuación desde la
   // pantalla hasta una posición de recepción/finalización alcanzable
@@ -1411,7 +1476,12 @@ function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition): Possessio
   const d5TrulyBlockingFinish = distance(d5PosAtO1FinishReady, ATTACKED_HOOP) <= COMBINED_CONTACT_RADIUS_METERS;
   const finishMarginSeconds = tDecision + d5TimeToHoop - tO1FinishReady;
   const finishViable = !d5TrulyBlockingFinish && shotClockRemainingSeconds > 2;
-  const finishOpposition: EffectiveOpposition = finishMarginSeconds >= 0.25 ? 0 : 1;
+  // Por debajo (ME-07B v2 §5), D1 espera entre la pantalla y el aro: si ya
+  // está allí cuando O1 llegaría a ese punto de su conducción, la entrada
+  // queda contestada por D1 aunque D5 no llegue (under niega la penetración).
+  const tO1AtUnderPoint = tDecision + timeToReach(ctx.positions.O1!, underPoint, attackerMoveSpeedMps(o1.attributes.F01));
+  const d1WallsDrive = underRoute && tD1Under <= tO1AtUnderPoint;
+  const finishOpposition: EffectiveOpposition = finishMarginSeconds >= 0.25 && !d1WallsDrive ? 0 : 1;
   const finishValue = finishViable
     ? 2 * shotProbability(CLOSE_FINISH_BASE_PROBABILITY, o1.attributes.T01, finishOpposition)
     : -Infinity;
@@ -1424,7 +1494,11 @@ function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition): Possessio
   // próxima recepción de O5 (§3.2): O5 la reevaluará de verdad con el estado
   // real en el momento de recibir, más abajo, si esta vía resulta elegida.
   const rollDeniedBeforeDecision = d3Helps && tD3ArriveHelp <= tDecision;
-  const o5PassViable = screenDelay >= 0.2 && !rollDeniedBeforeDecision;
+  // Por debajo (ME-07B v2 §5), D1 no choca con la pantalla: no hay retraso
+  // que cree el dos contra uno sobre D5 y el pase al roll sigue la misma
+  // regla con retraso nulo (la ventaja que concede el under es exterior).
+  const effectiveScreenDelay = underRoute ? 0 : screenDelay;
+  const o5PassViable = effectiveScreenDelay >= 0.2 && !rollDeniedBeforeDecision;
   const tPassArrivalO5 = Math.max(
     tRollReady,
     tDecision + PASS_RELEASE_SECONDS + distanceSeconds(ctx.positions.O1!, ctx.positions.O5!),
@@ -1469,17 +1543,33 @@ function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition): Possessio
   // ya está contenido y puede salir), con la geometría real hasta O1; antes
   // solo se miraba a D5 con su tiempo hasta el aro y D1 nunca contestaba.
   const tripleSpot = ctx.positions.O1!;
-  const d1Origin = historyPositionAt(ctx, "D1", tUseScreen);
+  const d1Origin = underRoute ? underPoint : historyPositionAt(ctx, "D1", tUseScreen);
+  const d1TripleCloser: ContestCandidate = {
+    id: "D1",
+    geometryTo: (spot) => {
+      const d1Speed = defenderLateralSpeedMps(d1.attributes.F04);
+      const braking = closeoutBrakingExtraSeconds(d1.attributes.F03);
+      if (!underRoute) {
+        return { geometry: { originPos: d1Origin, destinationPos: spot, speedMps: d1Speed, brakingExtraSeconds: braking }, arrivalSeconds: tUseScreen + screenDelay };
+      }
+      // Por debajo, D1 sale desde detrás de la pantalla a cerrar el tiro y
+      // tiene que rodear el cuerpo del bloqueador (radio de contacto). Si
+      // al soltar O1 aún no lo ha rodeado, el bloqueador queda entre los
+      // dos: D1 sigue detrás de la pantalla y no puede contestar.
+      const tD1Start = Math.max(tD1Under, tUseScreen);
+      const detour = detourAround(underPoint, spot, screenPoint, COMBINED_CONTACT_RADIUS_METERS);
+      const arrivalSeconds = tD1Start + detour.length / d1Speed - perimeterArrivalAdjustmentSeconds(d1.attributes.T22);
+      const tClearsScreen = detour.waypoint ? tD1Start + distance(underPoint, detour.waypoint) / d1Speed : tD1Start;
+      if (detour.waypoint && tClearsScreen > tShotReadyO1) {
+        return { geometry: { originPos: underPoint, destinationPos: underPoint, speedMps: d1Speed, brakingExtraSeconds: braking }, arrivalSeconds };
+      }
+      return { geometry: { originPos: detour.waypoint ?? underPoint, destinationPos: spot, speedMps: d1Speed, brakingExtraSeconds: braking }, arrivalSeconds };
+    },
+  };
   const tripleContest = bestContest(
     ctx,
     [
-      {
-        id: "D1",
-        geometryTo: (spot) => ({
-          geometry: { originPos: d1Origin, destinationPos: spot, speedMps: defenderLateralSpeedMps(d1.attributes.F04), brakingExtraSeconds: closeoutBrakingExtraSeconds(d1.attributes.F03) },
-          arrivalSeconds: tUseScreen + screenDelay,
-        }),
-      },
+      d1TripleCloser,
       rollDeniedBeforeDecision
         ? {
             id: "D5",
@@ -1513,8 +1603,8 @@ function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition): Possessio
   const d1Chase: ContestCandidate = {
     id: "D1",
     geometryTo: (spot) => ({
-      geometry: { originPos: o1UsePoint, destinationPos: spot, speedMps: d1ChaseSpeed, brakingExtraSeconds: closeoutBrakingExtraSeconds(d1.attributes.F03) },
-      arrivalSeconds: tUseScreen + screenDelay + distance(o1UsePoint, spot) / d1ChaseSpeed,
+      geometry: { originPos: d1SetPoint, destinationPos: spot, speedMps: d1ChaseSpeed, brakingExtraSeconds: closeoutBrakingExtraSeconds(d1.attributes.F03) },
+      arrivalSeconds: tD1Set + distance(d1SetPoint, spot) / d1ChaseSpeed,
     }),
   };
   const d5StepSpeed = defenderLateralSpeedMps(d5.attributes.F04);
@@ -1655,15 +1745,26 @@ function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition): Possessio
       shotClockRemainingSeconds,
       d5TrulyBlockingFinish,
       finishMarginSeconds,
+      d1WallsDrive,
     },
     pase_o5: {
       situationalValue: o5PassValue,
-      screenDelaySeconds: screenDelay,
+      screenDelaySeconds: effectiveScreenDelay,
       rollDeniedBeforeDecision,
       estimatedD3TrulyContaining: d3TrulyContainingEstimate,
     },
     pase_o3: { situationalValue: o3PassValue, marginSeconds: marginO3Direct, d3AlreadyLeft: rollDeniedBeforeDecision || scenario.startsWithHelpAlreadyCommitted },
-    triple_o1: { situationalValue: tripleValue, windowD5Seconds: windowD5, opposition: tripleOpposition, contesterId: realId(ctx, tripleContest.id), t04: o1.attributes.T04, behindLine },
+    triple_o1: {
+      situationalValue: tripleValue,
+      windowD5Seconds: windowD5,
+      opposition: tripleOpposition,
+      contesterId: realId(ctx, tripleContest.id),
+      // Margen del cierre de D1: su llegada al punto de tiro menos el instante
+      // en que O1 está listo para soltar (ME-07B v2 §5: el under lo agranda).
+      d1CloseoutMarginSeconds: d1TripleCloser.geometryTo(tripleSpot).arrivalSeconds - tShotReadyO1,
+      t04: o1.attributes.T04,
+      behindLine,
+    },
     parada_o1: pullUpValues(pullUpPlan, pullUpValue),
     flotadora_o1: pullUpValues(floaterPlan, floaterValue),
     salida_segura: { situationalValue: safeOutletValue },
@@ -2446,6 +2547,26 @@ function runTrapPhase(ctx: CoreContext): PossessionCoreResult {
  * estimadores ad hoc de cada familia (recepción limpia futura de O5 frente a
  * otra cadena distinta para la mano a mano) se retiraron.
  */
+/**
+ * ICE (ME-07B v2 §5): solo tiene sentido en un bloqueo lateral, para
+ * impedir que el manejador vaya al centro, con ayuda baja del pívot. Ante el
+ * bloqueo central (la única pantalla que el ataque arma hoy) no es elegible:
+ * se registra el motivo y la defensa juega drop (orden solicitada ≠
+ * ejecutada, con su causa). El ICE ejecutable queda pendiente del bloqueo
+ * lateral.
+ */
+function runIceOrFallback(ctx: CoreContext, scenario: ScenarioDefinition): PossessionCoreResult {
+  const screenPoint = ctx.positions.O5!;
+  event(ctx, 0, "reconocido", "coverage_not_applicable", ["D1", "D5"], "La orden es ICE, pero la pantalla es central (dentro de la franja de la zona): no hay banda a la que empujar; la defensa juega drop.", {
+    requested: "ice",
+    applied: "drop",
+    screenPoint,
+    lateral: isLateralScreenSpot(screenPoint),
+  });
+  ctx.resolvedCoverage = "drop";
+  return runDropPhase(ctx, scenario);
+}
+
 // --- ME-07B v2 §5: cambio (switch) y show (hedge) ---------------------------
 
 /**
@@ -2893,6 +3014,9 @@ interface EntryOpportunity {
 interface CoverageEstimate {
   readonly switchProjection: FamilyOpportunity;
   readonly showProjection: FamilyOpportunity;
+  readonly underProjection: FamilyOpportunity;
+  /** ICE solo es elegible si la pantalla es lateral (fuera de la franja de la zona). */
+  readonly iceEligible: boolean;
   readonly trapEligible: boolean;
   readonly dropConcessionValue: number;
   readonly trapConcessionValue: number;
@@ -2916,6 +3040,8 @@ function estimateCoverageChoice(ctx: CoreContext, scenario: ScenarioDefinition):
   return {
     switchProjection: familyOpportunity(projectFamilyRead(ctx, (dry) => runSwitchPhase(dry))),
     showProjection: familyOpportunity(projectFamilyRead(ctx, (dry) => runShowPhase(dry, scenario))),
+    underProjection: familyOpportunity(projectFamilyRead(ctx, (dry) => runDropPhase(dry, scenario, "por_debajo"))),
+    iceEligible: isLateralScreenSpot(ctx.positions.O5!),
     trapEligible,
     dropConcessionValue,
     trapConcessionValue: trap ? trap.concession : Infinity,

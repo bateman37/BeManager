@@ -122,7 +122,11 @@ describe("ME-07A §4: cobertura y orden sin balón en auto, con denominadores re
     const result = playFullGame(gameInput);
     const decisions = result.audit!.decisions.filter((d) => d.point === "seleccion_cobertura");
     expect(decisions.length).toBeGreaterThan(0);
-    expect(decisions.every((d) => d.chosenOptionId === "drop")).toBe(true);
+    // ME-07B v2 §5: con cambio/show/por debajo en competencia, lo que se exige
+    // es que una trampa no elegible nunca se elija.
+    for (const d of decisions) {
+      if (d.options.find((o) => o.id === "trampa")!.reasonCode === "coverage_trap_not_eligible") expect(d.chosenOptionId).not.toBe("trampa");
+    }
     // ME-07B v2 §2.4: con creador/bloqueador asignados por proyección, el
     // defensor del bloqueador puede ser otro jugador lento con otra posición
     // de partida; la trampa sigue siendo inelegible en la gran mayoría y,

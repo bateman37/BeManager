@@ -85,6 +85,8 @@ const COVERAGE_LABELS: Record<DefensiveCoverageChoice, string> = {
   trampa: "Trampa",
   cambio: "Cambio (switch)",
   show: "Show (hedge)",
+  por_debajo: "Por debajo (under)",
+  ice: "ICE lateral",
 };
 const PRIORITY_LABELS: Record<ReboundPriority, string> = {
   proteger_balance: "Proteger balance",

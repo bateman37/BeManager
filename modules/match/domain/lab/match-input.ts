@@ -17,9 +17,13 @@ import { LAB_0_3_PARAMETERS_VERSION } from "./lab-0-3-parameters";
  * de la pantalla y D1 se queda con el bloqueador; el emparejamiento cambiado
  * (posible desajuste) persiste el resto de la posesión. `show` (hedge) — D5
  * sale a frenar al manejador delante de la pantalla y vuelve a su marca
- * cuando D1 ha superado el bloqueo.
+ * cuando D1 ha superado el bloqueo. `por_debajo` (under) — drop con D1
+ * pasando por detrás del bloqueador: concede la preparación exterior de O1.
+ * `ice` — solo aplicable en un bloqueo lateral (impedir el centro); ante el
+ * bloqueo central no es elegible y la defensa juega drop, con el motivo
+ * registrado.
  */
-export type DefensiveCoverage = "drop" | "trampa" | "cambio" | "show";
+export type DefensiveCoverage = "drop" | "trampa" | "cambio" | "show" | "por_debajo" | "ice";
 
 /**
  * Cobertura elegida desde `/lab` (ME-07A §4): `auto` deja que la defensa

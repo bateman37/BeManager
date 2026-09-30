@@ -18,9 +18,12 @@ const AUTO = {
   creationPriority: "equilibrado" as const,
 };
 
+// Semilla 93 (antes 92): con el under en competencia (ME-07B v2 §5) la 92
+// apenas elige trampa (5 de 236) y la comprobación de la trampa ejecutada
+// necesita muestra; la 93 la elige 57 veces.
 const r = playFullGame(
   buildGameInput({
-    seed: 92,
+    seed: 93,
     auditEnabled: true,
     home: { id: SIERRA_CLARA.id, name: SIERRA_CLARA.name, players: SIERRA_CLARA.players, ...AUTO },
     away: { id: PUERTO_AMBAR.id, name: PUERTO_AMBAR.name, players: PUERTO_AMBAR.players, ...AUTO },
@@ -37,7 +40,7 @@ describe("ME-07B v2 §2.3: defensa auto con drop y trampa en competencia", () =>
     // ME-07B v2 §5: compiten drop, trampa, cambio y show; la elegida tiene la
     // menor concesión combinada entre las elegibles (empate: plan base).
     for (const d of coverage) {
-      const eligible = d.options.filter((o) => o.values!.blendedValue !== null);
+      const eligible = d.options.filter((o) => o.values!.blendedValue !== null && o.reasonCode !== "coverage_tied_base_kept");
       const best = Math.min(...eligible.map((o) => o.values!.blendedValue as number));
       const picked = d.options.find((o) => o.id === d.chosenOptionId)!;
       expect(picked.values!.blendedValue as number).toBeCloseTo(best, 12);
