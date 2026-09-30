@@ -33,7 +33,12 @@ export type AuditDecisionPoint =
   | "entrada_mano_a_mano"
   | "transferencia_mano_a_mano"
   | "bloqueo_indirecto_o3"
-  | "lectura_mano_a_mano";
+  | "lectura_mano_a_mano"
+  // ME-07A §4: defensa automática de ambos equipos.
+  | "seleccion_cobertura"
+  | "seleccion_orden_sin_balon"
+  // ME-07A §3.2: transición con tiro de tres del propio portador.
+  | "lectura_transicion";
 
 /**
  * Motivo estructurado y estable de cada opción. Uno por causa real del
@@ -73,6 +78,10 @@ export type AuditReasonCode =
   | "transition_advantage_found"
   | "transition_no_advantage"
   | "role_fixed_no_ranking"
+  // ME-07A §3.2: el poseedor real puede conservar la iniciativa en vez de
+  // devolver siempre el balón al rol fijo O1.
+  | "creator_kept_by_real_holder"
+  | "creator_pass_back_faster"
   | "not_evaluated_short_circuit"
   | "situational_value_lower"
   | "tie_band_resolved_by_tendency"
@@ -89,7 +98,26 @@ export type AuditReasonCode =
   | "cut_window_open"
   | "cut_window_denied"
   | "help_rotation_opened_o4"
-  | "help_rotation_not_available";
+  | "help_rotation_not_available"
+  // ME-07A §4: cobertura y orden sin balón en `auto`.
+  | "coverage_lower_concession"
+  | "coverage_higher_concession"
+  | "coverage_trap_not_eligible"
+  | "coverage_tied_base_kept"
+  | "off_ball_call_lower_concession"
+  | "off_ball_call_higher_concession"
+  | "off_ball_call_tied_base_kept"
+  // ME-07A §2: tendencia de tiro y prioridad de creación del entrenador
+  // generalizadas a la banda de empate fuera de la primera lectura del
+  // bloqueo (que conserva `pnrTendency` con sus propios códigos de arriba).
+  | "creation_priority_resolved_band"
+  | "shot_tendency_favors_shot"
+  | "shot_tendency_favors_continuation"
+  | "shot_tendency_seeded_choice"
+  // ME-07A §3.2: triple del portador en transición.
+  | "transition_three_point_window_open"
+  | "transition_three_point_window_closed"
+  | "transition_three_point_ineligible_skill";
 
 export interface AuditOptionRecord {
   /** Identificador estable de la opción dentro de este punto (p. ej. "pase_o5", "finalizar"). */

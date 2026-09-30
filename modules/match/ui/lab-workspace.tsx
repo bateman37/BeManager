@@ -243,7 +243,7 @@ export function LabWorkspace({ initialTeams, initialWarning, actions, boundaryCa
     const reason =
       next.auditEnabled !== gameSettings.auditEnabled && next.seed === gameSettings.seed
         ? "Has cambiado si se registra auditoría"
-        : "Has cambiado la semilla, una cobertura, una prioridad, un plan ofensivo o una orden de defensa sin balón del partido";
+        : "Has cambiado la semilla, una cobertura, una prioridad, un plan ofensivo, una prioridad de creación o una orden de defensa sin balón del partido";
     setGameSettings(next);
     invalidateGame(reason);
   }
@@ -559,7 +559,7 @@ export function LabWorkspace({ initialTeams, initialWarning, actions, boundaryCa
               </p>
               <p className="text-xs text-slate-500 dark:text-slate-400">
                 Escenario ejecutado: {SCENARIO_LABELS[matchState.input.scenarioId]} · Cobertura:{" "}
-                {COVERAGE_LABELS[matchState.input.coverage]} · Semilla: {matchState.input.seed} · Reglas:{" "}
+                {COVERAGE_LABELS[matchState.input.coverage as DefensiveCoverage]} · Semilla: {matchState.input.seed} · Reglas:{" "}
                 {matchState.input.rulesetVersion} · Parámetros: {matchState.input.labParametersVersion}
               </p>
             </div>

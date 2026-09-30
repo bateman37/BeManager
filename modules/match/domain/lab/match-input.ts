@@ -16,6 +16,15 @@ import { LAB_0_3_PARAMETERS_VERSION } from "./lab-0-3-parameters";
 export type DefensiveCoverage = "drop" | "trampa";
 
 /**
+ * Cobertura elegida desde `/lab` (ME-07A §4): `auto` deja que la defensa
+ * decida en cada oportunidad defensiva pertinente cuál de las dos
+ * respuestas existentes intenta, con `drop` como plan base cuando la
+ * trampa no es elegible o ninguna respuesta distingue claramente la
+ * concesión (ver `resolveCoverageChoice`). Valor por defecto: `auto`.
+ */
+export type DefensiveCoverageChoice = "auto" | DefensiveCoverage;
+
+/**
  * Familia posicional ofensiva (ME-06 §3): `bloqueo_directo` es el bloqueo
  * directo central ya existente; `mano_a_mano_sin_balon` es la segunda
  * familia (mano a mano de O5 a O2 con bloqueo indirecto y corte de O3 en
@@ -46,6 +55,26 @@ export type OffensivePlanChoice = "auto" | OffensivePlan;
 export type OffBallDefensiveCall = "negar_primera_salida" | "guardar_espacio";
 
 /**
+ * Orden sin balón elegida desde `/lab` (ME-07A §4): `auto` decide entre
+ * las dos respuestas existentes en cada lectura donde esa orden aplica,
+ * con `guardar_espacio` como plan base cuando ambas conceden igual o la
+ * información no distingue una respuesta claramente mejor. `no_aplica`
+ * (ME-06) sigue siendo distinto de `guardar_espacio` elegido: solo se usa
+ * donde esa lectura no existe.
+ */
+export type OffBallDefensiveCallChoice = "auto" | OffBallDefensiveCall;
+
+/**
+ * Prioridad de creación del entrenador (ME-07A §3.1): instrucción previa al
+ * partido, independiente de `offensivePlan`. Cambia qué oportunidades
+ * intenta preparar y reconocer primero el poseedor real en cada frontera
+ * significativa; nunca un bono al acierto del tiro. `equilibrado` deja
+ * competir ambas familias de vías (aro/triple) sin favorecer ninguna
+ * dentro de la banda de empate. Valor por defecto: `equilibrado`.
+ */
+export type OffensiveCreationPriority = "equilibrado" | "buscar_aro" | "buscar_triple";
+
+/**
  * Entrada compartida por el motor detallado y el motor rápido (estudio de
  * referencia §13.2): una copia estable de perfiles y versiones. Modificar un
  * jugador en otra pantalla no altera una corrida ya iniciada, porque cada
@@ -53,7 +82,12 @@ export type OffBallDefensiveCall = "negar_primera_salida" | "guardar_espacio";
  */
 export interface MatchInput {
   readonly scenarioId: ScenarioId;
-  readonly coverage: DefensiveCoverage;
+  /**
+   * Cobertura de esta corrida. Acepta `"auto"` desde ME-07A §4: se resuelve
+   * una sola vez por posesión, de forma pura (sin RNG), antes de despachar
+   * al bloqueo directo o a la mano a mano (`resolveCoverageChoice`).
+   */
+  readonly coverage: DefensiveCoverageChoice;
   readonly seed: number;
   readonly rulesetVersion: "FIBA-2026";
   readonly labParametersVersion:
@@ -74,7 +108,13 @@ export interface MatchInput {
    * Opcional, con valor por defecto `"guardar_espacio"`; sin efecto
    * alguno cuando la familia resuelta es `bloqueo_directo`.
    */
-  readonly offBallDefensiveCall?: OffBallDefensiveCall;
+  readonly offBallDefensiveCall?: OffBallDefensiveCallChoice;
+  /**
+   * Prioridad de creación del equipo atacante (ME-07A §3.1). Opcional, con
+   * valor por defecto `"equilibrado"` para no alterar ninguna corrida ni
+   * prueba existente que no la declare.
+   */
+  readonly creationPriority?: OffensiveCreationPriority;
 }
 
 export function findPlayerInInput(input: MatchInput, playerId: string): PlayerProfile {

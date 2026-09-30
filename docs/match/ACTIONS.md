@@ -1,11 +1,11 @@
-# Acciones ofensivas: bloqueo directo y mano a mano sin balón (ME-01/ME-02/ME-04B/ME-06)
+# Acciones ofensivas: bloqueo directo y mano a mano sin balón (ME-01/ME-02/ME-04B/ME-06/ME-07A)
 
 **Estado:** ACTIVE
 **Es fuente de verdad para:** el árbol de decisión de las dos familias ofensivas implementadas y las responsabilidades de los diez jugadores ante cada una, en las coberturas y órdenes defensivas implementadas.
 **Debe leerse cuando:** vayas a modificar `possession-core.ts` o a añadir una tercera acción táctica, otra cobertura u otra orden defensiva.
 **No cubre:** ninguna otra familia táctica (poste, zonas, todas las variantes de mano a mano) ni otras coberturas de bloqueo (switch, ICE/veer...): llegan en entregas posteriores (ver `docs/match/roadmap.md`). La transición de ME-03 no es una táctica nueva: solo decide si existe ventana y reutiliza las ejecuciones ya existentes (sección final).
 **Documentos relacionados:** `docs/match/reference/BeManager-capitulo-tacticas-integradas-al-motor-v1.md`, `CAPABILITIES.md`, `RULES.md`.
-**Última actualización:** 2026-09-29 (ME-06, adelantada antes de ME-05).
+**Última actualización:** 2026-09-30 (ME-07A).
 
 ## Disposición y roles fijos
 
@@ -121,6 +121,18 @@ Una trampa rota nunca garantiza tiro cómodo; una trampa cerrada nunca
 garantiza robo ni canasta (ver pruebas discriminantes en
 `domain/simulation/me02.test.ts`).
 
+**Cobertura `auto` (ME-07A §4).** Antes de despachar el árbol, si
+`coverage: "auto"`, compara de forma pura (sin RNG) qué concede `drop`
+(el short roll de O5 queda libre si la pantalla retiene a D1 lo
+suficiente) frente a si `trampa` es siquiera elegible (D5 debe poder
+comprometer a tiempo desde su posición real) y, si lo es, qué concedería
+la rotación D3→D4 después. Empate, trampa no elegible o concesión
+indistinguible conservan `drop`. Auditado en `seleccion_cobertura`. Con
+la disposición inicial fija de los tres escenarios de laboratorio, D5
+arranca en la protección del aro y nunca resulta elegible (ver
+`CAPABILITIES.md`); alcanzable con una posición defensiva inicial más
+agresiva.
+
 ## Segunda familia posicional: mano a mano sin balón (ME-06 §3)
 
 Misma disposición 4-out/1-in y roles funcionales; extiende el núcleo
@@ -143,12 +155,22 @@ compartido (`runHandoffPhase` junto a `runDropPhase`/`runTrapPhase` en
    concede más separación). Si D3 no lo deniega, la ventana queda abierta;
    bajo `guardar_espacio`, D4 puede ayudar a cerrarlo (O3 recibe entonces
    contestado, no libre) y O4 se abre en su propio punto de bloqueo; bajo
-   `negar_primera_salida`, D4 nunca ayuda.
+   `negar_primera_salida`, D4 nunca ayuda. **`auto` (ME-07A §4)** evalúa
+   ambas navegaciones de D3 de forma pura con la misma geometría real y
+   elige la que concede menos (triple de O3 sin ayuda, o de O4 si D4
+   abre); empate conserva `guardar_espacio`. Auditado en
+   `seleccion_orden_sin_balon`.
 4. **Primera lectura real** (portador: O2 si la entrega se completó; si
    no, O5): entre finalizar (mismo modelo de contención real que el
    bloqueo directo), pasar a O3 (si el corte quedó libre), continuar a O4
    (si D4 ayudó) o la seguridad a O1, por el mismo valor situacional que
-   el bloqueo directo, con la misma banda de empate.
+   el bloqueo directo. Hasta ME-06 esta lectura no tenía banda de empate
+   propia (siempre ganaba el valor mayor). **ME-07A §2** añade la misma
+   `FIRST_READ_TIE_BAND_POINTS`: dentro de la banda, la prioridad de
+   creación del entrenador favorece primero aro (`finalizar_portador`) o
+   triple (`pase_o3`/`continuar_o4`); si sigue compitiendo un tiro con la
+   seguridad a O1, decide `shotTendency` del portador (no `pnrTendency`,
+   que conserva su papel específico en el bloqueo). Ver `AUDIT.md`.
 
 **Selector de plan por equipo** (`offensivePlan`, `MatchInput`/
 `GameTeamInput`): `auto` (por defecto en partido), `bloqueo_directo` o
@@ -281,6 +303,34 @@ en encargos, trayectorias y rebotes (ver la prueba (5) de `me03.test.ts`),
 no en transición concedida con este fixture concreto. Ver
 `docs/decisions/DECISION-REQUERIDA-ME-03-ventaja-temprana.md` (resuelta:
 opción B).
+
+**Triple del portador en transición (ME-07A §3.2).** «Sin ventaja» ya no
+reorganiza sin más: si el portador queda detrás de la línea de tres, a una
+profundidad razonable tras ella
+(`TRANSITION_THREE_DEPTH_BUFFER_METERS = 2` m) y con ≥0,25 s de margen
+antes de que el defensor real más cercano a **él** (no necesariamente el
+protector del aro) pueda cerrarle el tiro, la vía es viable. La tendencia
+de tiro decide si la toma (`decidida` siempre, `prudente` nunca,
+`equilibrada` con `secondOptionProbability(M03)`, la misma función que el
+resto del motor); nunca un tiro concedido por sistema. Con el fixture
+natural, dado el hallazgo anterior (D5 siempre cerca del aro y llegando
+antes), esta ventana tampoco aparece: se prueba con geometría construida a
+mano (`evaluateTransitionThreeOpportunity`, `domain/game/me07a.test.ts`).
+
+## Organización: el poseedor real puede conservar la iniciativa (ME-07A §3.2)
+
+`organize()` ya no devuelve el balón por sistema al rol fijo O1 tras un
+rebote, robo o saque. Compara, con la misma geometría real (F01 del
+portador frente a T09/T11 y vuelo del pase de vuelta), si conservar la
+iniciativa es al menos tan rápido como esperar el pase: si lo es, se
+reasignan los roles O1 y el del portador (`rebindFrame`, el mismo
+mecanismo ya usado por la segunda entrada) y los otros tres atacantes
+conservan su tarea de espaciado/corte/balance sin cambios; si no, se
+conserva el pase de vuelta de siempre. Empate exacto conserva el pase de
+vuelta. Auditado en `organizacion_creador` con motivo estable
+(`creator_kept_by_real_holder`/`creator_pass_back_faster`); confirmado con
+el fixture natural (semilla 82): jugadores reales conservan la iniciativa
+en 5 de 219 decisiones de un partido completo.
 
 ## Partido completo (ME-04): segunda entrada del mismo bloqueo
 

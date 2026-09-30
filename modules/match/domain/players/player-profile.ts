@@ -10,6 +10,16 @@ export type PlayerTemplate = "G" | "W" | "B";
 
 export type PnrTendency = "priorizar_primera_opcion" | "explorar_segunda_opcion";
 
+/**
+ * Tendencia individual de tiro (ME-07A §2.2): disposición del jugador a
+ * tomar un tiro viable frente a conservar/pasar cuando varias vías compiten
+ * dentro de la banda de empate `FIRST_READ_TIE_BAND_POINTS` (LAB-0.3). Es
+ * ortogonal a T04/T01 (habilidad para convertirlo) y a `pnrTendency`, que
+ * conserva su papel específico en la primera lectura del bloqueo directo
+ * (ME-07A §2 nota final). No introduce otra escala oculta de personalidad.
+ */
+export type ShotTendency = "prudente" | "equilibrada" | "decidida";
+
 export interface BodyMeasures {
   /** C01: altura, cm. */
   readonly heightCm: number;
@@ -32,6 +42,7 @@ export interface PlayerProfile {
   readonly measures: BodyMeasures;
   readonly attributes: AttributeRatings;
   readonly pnrTendency: PnrTendency;
+  readonly shotTendency: ShotTendency;
 }
 
 /**
@@ -136,6 +147,17 @@ export const TEMPLATE_BASE_RATINGS: Record<PlayerTemplate, Partial<AttributeRati
  * valor de M09.
  */
 export const M09_BACKFILL_NEUTRAL_RATING = 8;
+
+/**
+ * Valor explícito para un perfil ya persistido antes de ME-07A que todavía
+ * no tiene `shotTendency` guardada (mismo patrón que
+ * `M09_BACKFILL_NEUTRAL_RATING`, ME-02 §3): se rellena con `"equilibrada"`
+ * en vez de fallar, sin borrar atributos ni ediciones existentes. Deja de
+ * aplicarse en cuanto el usuario edita y guarda el perfil con su propia
+ * tendencia. El reset al fixture y el incremento masivo (+1/+3/+5) nunca
+ * alteran esta tendencia.
+ */
+export const SHOT_TENDENCY_BACKFILL_DEFAULT: ShotTendency = "equilibrada";
 
 /**
  * Construye las capacidades de un perfil aplicando la plantilla base y los

@@ -32,7 +32,13 @@ import {
 import { positionOnTrajectory, truncateTrajectory, type TrajectoryPoint } from "../geometry/trajectory";
 import { createResumableRandom, type ResumableRandom } from "../random/seeded-random";
 import { secondsToMs, type Milliseconds } from "../time/clock";
-import type { DefensiveCoverage, MatchInput, OffensivePlanChoice, OffBallDefensiveCall } from "../lab/match-input";
+import type {
+  MatchInput,
+  OffensivePlanChoice,
+  DefensiveCoverageChoice,
+  OffBallDefensiveCallChoice,
+  OffensiveCreationPriority,
+} from "../lab/match-input";
 import { getScenario } from "../lab/scenario";
 import type { LAB_0_3_PARAMETERS_VERSION } from "../lab/lab-0-3-parameters";
 import {
@@ -41,6 +47,9 @@ import {
   closeoutBrakingExtraSeconds,
   PASS_FLIGHT_SPEED_MPS,
   PASS_RELEASE_SECONDS,
+  THREE_POINT_BASE_PROBABILITY,
+  shotProbability,
+  secondOptionProbability,
 } from "../lab/lab-0-1-parameters";
 import type { PlayerProfile } from "../players/player-profile";
 import type { FactKind, FactPhase, PlayerSnapshot } from "../simulation/fact";
@@ -70,6 +79,7 @@ import {
   readSecondChance,
   readOutlet,
   frontcourtEntryOffsetSeconds,
+  evaluateTransitionThreeOpportunity,
   type RaceParticipant,
 } from "./transition";
 import {
@@ -302,8 +312,8 @@ export abstract class LinkedRun {
   protected abstract lineup(teamId: string): readonly PlayerProfile[];
   /** Sentido de ataque vigente del equipo. */
   protected abstract attackDirection(teamId: string): AttackDirection;
-  /** Cobertura con la que defiende el equipo. */
-  protected abstract coverageWhenDefending(teamId: string): DefensiveCoverage;
+  /** Cobertura con la que defiende el equipo (ME-07A §4: admite `"auto"`). */
+  protected abstract coverageWhenDefending(teamId: string): DefensiveCoverageChoice;
   /** Qué hacer cuando un hecho alcanza el agotamiento del reloj de partido; `true` si el hecho se registra. */
   protected abstract onGameClockExpired(e: EmitArgs, expiryMs: Milliseconds): boolean;
 
@@ -332,12 +342,21 @@ export abstract class LinkedRun {
   }
   /**
    * Orden de defensa sin balón del equipo que defiende ante la mano a
-   * mano (ME-06 §3.1). Sin efecto cuando la familia resuelta es el
-   * bloqueo directo.
+   * mano (ME-06 §3.1; ME-07A §4: admite `"auto"`). Sin efecto cuando la
+   * familia resuelta es el bloqueo directo.
    */
-  protected offBallCallWhenDefending(teamId: string): OffBallDefensiveCall {
+  protected offBallCallWhenDefending(teamId: string): OffBallDefensiveCallChoice {
     void teamId;
     return "guardar_espacio";
+  }
+  /**
+   * Prioridad de creación del equipo que ataca (ME-07A §3.1). Por defecto
+   * `"equilibrado"`: los modos que no la declaren conservan exactamente su
+   * comportamiento anterior a ME-07A.
+   */
+  protected creationPriorityWhenAttacking(teamId: string): OffensiveCreationPriority {
+    void teamId;
+    return "equilibrado";
   }
   /** Tiempo de juego transcurrido con el reloj en marcha, para minutos. */
   protected onClockRan(deltaMs: Milliseconds): void {
@@ -468,7 +487,11 @@ export abstract class LinkedRun {
       atMs,
       point: input.point,
       possessionIndex: possession ? possession.index : null,
-      phaseIndex: possession ? possession.phases.length - 1 : null,
+      // El índice de fase auditado debe coincidir con `phase.index` (1-based,
+      // el mismo que usa `pushEvent` para los hechos reales) para que
+      // `build-audit-export.ts` pueda enlazar una decisión con sus propios
+      // hechos por `${possessionIndex}:${phaseIndex}` (ME-07A §5.1).
+      phaseIndex: possession ? possession.phases.length : null,
       holderId: input.holderId,
       participants: input.participants,
       options: input.options,
@@ -784,6 +807,7 @@ export abstract class LinkedRun {
       defensePlayers: frame.defending.players,
       offensivePlan: this.offensivePlanWhenAttacking(frame.attacking.id),
       offBallDefensiveCall: this.offBallCallWhenDefending(frame.defending.id),
+      creationPriority: this.creationPriorityWhenAttacking(frame.attacking.id),
     };
     const rules = this.coreRules();
     const possession = this.possessionRef();
@@ -800,7 +824,10 @@ export abstract class LinkedRun {
         entry,
         t0,
         possessionIndex: possession ? possession.index : null,
-        phaseIndex: possession ? possession.phases.length - 1 : null,
+        // Ver nota de `auditDecision`: mismo índice 1-based que `phase.index`
+        // y que `pushEvent`, para que las decisiones del núcleo (p.ej.
+        // `seleccion_familia`) enlacen con los hechos de su propia fase.
+        phaseIndex: possession ? possession.phases.length : null,
         ...(rules ? { rules } : {}),
       },
     });
@@ -1181,36 +1208,63 @@ export abstract class LinkedRun {
         `La posesión continúa y se reorganiza con ${(this.shotRemainingAt(t0) / 1000).toFixed(1)} s de lanzamiento, desde las posiciones que ya ocupaban.`,
       );
     }
-    const arrivals = this.planOrganizeLegs(frame, t0, []);
-    const holderSlot = frame.idToSlot[holderId]!;
+
+    // ME-07A §3.2: el poseedor real puede conservar la iniciativa en vez de
+    // devolver siempre el balón al rol fijo O1. Compara, con la misma
+    // geometría real (F01 del portador, T09/T11/flight del pase), si le
+    // sale más a cuenta llegar él mismo al puesto de creador que esperar el
+    // pase de vuelta; en empate exacto se conserva devolver a O1 (mismo
+    // criterio de plan base que el resto de esta entrega). Si conserva la
+    // iniciativa, se reasigna su rol y el de O1 (`rebindFrame`, ya usado
+    // por la segunda entrada del bloqueo, ME-04): los otros tres atacantes
+    // mantienen su tarea de espaciado/corte/balance sin cambios.
+    const originalHandlerId = frame.slotToId.O1!;
+    let effectiveFrame = frame;
+    let creatorReasonCode: import("../audit/audit-types").AuditReasonCode = "role_fixed_no_ranking";
+    let creatorNote = "El manejador es el rol fijo O1 del quinteto vigente; no se compara contra otros candidatos.";
+    if (holderId !== originalHandlerId) {
+      const holderSlot0 = frame.idToSlot[holderId]!;
+      const o1TargetGlobal = toGlobal(frame.dir, this.dispositionTargets().O1!);
+      const keepSeconds = timeToReach(this.positionAt(holderId, t0), o1TargetGlobal, attackerMoveSpeedMps(this.profile(holderId).attributes.F01));
+      const passSeconds = PASS_RELEASE_SECONDS + distance(this.positionAt(holderId, t0), this.positionAt(originalHandlerId, t0)) / PASS_FLIGHT_SPEED_MPS;
+      if (keepSeconds <= passSeconds) {
+        effectiveFrame = rebindFrame(frame, { ...frame.slotToId, O1: holderId, [holderSlot0]: originalHandlerId });
+        creatorReasonCode = "creator_kept_by_real_holder";
+        creatorNote = `${holderId} conserva la iniciativa: llega a su puesto de creador en ${keepSeconds.toFixed(2)} s, no más lento que el pase de vuelta a ${originalHandlerId} (${passSeconds.toFixed(2)} s).`;
+      } else {
+        creatorReasonCode = "creator_pass_back_faster";
+        creatorNote = `Devuelve el balón a ${originalHandlerId}: ${passSeconds.toFixed(2)} s frente a ${keepSeconds.toFixed(2)} s si ${holderId} conservara la iniciativa.`;
+      }
+    }
+
+    const arrivals = this.planOrganizeLegs(effectiveFrame, t0, []);
+    const holderSlot = effectiveFrame.idToSlot[holderId]!;
     // La acción organizada empieza cuando los cinco atacantes están
     // situados; el ataque no espera a una defensa que llega tarde.
-    const attackerIds = OFFENSE_SLOTS.map((slot) => frame.slotToId[slot]!);
+    const attackerIds = OFFENSE_SLOTS.map((slot) => effectiveFrame.slotToId[slot]!);
     const tAllSet = Math.max(t0, ...attackerIds.map((id) => arrivals[id]!));
-    const handlerId = frame.slotToId.O1!;
+    const handlerId = effectiveFrame.slotToId.O1!;
     this.auditDecision(t0, {
       point: "organizacion_creador",
       holderId,
-      participants: [handlerId],
+      participants: [...new Set([holderId, originalHandlerId])],
       chosenOptionId: handlerId,
       options: [
-        {
-          id: handlerId,
-          status: "elegida",
-          reasonCode: "role_fixed_no_ranking",
-          reasonNote: "El manejador es el rol fijo O1 del quinteto vigente; no se compara contra otros candidatos.",
-        },
+        { id: handlerId, status: "elegida", reasonCode: creatorReasonCode, reasonNote: creatorNote },
+        ...(handlerId !== originalHandlerId
+          ? [{ id: originalHandlerId, status: "descartada_por_condicion" as const, reasonCode: "situational_value_lower" as const }]
+          : []),
       ],
     });
 
     // Cuenta de 8 s si el control empezó en pista trasera (art. 28).
     if (this.backcourt) {
-      const from = toLocal(frame.dir, this.positionAt(holderId, t0));
+      const from = toLocal(effectiveFrame.dir, this.positionAt(holderId, t0));
       const to = this.dispositionTargets()[holderSlot]!;
       const offset = frontcourtEntryOffsetSeconds(from, to, (arrivals[holderId]! - t0) / 1000);
       const crossingMs = offset === null ? null : t0 + secondsToMs(offset);
       const count = evaluateBackcourtCount(this.backcourt.startMs, crossingMs, this.backcourt.elapsedBeforeMs);
-      if (count.violation && count.violationAtMs! <= tAllSet) return this.backcourtViolation(frame, count.violationAtMs!, holderId);
+      if (count.violation && count.violationAtMs! <= tAllSet) return this.backcourtViolation(effectiveFrame, count.violationAtMs!, holderId);
       this.backcourt = null;
     }
 
@@ -1226,7 +1280,7 @@ export abstract class LinkedRun {
     const expiry = this.shotExpiryMs();
     if (expiry <= tReady) {
       const holderAtExpiry = passNeeded && expiry > releaseMs ? handlerId : holderId;
-      return this.shotClockViolationDuringPlay(frame, expiry, holderAtExpiry);
+      return this.shotClockViolationDuringPlay(effectiveFrame, expiry, holderAtExpiry);
     }
 
     if (passNeeded) {
@@ -1236,9 +1290,9 @@ export abstract class LinkedRun {
       if (!this.emit({ atMs: tReady, phase: "concedido", kind: "pass_received", actors: [handlerId], text: `${handlerId} recibe en su puesto.`, ball: { status: "held", holderId: handlerId, fixed: null } }))
         return null;
       if (outcome.kind === "awkward_control") tReady += secondsToMs(outcome.extraDelaySeconds);
-      if (this.shotExpiryMs() <= tReady) return this.shotClockViolationDuringPlay(frame, this.shotExpiryMs(), handlerId);
+      if (this.shotExpiryMs() <= tReady) return this.shotClockViolationDuringPlay(effectiveFrame, this.shotExpiryMs(), handlerId);
     }
-    return this.runSet(frame, tReady);
+    return this.runSet(effectiveFrame, tReady);
   }
 
   protected runSet(
@@ -1254,7 +1308,11 @@ export abstract class LinkedRun {
     // desde donde están de verdad. Los que el árbol del bloqueo usa como
     // origen de una ayuda, reparación o protección del aro parten de esa
     // posición real (así el retraso tiene efecto causal); el resto sigue
-    // su carrera hacia su marca mientras se juega.
+    // su carrera hacia su marca mientras se juega. Con cobertura `auto`
+    // (ME-07A §4) se posiciona igual que en `drop`: la resolución real de
+    // `auto` ocurre dentro del núcleo, con su propia geometría en ese
+    // instante; D2 solo se preposiciona aquí cuando ya se sabe con
+    // certeza que la cobertura es `trampa`.
     const positionalDefenders = coverage === "trampa" ? ["D2", "D3", "D4", "D5"] : ["D3", "D4", "D5"];
     const legs: Record<string, PlannedLeg> = {};
     const late: string[] = [];
@@ -1280,7 +1338,7 @@ export abstract class LinkedRun {
         actors: [frame.slotToId.O1!, frame.slotToId.O5!],
         text:
           entryText ??
-          `Los cinco atacantes están situados: ${frame.slotToId.O1} y ${frame.slotToId.O5} inician el bloqueo directo central (${coverage === "trampa" ? "trampa" : "drop"}) con ${(remaining / 1000).toFixed(1)} s de lanzamiento.${lateText}`,
+          `Los cinco atacantes están situados: ${frame.slotToId.O1} y ${frame.slotToId.O5} inician el bloqueo directo central (${coverage === "trampa" ? "trampa" : coverage === "auto" ? "cobertura automática" : "drop"}) con ${(remaining / 1000).toFixed(1)} s de lanzamiento.${lateText}`,
         detail: { shotClockMs: remaining, lateDefenders: late },
         ball: { status: "held", holderId: frame.slotToId.O1!, fixed: null },
       })
@@ -1410,6 +1468,100 @@ export abstract class LinkedRun {
     );
 
     if (read.kind === "sin_ventaja") {
+      // ME-07A §3.2: el aro contenido no cierra por sí solo una ventana de
+      // triple limpia del propio portador. Comprueba, con la misma
+      // geometría real ya calculada (posiciones, velocidades), si detrás
+      // de la línea le queda un margen real antes de que el defensor que
+      // protege el aro pueda cerrarle el tiro (mismo margen 0,25 s que la
+      // primera lectura del bloqueo directo). No es un tiro concedido: la
+      // tendencia de tiro del portador decide si lo toma (`decidida`
+      // siempre; `prudente` nunca; `equilibrada` con la misma elección
+      // sembrada `secondOptionProbability(M03)` que el resto del motor).
+      const remaining = this.shotRemainingAt(t1) / 1000;
+      const carrierPos = local[carrierSlot]!;
+      const opportunity = evaluateTransitionThreeOpportunity(carrierPos, defenders, remaining);
+      const { windowMarginSeconds, closeoutArrivalSeconds, nearestDefender } = opportunity;
+      if (opportunity.eligible) {
+        const carrierProfile = this.profile(carrierId);
+        let takeTriple: boolean;
+        if (carrierProfile.shotTendency === "decidida") {
+          takeTriple = true;
+        } else if (carrierProfile.shotTendency === "prudente") {
+          takeTriple = false;
+        } else {
+          takeTriple = this.rng.next() < secondOptionProbability(carrierProfile.attributes.M03);
+        }
+        // Cuenta de 8 s (art. 28): solo se comprueba/limpia aquí cuando de
+        // verdad se va a tirar (se despacha directo a `runCore`, sin pasar
+        // por `runSet`, que es donde el resto de lecturas la comprueba más
+        // tarde con `tAllSet`). Si no se toma el triple, la cuenta sigue
+        // pendiente exactamente igual que en el `sin_ventaja` de siempre.
+        if (takeTriple && this.backcourt) {
+          const count = evaluateBackcourtCount(this.backcourt.startMs, crossOffset === null ? null : t1, this.backcourt.elapsedBeforeMs);
+          if (count.violation) return this.backcourtViolation(frame, count.violationAtMs!, carrierId);
+          this.backcourt = null;
+        }
+        const tripleValue = 3 * shotProbability(THREE_POINT_BASE_PROBABILITY, carrierProfile.attributes.T04, 0);
+        const reason = `Ventana de triple en transición: ${carrierId} está detrás de la línea con ${windowMarginSeconds.toFixed(2)} s de margen sobre ${nearestDefender.id} (aro contenido); tendencia ${carrierProfile.shotTendency}${takeTriple ? " toma el tiro" : " conserva y organiza"}.`;
+        this.setPhaseEntry(takeTriple ? "ventaja_temprana" : "ataque_organizado", reason);
+        if (!this.emit({ atMs: t1, phase: "reconocido", kind: "transition_read", actors: [carrierId, nearestDefender.id], text: reason, detail: { advantage: takeTriple, kind: "triple_portador", windowMarginSeconds, situationalValue: tripleValue } }))
+          return null;
+        this.auditDecision(t1, {
+          point: "entrada_fase_transicion",
+          holderId: carrierId,
+          participants: [carrierId, nearestDefender.id],
+          chosenOptionId: takeTriple ? "triple_portador" : "sin_ventaja",
+          factLinkKind: "transition_read",
+          options: [
+            {
+              id: "triple_portador",
+              status: takeTriple ? "elegida" : "descartada_por_condicion",
+              reasonCode: takeTriple ? "transition_three_point_window_open" : "shot_tendency_favors_continuation",
+              values: { windowMarginSeconds, situationalValue: tripleValue, shotTendency: carrierProfile.shotTendency },
+            },
+            {
+              id: "sin_ventaja",
+              status: takeTriple ? "descartada_por_condicion" : "elegida",
+              reasonCode: takeTriple ? "shot_tendency_favors_shot" : "transition_no_advantage",
+              reasonNote: read.reason,
+            },
+            { id: "penetracion", status: "no_evaluada_por_cortocircuito", reasonCode: "not_evaluated_short_circuit" },
+            { id: "pase_adelantado", status: "no_evaluada_por_cortocircuito", reasonCode: "not_evaluated_short_circuit" },
+            { id: "superioridad_2x1", status: "no_evaluada_por_cortocircuito", reasonCode: "not_evaluated_short_circuit" },
+            { id: "superioridad_3x2", status: "no_evaluada_por_cortocircuito", reasonCode: "not_evaluated_short_circuit" },
+          ],
+        });
+        if (takeTriple) {
+          this.assignResponsibility(t1, carrierId, "carril_transicion", "Toma el triple abierto detrás de la línea antes de organizar.");
+          const entry: LinkedEntry = {
+            kind: "direct_finish",
+            shooterSlot: carrierSlot,
+            finishSpot: carrierPos,
+            shooterAtSpotSeconds: 0,
+            shotType: "three_point",
+            pass: null,
+            contesterSlot: nearestDefender.slot,
+            contesterArrivalSeconds: closeoutArrivalSeconds,
+            contesterGeometry: {
+              originPos: nearestDefender.position,
+              destinationPos: carrierPos,
+              speedMps: nearestDefender.lateralSpeedMps,
+              brakingExtraSeconds: closeoutBrakingExtraSeconds(this.profile(nearestDefender.id).attributes.F03),
+            },
+          };
+          const legs: Record<string, PlannedLeg> = {};
+          for (const p of [...attackers, ...defenders]) {
+            if (p.slot === carrierSlot) continue;
+            const to = p.slot === nearestDefender.slot ? carrierPos : this.dispositionTargets()[p.slot]!;
+            legs[p.slot] = { departSeconds: 0, arriveSeconds: p.slot === nearestDefender.slot ? closeoutArrivalSeconds : timeToReach(p.position, to, p.runSpeedMps), to };
+          }
+          return this.runCore(frame, t1, entry, legs);
+        }
+        // `prudente` o `equilibrada` sin sorteo favorable: cae al mismo
+        // reorganizar de siempre, con la traza ya registrada arriba.
+        return { kind: "organize", frame, atMs: t1, holderId: carrierId };
+      }
+
       const reason = `Sin ventaja: ataque organizado. Primer defensor en el aro: ${read.firstDefender.id} (${formatSeconds(read.firstDefender.arrivalSeconds)}); atacante más rápido: ${read.fastestAttacker.id} (${formatSeconds(read.fastestAttacker.arrivalSeconds)}); ${read.reason}.`;
       this.setPhaseEntry("ataque_organizado", reason);
       // El hecho se emite primero: el enlace de auditoría (§4.2) apunta al

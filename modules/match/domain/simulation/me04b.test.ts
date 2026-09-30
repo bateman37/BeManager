@@ -95,9 +95,13 @@ describe("ME-04B (2): primera lectura del bloqueo con varias vías reales", () =
     expect(typeof o5Option.values?.situationalValue).toBe("number");
   });
 
-  it("una vía inviable no entra en la comparación de valor: sin línea de tres puntos, la salida segura no exige que O1 esté detrás del arco", () => {
-    // Con T04 bajo y sin ángulo de tres, `triple_o1` es estructuralmente
-    // inviable (valor -Infinity) y nunca se compara por valor con las demás.
+  it("un triple legal con T04 bajo compite por valor, no se veta por capacidad (ME-07B §2)", () => {
+    // Antes de ME-07B, T04<9 excluía `triple_o1` con reasonCode
+    // `three_point_ineligible_skill` sin comparar valor (veto absoluto). El
+    // prompt lo elimina explícitamente: con T04 bajo, la vía sigue viable
+    // (status `descartada_por_condicion` por valor situacional menor, no por
+    // capacidad) y su valor cae por la propia fórmula continua de
+    // `shotProbability`, no por un umbral binario.
     const offense = withAttribute(LAB_ROSTER_FIXTURE[0]!.players, "O1", { T04: 1 });
     const input = buildInput(1, { offense });
     const audit = createRecordingAuditCollector();
@@ -105,7 +109,9 @@ describe("ME-04B (2): primera lectura del bloqueo con varias vías reales", () =
     const firstRead = audit.snapshot().decisions.find((d) => d.point === "lectura_bloqueo_o1")!;
     const tripleOption = firstRead.options.find((o) => o.id === "triple_o1")!;
     expect(tripleOption.status).toBe("descartada_por_condicion");
-    expect(tripleOption.reasonCode).toBe("three_point_ineligible_skill");
+    expect(tripleOption.reasonCode).toBe("situational_value_lower");
+    expect(typeof tripleOption.values?.situationalValue).toBe("number");
+    expect(tripleOption.values?.situationalValue as number).toBeGreaterThan(0);
   });
 });
 

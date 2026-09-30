@@ -43,6 +43,10 @@ model LabPlayer {
   standingReachCm  Int
   attributes       Json
   pnrTendency      String
+  /// Tendencia individual de tiro (ME-07A §2.2): "prudente" | "equilibrada" |
+  /// "decidida". Los registros anteriores a ME-07A reciben "equilibrada" por
+  /// el valor por defecto de la migración, de forma explícita.
+  shotTendency     String   @default("equilibrada")
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 

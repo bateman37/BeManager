@@ -4,9 +4,9 @@ import type {
   LabTeamRepository,
   LabTeamSummary,
 } from "../../application/ports/lab-team-repository.port";
-import type { PlayerProfile, PlayerTemplate, PnrTendency } from "../../domain/players/player-profile";
+import type { PlayerProfile, PlayerTemplate, PnrTendency, ShotTendency } from "../../domain/players/player-profile";
 import { ACTIVE_ATTRIBUTE_IDS, type ActiveAttributeId, type Rating } from "../../domain/players/attribute";
-import { M09_BACKFILL_NEUTRAL_RATING } from "../../domain/players/player-profile";
+import { M09_BACKFILL_NEUTRAL_RATING, SHOT_TENDENCY_BACKFILL_DEFAULT } from "../../domain/players/player-profile";
 
 function toDomainPlayer(row: {
   id: string;
@@ -20,6 +20,7 @@ function toDomainPlayer(row: {
   standingReachCm: number;
   attributes: unknown;
   pnrTendency: string;
+  shotTendency?: string | null;
 }): PlayerProfile {
   const rawAttributes = row.attributes as Record<string, number>;
   const attributes = {} as Record<ActiveAttributeId, Rating>;
@@ -53,6 +54,10 @@ function toDomainPlayer(row: {
     },
     attributes,
     pnrTendency: row.pnrTendency as PnrTendency,
+    // La columna tiene DEFAULT 'equilibrada' desde su migración, así que
+    // esto solo cubre una fila cargada por un cliente que aún no la
+    // selecciona (mismo patrón que M09_BACKFILL_NEUTRAL_RATING).
+    shotTendency: (row.shotTendency ?? SHOT_TENDENCY_BACKFILL_DEFAULT) as ShotTendency,
   };
 }
 
@@ -107,6 +112,7 @@ function toUpsertArgs(teamId: string, player: PlayerProfile) {
     standingReachCm: player.measures.standingReachCm,
     attributes: player.attributes as unknown as Record<string, number>,
     pnrTendency: player.pnrTendency,
+    shotTendency: player.shotTendency,
   };
   return {
     where: { teamId_id: { teamId, id: player.id } },

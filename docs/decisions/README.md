@@ -5,7 +5,7 @@
 **Debe leerse cuando:** vayas a tomar una decisión técnica significativa o difícil de revertir.
 **No cubre:** el contenido de cada ADR (ver el archivo correspondiente).
 **Documentos relacionados:** `docs/README.md`.
-**Última actualización:** 2026-09-29.
+**Última actualización:** 2026-09-30.
 
 ## Convención
 
@@ -25,6 +25,7 @@
 - `ADR-0006-linked-possessions-local-frame.md` — tramos de posesiones enlazadas sobre el núcleo compartido: marco local de ataque por giro de 180°, roles canónicos asignados a jugadores reales y modo enlazado opcional del núcleo (ME-03).
 - `ADR-0007-shared-continuity-engine-and-game-rules-profile.md` — motor de continuidad compartido `LinkedRun` (tramo y partido), reglas de partido opcionales en el núcleo y perfil de reglas FIBA 2026 puro, separado del acta (ME-04).
 - `ADR-0008-second-offensive-family-auto-selection.md` — segunda familia ofensiva (mano a mano sin balón) sobre el mismo núcleo compartido, y selección automática por una estimación pura de oportunidad en vez de un dry-run de ambos árboles (ME-06).
+- `ADR-0009-generalized-tendency-priority-and-auto-defense.md` — tendencia de tiro y prioridad de creación generalizadas a la banda de empate fuera del bloqueo directo, cobertura/orden sin balón `auto` resueltas de forma pura antes del árbol, y el poseedor real conserva la iniciativa en `organize()` con `rebindFrame` (ME-07A).
 
 ## Decisiones requeridas pendientes
 

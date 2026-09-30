@@ -5,7 +5,7 @@
 **Debe leerse cuando:** vayas a guardar un nuevo prompt de implementación o hotfix.
 **No cubre:** el contenido de cada prompt (son registros inmutables, no se resumen aquí).
 **Documentos relacionados:** `docs/prompts/hotfix/README.md`, `docs/process/DOCUMENTATION_STANDARD.md`.
-**Última actualización:** 2026-09-29 (ME-04A).
+**Última actualización:** 2026-09-30 (ME-07B).
 
 ## Convención
 
@@ -41,6 +41,24 @@
   `match/me-06-variedad-y-laboratorio`; el entorno de ejecución ya tenía
   activa y sincronizada `claude/new-session-p9xna7`, así que la entrega
   se hizo ahí (una sola rama, una sola PR), igual que en ME-04B.
+- `implementation/ME-07A-decisiones-vivas-y-partido-auto.md` — primera
+  de dos entregas integradas (ME-07A/ME-07B): cambia la política de
+  decisión de las posesiones (entrenador, tendencia individual,
+  percepción, elección y ejecución/respuesta separadas), amplía la
+  cobertura y la defensa sin balón a `auto` para ambos equipos, corrige
+  el desfase de `phaseIndex` en la auditoría y exige un partido completo
+  automático auditable desde `/lab`. El prompt propone la rama
+  `match/me-07a-decisiones-auto`; el entorno de ejecución ya tenía activa
+  y sincronizada `claude/new-session-p9xna7`, así que la entrega se hace
+  ahí (una sola rama, una sola PR), igual que en ME-04B y ME-06.
+- `implementation/ME-07B-cierre-me-07a-motor-tactico-integrado.md` —
+  segunda entrega del bloque integrado: cierra los incumplimientos
+  deportivos verificados de ME-07A y completa el repertorio táctico
+  (estructuras, libro, familias ofensivas con interacciones, defensa
+  asentada/presión/cobertura de bloqueo) y los 45 atributos con tarea
+  alcanzable, en la **misma rama y PR ya abiertas** (`claude/new-session-p9xna7`,
+  PR #10, Draft). Dennis decide su fusión desde `main`; esta entrega no
+  la fusiona ni abre rama o PR alternativa.
 
 ## Hotfixes existentes
 
