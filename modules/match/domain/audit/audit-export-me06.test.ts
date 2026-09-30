@@ -29,8 +29,8 @@ function input(
 }
 
 describe("ME-06 (5): esquema versionado y foto por equipo", () => {
-  it("bump de AUDIT_SCHEMA_VERSION a ME-06-AUDIT-1", () => {
-    expect(AUDIT_SCHEMA_VERSION).toBe("ME-06-AUDIT-1");
+  it("el esquema sigue versionado (ME-07A lo amplió de nuevo a ME-07A-AUDIT-1, sin reinterpretar ME-06-AUDIT-1)", () => {
+    expect(AUDIT_SCHEMA_VERSION).toBe("ME-07A-AUDIT-1");
   });
 
   it("cada equipo exporta su plan ofensivo y su orden de defensa sin balón reales, no inferidos", () => {

@@ -12,7 +12,14 @@ import type { AuditCoverageGap, AuditDecisionRecord } from "./audit-types";
 import { LAB_ROSTER_FIXTURE } from "../players/lab-roster-fixture";
 import type { PlayerProfile } from "../players/player-profile";
 
-export const AUDIT_SCHEMA_VERSION = "ME-06-AUDIT-1";
+/**
+ * ME-07A §5: nuevo esquema versionado. Amplía ME-06-AUDIT-1 con la
+ * prioridad de creación y la tendencia de tiro por jugador, los puntos de
+ * decisión de cobertura/orden sin balón `auto` y `byFamilyUnattributed`;
+ * no reinterpreta ni reescribe un `.json` ya exportado con
+ * `"ME-06-AUDIT-1"`.
+ */
+export const AUDIT_SCHEMA_VERSION = "ME-07A-AUDIT-1";
 
 export interface AuditExportRun {
   readonly schemaVersion: typeof AUDIT_SCHEMA_VERSION;
