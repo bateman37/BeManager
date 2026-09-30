@@ -468,7 +468,11 @@ export abstract class LinkedRun {
       atMs,
       point: input.point,
       possessionIndex: possession ? possession.index : null,
-      phaseIndex: possession ? possession.phases.length - 1 : null,
+      // El índice de fase auditado debe coincidir con `phase.index` (1-based,
+      // el mismo que usa `pushEvent` para los hechos reales) para que
+      // `build-audit-export.ts` pueda enlazar una decisión con sus propios
+      // hechos por `${possessionIndex}:${phaseIndex}` (ME-07A §5.1).
+      phaseIndex: possession ? possession.phases.length : null,
       holderId: input.holderId,
       participants: input.participants,
       options: input.options,
@@ -800,7 +804,10 @@ export abstract class LinkedRun {
         entry,
         t0,
         possessionIndex: possession ? possession.index : null,
-        phaseIndex: possession ? possession.phases.length - 1 : null,
+        // Ver nota de `auditDecision`: mismo índice 1-based que `phase.index`
+        // y que `pushEvent`, para que las decisiones del núcleo (p.ej.
+        // `seleccion_familia`) enlacen con los hechos de su propia fase.
+        phaseIndex: possession ? possession.phases.length : null,
         ...(rules ? { rules } : {}),
       },
     });
