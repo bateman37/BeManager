@@ -56,7 +56,7 @@ auditoría** · **Prueba** · **Estado**. «—» = no existe todavía.
 
 | Nombre | Capa | Config. | Entrada | Mecanismo | Fallback | Hecho/auditoría | Prueba | Estado |
 |---|---|---|---|---|---|---|---|---|
-| Bloqueo directo central | Familia | `offensivePlan` | Ataque organizado | O5 pantalla, O1 usa, lectura por valor | Salida segura | `seleccion_familia`, `lectura_bloqueo_o1` | `me04b`, `me06` | parcial: monopolio en `auto` (§2.2) |
+| Bloqueo directo central | Familia | `offensivePlan` | Ataque organizado | O5 pantalla, O1 usa, lectura por valor | Salida segura | `seleccion_familia`, `lectura_bloqueo_o1` | `me04b`, `me06` | parcial: monopolio en `auto`, explicado por el roll libre que concede el drop (§2.2 hecho, §2.3 pendiente) |
 | Bloqueo directo lateral | Familia | — | — | — | — | — | — | pendiente |
 | Mano a mano (DHO) | Familia | `offensivePlan` | Ataque organizado | Entrada a O5 en codo, entrega a O2 | O5 conserva | `entrada/transferencia_mano_a_mano` | `me06-mano-a-mano.test.ts` | parcial: casi nunca elegido en `auto` |
 | Pindown | Familia | — | — | Solo el indirecto O4→O3 dentro del DHO | — | `bloqueo_indirecto_o3` | `me06` | pendiente como familia propia |

@@ -188,6 +188,27 @@ elige la mano a mano cuando de verdad es mejor
 directo (kick-out) sigue siendo exclusivamente del bloqueo directo: no
 se reevalúa la familia en esa continuación.
 
+**ME-07B v2 §2.2 — comparador en la misma frontera.** `auto` ya no usa
+dos estimadores ad hoc (`estimateBloqueoDirectoOpportunity` suponía una
+recepción limpia futura de O5; la mano a mano estimaba otra cadena). Cada
+familia se **proyecta en seco con su propia ejecución** (`runDropPhase`,
+`runHandoffPhase` sobre una copia del contexto, sin azar, hechos ni
+auditoría) hasta su primera lectura real: mismas posiciones, reloj,
+preparación, ayudas y concesiones que luego se ejecutan. El valor de la
+familia es la mejor vía viable × la probabilidad de que sus pases no se
+desvíen (`deflectionProbability`, LAB-0.1; en la mano a mano incluye el
+pase de entrada). El bloqueo directo se proyecta contra `drop` (la trampa
+no tiene aún una lectura por valor proyectable; pendiente con §2.3).
+**Resultado medido:** el monopolio **no desaparece** (seed: PnR 1.197/1.235
+Sierra, 1.216/1.217 Puerto) y ahora tiene explicación física
+reproducible: en 2.397 de 2.413 primeras lecturas del bloqueo, la ayuda de
+D3 llega después de que O5 esté listo en el short roll, así que el drop
+concede un tiro cercano libre (≈1,17 puntos) frente a la mejor salida
+proyectada de la mano a mano (triple libre o contestado, ≈0,8–0,94 tras
+riesgo de entrada). Brecha mediana PnR−DHO +0,336 (p10 +0,244, p90
++0,369; 39/2.452 negativas). Es la defensa (§2.3) la que concede esa
+ventana, no un sesgo del comparador.
+
 No autoriza mover D5, adelantar la ayuda de D3 del bloqueo directo, ni
 resolver la decisión pendiente de faltas sin tiro/segunda entrada
 (sigue abierta). Sin fórmulas LAB-0.1 nuevas: dos puntos de cancha

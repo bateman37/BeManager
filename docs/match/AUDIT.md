@@ -111,7 +111,10 @@ cerró, `boxesOut` si él cerró, y sus T19/F05/T20 consultados. Motivos
 `rebound_boxed_out_by_rival`, `rebound_arrival_in_window`,
 `rebound_arrival_outside_window`; elegida = quien controló. El hecho
 `rebound_secured`/`rebound_contested` lleva los mismos cierres en
-`detail.boxOuts`. Sigue pendiente de este encargo (§6): enlace de cada FGA a
+`detail.boxOuts`. `seleccion_familia` (§2.2) añade por familia
+`bestReadOption`, `bestReadRawValue`, `bestReadCompletion` y
+`projectedDecisionSeconds` de la primera lectura proyectada en seco
+(`projectedCoverage: "drop"` para el bloqueo directo). Sigue pendiente de este encargo (§6): enlace de cada FGA a
 su acción efectiva anterior, candidatos viables/inviables por decisión y
 los demás puntos nuevos.
 

@@ -31,6 +31,7 @@ import { getScenario, type ScenarioDefinition } from "../lab/scenario";
 import type { PlayerProfile } from "../players/player-profile";
 import {
   attackerMoveSpeedMps,
+  deflectionProbability,
   defenderLateralSpeedMps,
   recognitionLatencySeconds,
   screenInterceptDelaySeconds,
@@ -322,6 +323,14 @@ interface CoreContext {
   readonly linked: LinkedState | null;
   readonly audit: AuditCollector;
   readonly auditMeta: { readonly t0: Milliseconds; readonly possessionIndex: number | null; readonly phaseIndex: number | null } | null;
+  /**
+   * ME-07B v2 §2.2: contexto de proyección en seco. La misma función de
+   * familia avanza hasta su primera lectura sin azar ni auditoría y devuelve
+   * los valores de esa lectura (`ReadProjectionReached`), de modo que el
+   * selector compara las familias en la misma frontera y con los mismos
+   * costes que su ejecución real.
+   */
+  readonly projecting?: boolean;
 }
 
 /**
@@ -536,6 +545,112 @@ function finalize(ctx: CoreContext, outcome: TerminalOutcome, ball: BallState): 
  * árbol de decisión. No decide por sí mismo cómo presentarse: eso vive en
  * el motor detallado o en el resolvedor rápido que lo consuman.
  */
+/** Una vía de la primera lectura proyectada, con su probabilidad de completar el pase previo. */
+interface ProjectedReadOption {
+  readonly id: string;
+  readonly value: number;
+  /** Probabilidad de que los pases necesarios para llegar a la vía no se desvíen (LAB-0.1). */
+  readonly completion: number;
+}
+
+interface ReadProjection {
+  readonly tDecisionSeconds: number;
+  readonly options: readonly ProjectedReadOption[];
+}
+
+class ReadProjectionReached {
+  constructor(readonly projection: ReadProjection) {}
+}
+
+const DRY_RUN_RNG: SeededRandom = {
+  next(): number {
+    throw new Error("Proyección en seco: una familia intentó consumir azar antes de su primera lectura.");
+  },
+  nextInRange(): number {
+    return DRY_RUN_RNG.next();
+  },
+  nextInt(): number {
+    return DRY_RUN_RNG.next();
+  },
+  nextSign(): 1 | -1 {
+    DRY_RUN_RNG.next();
+    return 1;
+  },
+};
+
+/** Copia aislada del contexto para proyectar sin tocar hechos, azar, auditoría ni posiciones reales. */
+function dryContext(ctx: CoreContext): CoreContext {
+  return {
+    ...ctx,
+    rng: DRY_RUN_RNG,
+    timeline: [],
+    positions: { ...ctx.positions },
+    positionHistory: ctx.positionHistory
+      ? Object.fromEntries(Object.entries(ctx.positionHistory).map(([id, entries]) => [id, [...entries]]))
+      : null,
+    linked: ctx.linked ? { ...ctx.linked, balancers: new Set(ctx.linked.balancers) } : null,
+    audit: createNoopAuditCollector(),
+    projecting: true,
+  };
+}
+
+/**
+ * Proyecta la primera lectura de una familia desde el estado heredado
+ * (ME-07B v2 §2.2): `null` si la familia no llega a su lectura (p. ej.
+ * reloj insuficiente).
+ */
+function projectFamilyRead(ctx: CoreContext, run: (dry: CoreContext) => PossessionCoreResult): ReadProjection | null {
+  try {
+    run(dryContext(ctx));
+    return null;
+  } catch (e) {
+    if (e instanceof ReadProjectionReached) return e.projection;
+    throw e;
+  }
+}
+
+/** Oportunidad comparable de una familia: la mejor vía viable por su probabilidad de completarse. */
+interface FamilyOpportunity extends EntryOpportunity {
+  readonly bestOptionId: string | null;
+  /** Valor situacional de esa vía en la primera lectura proyectada, antes del riesgo de pase. */
+  readonly bestRawValue: number | null;
+  readonly bestCompletion: number | null;
+  readonly tDecisionSeconds: number | null;
+}
+
+function familyOpportunity(projection: ReadProjection | null): FamilyOpportunity {
+  if (!projection) return { viable: false, value: -Infinity, bestOptionId: null, bestRawValue: null, bestCompletion: null, tDecisionSeconds: null };
+  let best = 0;
+  let bestOption: ProjectedReadOption | null = null;
+  for (const o of projection.options) {
+    if (!Number.isFinite(o.value)) continue;
+    const expected = o.value * o.completion;
+    if (expected > best) {
+      best = expected;
+      bestOption = o;
+    }
+  }
+  return {
+    viable: best > 0,
+    value: best,
+    bestOptionId: bestOption?.id ?? null,
+    bestRawValue: bestOption?.value ?? null,
+    bestCompletion: bestOption?.completion ?? null,
+    tDecisionSeconds: projection.tDecisionSeconds,
+  };
+}
+
+function familyAuditValues(o: FamilyOpportunity): Record<string, number | string | boolean | null> {
+  return {
+    situationalValue: o.value,
+    viable: o.viable,
+    bestReadOption: o.bestOptionId,
+    bestReadRawValue: o.bestRawValue,
+    bestReadCompletion: o.bestCompletion,
+    projectedDecisionSeconds: o.tDecisionSeconds,
+  };
+}
+
 export function computePossessionCore(
   input: MatchInput,
   options: ComputePossessionCoreOptions = {},
@@ -615,8 +730,12 @@ export function computePossessionCore(
     // familia desde el estado real heredado, sin RNG y sin ejecutar la vía
     // descartada. Solo se ejecuta (con su propio árbol de lectura, sorteos
     // y hechos) la familia elegida aquí.
-    const bloqueoOpportunity = estimateBloqueoDirectoOpportunity(ctx);
-    const handoffOpportunity = estimateHandoffOpportunity(ctx);
+    // ME-07B v2 §2.2: cada familia se proyecta con su propia ejecución, en
+    // seco, hasta su primera lectura real (misma frontera temporal, mismas
+    // respuestas defensivas y mismos costes de pase), en vez de dos
+    // estimadores distintos que suponían recepciones limpias futuras.
+    const bloqueoOpportunity = familyOpportunity(projectFamilyRead(ctx, (dry) => runDropPhase(dry, scenario)));
+    const handoffOpportunity = familyOpportunity(projectFamilyRead(ctx, (dry) => runHandoffPhase(dry)));
     // Empate exacto: regla estable vinculada a las opciones reales (no una
     // alternancia por número de posesión) — se conserva el bloqueo directo,
     // la familia central ya versionada.
@@ -631,13 +750,13 @@ export function computePossessionCore(
           id: "bloqueo_directo",
           status: resolvedPlan === "bloqueo_directo" ? "elegida" : "descartada_por_condicion",
           reasonCode: resolvedPlan === "bloqueo_directo" ? "family_opportunity_higher" : "family_opportunity_lower",
-          values: { situationalValue: bloqueoOpportunity.value, viable: bloqueoOpportunity.viable },
+          values: { ...familyAuditValues(bloqueoOpportunity), projectedCoverage: "drop" },
         },
         {
           id: "mano_a_mano_sin_balon",
           status: resolvedPlan === "mano_a_mano_sin_balon" ? "elegida" : "descartada_por_condicion",
           reasonCode: resolvedPlan === "mano_a_mano_sin_balon" ? "family_opportunity_higher" : "family_opportunity_lower",
-          values: { situationalValue: handoffOpportunity.value, viable: handoffOpportunity.viable },
+          values: familyAuditValues(handoffOpportunity),
         },
       ],
     });
@@ -1049,6 +1168,19 @@ function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition): Possessio
     salida_segura: safeOutletValue,
   };
   const FIRST_READ_ORDER: readonly FirstReadOptionId[] = ["finalizar", "pase_o5", "pase_o3", "triple_o1", "salida_segura"];
+  if (ctx.projecting) {
+    const completionOf: Readonly<Record<FirstReadOptionId, number>> = {
+      finalizar: 1,
+      pase_o5: 1 - deflectionProbability(d1.attributes.T17, o1.attributes.T09),
+      pase_o3: 1 - deflectionProbability(d4.attributes.T17, o1.attributes.T09),
+      triple_o1: 1,
+      salida_segura: 1,
+    };
+    throw new ReadProjectionReached({
+      tDecisionSeconds: tDecision,
+      options: FIRST_READ_ORDER.map((id) => ({ id, value: candidateValues[id], completion: completionOf[id] })),
+    });
+  }
   const viableCandidates = FIRST_READ_ORDER.filter((id) => Number.isFinite(candidateValues[id]))
     .map((id) => ({ id, value: candidateValues[id] }))
     .sort((a, b) => b.value - a.value);
@@ -1832,106 +1964,15 @@ function runTrapPhase(ctx: CoreContext): PossessionCoreResult {
 // ============================================================================
 
 /**
- * Oportunidad pura y comparable de entrada de cada familia desde el estado
- * heredado (ME-06 §3.2): sin RNG, sin ejecutar la vía descartada, sin mirar
- * el resultado futuro. No es el árbol de lectura completo de cada familia
- * (que solo se ejecuta una vez elegida, con su propio reloj de sorteos y
- * hechos): es un valor situacional provisional con la misma geometría real
- * heredada (posición, balón, quinteto, defensa, reloj), suficiente para
- * decidir cuál entrada tiene mejor oportunidad sin adivinar cuál lectura
- * concreta ganará dentro de ella.
+ * Oportunidad comparable de entrada de cada familia (ME-06 §3.2; rehecha en
+ * ME-07B v2 §2.2): sin RNG y sin ejecutar la vía descartada más allá de su
+ * primera lectura proyectada en seco (`projectFamilyRead`). Los antiguos
+ * estimadores ad hoc de cada familia (recepción limpia futura de O5 frente a
+ * otra cadena distinta para la mano a mano) se retiraron.
  */
 interface EntryOpportunity {
   readonly viable: boolean;
   readonly value: number;
-}
-
-/**
- * Oportunidad del bloqueo directo: mismas tres vías reales de O1
- * (finalizar/pase_o5/triple_o1) que `runDropPhase` evalúa después con más
- * detalle, aquí solo hasta el valor puro, con las posiciones originales
- * heredadas (antes de que O1 se desplace de verdad a usar la pantalla).
- */
-function estimateBloqueoDirectoOpportunity(ctx: CoreContext): EntryOpportunity {
-  const o1 = player(ctx, "O1");
-  const o5 = player(ctx, "O5");
-  const d1 = player(ctx, "D1");
-  const d5 = player(ctx, "D5");
-
-  const o1TimeToHoop = timeToReach(ctx.positions.O1!, ATTACKED_HOOP, attackerMoveSpeedMps(o1.attributes.F01));
-  const d5RawTimeToHoop = timeToReach(ctx.positions.D5!, ATTACKED_HOOP, defenderLateralSpeedMps(d5.attributes.F04));
-  const d5TimeToHoop = Math.max(0, d5RawTimeToHoop - interiorArrivalAdjustmentSeconds(d5.attributes.T23));
-  const d5HoopGeometry: ContestGeometry = {
-    originPos: ctx.positions.D5!,
-    destinationPos: ATTACKED_HOOP,
-    speedMps: defenderLateralSpeedMps(d5.attributes.F04),
-    brakingExtraSeconds: closeoutBrakingExtraSeconds(d5.attributes.F03),
-  };
-  const tO1FinishReady = o1TimeToHoop + CLOSE_FINISH_PREP_SECONDS;
-  const d5PosAtO1FinishReady = positionAtInstant(d5HoopGeometry, d5TimeToHoop, tO1FinishReady);
-  const d5TrulyBlockingFinish = distance(d5PosAtO1FinishReady, ATTACKED_HOOP) <= COMBINED_CONTACT_RADIUS_METERS;
-  const finishOpposition: EffectiveOpposition = d5TimeToHoop - tO1FinishReady >= 0.25 ? 0 : 1;
-  const finishValue = !d5TrulyBlockingFinish
-    ? 2 * shotProbability(CLOSE_FINISH_BASE_PROBABILITY, o1.attributes.T01, finishOpposition)
-    : -Infinity;
-
-  const screenDelay =
-    screenInterceptDelaySeconds(o5.attributes.T13, o5.attributes.F05, d1.attributes.T16) +
-    screenContactAdjustmentSeconds(o5.measures.weightKg - d1.measures.weightKg);
-  const o5PassValue = screenDelay >= 0.2 ? 2 * shotProbability(CLOSE_FINISH_BASE_PROBABILITY, o5.attributes.T01, 0) : -Infinity;
-
-  // ME-07B §2 elimina el veto absoluto de capacidad (T04>=9): un triple
-  // legal es siempre una vía real; calidad (T04 en `shotProbability`) y
-  // oposición (misma ventana de cierre de D5 que usa después la lectura
-  // real del bloqueo) deciden su valor, igual que en `runDropPhase`.
-  const behindLine = isBehindThreePointLine(ctx.positions.O1!);
-  const tShotReadyO1 = movingShotPrepSeconds(o1.attributes.T06);
-  const tD5Contest = Math.max(0, d5RawTimeToHoop - perimeterArrivalAdjustmentSeconds(d5.attributes.T22));
-  const tripleOpposition: EffectiveOpposition = tD5Contest - tShotReadyO1 >= 0.25 ? 0 : 1;
-  const tripleValue = behindLine
-    ? 3 * shotProbability(THREE_POINT_BASE_PROBABILITY, o1.attributes.T04, tripleOpposition)
-    : -Infinity;
-
-  const best = Math.max(finishValue, o5PassValue, tripleValue, 0);
-  return { viable: Number.isFinite(best) && best > 0, value: best };
-}
-
-/**
- * Oportunidad de la mano a mano sin balón: puede O1 encontrar a O5 en el
- * codo alto con el reloj disponible, y hay una salida real razonablemente
- * alcanzable desde ahí (mano a mano a O2 o bloqueo/corte a O3), con las
- * posiciones originales heredadas.
- */
-function estimateHandoffOpportunity(ctx: CoreContext): EntryOpportunity {
-  const o2 = player(ctx, "O2");
-  const o3 = player(ctx, "O3");
-  const d2 = player(ctx, "D2");
-  const d3 = player(ctx, "D3");
-
-  const entryPoint = FREE_THROW_LINE_SPOT;
-  const tEntryArrival = PASS_RELEASE_SECONDS + distanceSeconds(ctx.positions.O1!, entryPoint);
-  const shotClockRemainingAtEntry = ctx.shotClockMs / 1000 - tEntryArrival;
-  if (shotClockRemainingAtEntry <= 2) return { viable: false, value: -Infinity };
-
-  const handoffPoint = pointShortOfTarget(ctx.positions.O2!, entryPoint, COMBINED_CONTACT_RADIUS_METERS);
-  const tO2Arrival = timeToReach(ctx.positions.O2!, handoffPoint, attackerMoveSpeedMps(o2.attributes.F01));
-  const tHandoffReady = Math.max(tEntryArrival, tO2Arrival);
-  const d2RawArrival = timeToReach(ctx.positions.D2!, handoffPoint, defenderLateralSpeedMps(d2.attributes.F04));
-  const d2Arrival = Math.max(0, d2RawArrival - perimeterArrivalAdjustmentSeconds(d2.attributes.T22));
-  const handoffDenied = d2Arrival <= tHandoffReady;
-  const o2Value = !handoffDenied ? 2 * shotProbability(CLOSE_FINISH_BASE_PROBABILITY, o2.attributes.T01, 0) : -Infinity;
-
-  const o4 = player(ctx, "O4");
-  const screenDelay = screenInterceptDelaySeconds(o4.attributes.T13, o4.attributes.F05, d3.attributes.T16);
-  const cutStart = Math.max(0, tHandoffReady - cutterStartTimeReductionSeconds(o3.attributes.T21));
-  const d3RawArrival = timeToReach(ctx.positions.D3!, WEAK_SIDE_CUT_SPOT, defenderLateralSpeedMps(d3.attributes.F04));
-  const tD3AtCut = cutStart + d3RawArrival + screenDelay;
-  const tO3Cut = cutStart + timeToReach(ctx.positions.O3!, WEAK_SIDE_CUT_SPOT, attackerMoveSpeedMps(o3.attributes.F01));
-  const cutWindowOpen = tD3AtCut > tO3Cut;
-  const o3Value = cutWindowOpen ? 3 * shotProbability(THREE_POINT_BASE_PROBABILITY, o3.attributes.T04, 0) : -Infinity;
-
-  const best = Math.max(o2Value, o3Value, 0);
-  return { viable: Number.isFinite(best) && best > 0, value: best };
 }
 
 /**
@@ -2026,7 +2067,12 @@ function runHandoffPhase(ctx: CoreContext): PossessionCoreResult {
     if (ctx.linked) return linkedShotClockViolation(ctx, "O1");
     return finalize(ctx, { kind: "shot_clock_violation" }, { status: "dead", holderId: null, position: ctx.positions.O1! });
   }
-  const entryPass = resolvePass(o1.attributes.T09, o5.attributes.T11, true, d5.attributes.T17, 1, ctx.rng);
+  // En proyección no se sortea: el riesgo del pase de entrada entra como
+  // probabilidad de completarse en el valor de la familia (§2.2).
+  const entryPass: ReturnType<typeof resolvePass> = ctx.projecting
+    ? { kind: "clean_reception" }
+    : resolvePass(o1.attributes.T09, o5.attributes.T11, true, d5.attributes.T17, 1, ctx.rng);
+  const entryCompletion = 1 - deflectionProbability(d5.attributes.T17, o1.attributes.T09);
   event(ctx, tEntryArrival, "ejecutado", "pass_released", ["O1", "O5"], "O1 busca a O5 en el codo alto.");
   if (entryPass.kind === "deflected_loose_ball") {
     auditDecision(ctx, tEntryArrival, {
@@ -2269,6 +2315,18 @@ function runHandoffPhase(ctx: CoreContext): PossessionCoreResult {
     pase_o1: safeOutletValue,
   };
   const HANDOFF_READ_ORDER: readonly HandoffReadOptionId[] = ["finalizar_portador", "pase_o3", "continuar_o4", "pase_o1"];
+  if (ctx.projecting) {
+    const completionOf: Readonly<Record<HandoffReadOptionId, number>> = {
+      finalizar_portador: entryCompletion,
+      pase_o3: entryCompletion * (1 - deflectionProbability(d3.attributes.T17, holder.attributes.T09)),
+      continuar_o4: entryCompletion * (1 - deflectionProbability(d4.attributes.T17, holder.attributes.T09)),
+      pase_o1: 1,
+    };
+    throw new ReadProjectionReached({
+      tDecisionSeconds: tDecision,
+      options: HANDOFF_READ_ORDER.map((id) => ({ id, value: candidateValues[id], completion: completionOf[id] })),
+    });
+  }
   const viableCandidates = HANDOFF_READ_ORDER.filter((id) => Number.isFinite(candidateValues[id]))
     .map((id) => ({ id, value: candidateValues[id] }))
     .sort((a, b) => b.value - a.value);

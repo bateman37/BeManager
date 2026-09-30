@@ -188,10 +188,11 @@ describe("ME-04 (2): bocina, tiro en el aire, reset del reloj de lanzamiento y r
     // Semilla recalculada en ME-07A (§3.2, organize() cambia qué
     // posesiones llegan a la bocina final) y otra vez en ME-07B v2 §2.1
     // (el cierre de rebote y la caída del tirador cambian qué posesiones
-    // llegan a la bocina): la semilla 121 conserva un tiro (ahora de dos,
-    // antes un triple) soltado antes de la bocina final del partido que
-    // entra y solo se resuelve ese tiro.
-    const r = game(121);
+    // llegan a la bocina) y en §2.2 (el selector de familia proyecta cada
+    // familia hasta su primera lectura): la semilla 151 conserva un tiro
+    // (ahora de dos, antes un triple) soltado antes de la bocina final del
+    // partido que entra y solo se resuelve ese tiro.
+    const r = game(151);
     const i = r.events.findIndex((e) => e.kind === "buzzer" && e.detail.shotInFlight === true);
     expect(i).toBeGreaterThan(0);
     const buzzer = r.events[i]!;

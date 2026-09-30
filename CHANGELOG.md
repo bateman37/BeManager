@@ -27,9 +27,15 @@ decisiones duraderas viven en `docs/decisions/`, no aquí.
   campo vivo 362/537 → 167/518 (Sierra) y 374/617 → 103/534 (Puerto); casi
   todo el efecto viene de la caída del tirador, no del retraso del cierre.
 - Auditoría versionada a `ME-07B-AUDIT-1` con el punto `disputa_rebote`.
+- **§2.2 Selección de familia.** `auto` proyecta en seco cada familia con su
+  propia ejecución hasta la primera lectura real (misma frontera, reloj,
+  ayudas y concesiones) y pondera la mejor vía por el riesgo de desvío de
+  sus pases; se retiran los estimadores ad hoc. El monopolio del bloqueo
+  directo persiste y queda explicado: el drop concede el roll libre en
+  2.397 de 2.413 primeras lecturas de la foto seed (trabajo de §2.3).
 - Semillas naturales de cuatro pruebas (bocina ×2, dos prórrogas/guardián,
   tapón) y dos huellas de regresión recalculadas con causa documentada.
-- **Pendiente**: §2.2–§2.6, respuesta defensiva «cerrar» tras el tiro
+- **Pendiente**: §2.3–§2.6 (y la trampa proyectable en §2.2), respuesta defensiva «cerrar» tras el tiro
   (probada y retirada: eliminaba la única fuente natural de faltas),
   faltas y libres naturales, §§3–7 completos. ME-07B no está terminada.
 

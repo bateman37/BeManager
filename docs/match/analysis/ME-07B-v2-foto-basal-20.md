@@ -78,6 +78,7 @@ Cada fila nueva se añade con su commit; las anteriores no se reescriben.
 |---|---|---|
 | `7b7eedd` | Basal | Cuadro de arriba |
 | sesión v2-1 | §2.1 rebote: retraso real del cierre + tirador sin cierre durante su gesto + caída LAB-0.4 | Ver «Tras §2.1» |
+| sesión v2-1 | §2.2 selector de familia por proyección en seco de la primera lectura + riesgo de pase | Monopolio intacto: seed PnR 1.197/1.235 (Sierra) y 1.216/1.217 (Puerto); +3 603/613 y 800/803; +5 302/316 y 401/401. Causa física: roll libre en 2.397/2.413 primeras lecturas (ver `ACTIONS.md`). Parejas: 91 seed 120–122 → +3 135–128; 102 seed 131–104 → +5 155–125 |
 
 ## Tras §2.1 (rebote), mismas 20 semillas y fotos
 
