@@ -482,6 +482,46 @@ describe("ME-04 (4): sustituciones en oportunidad legal, reentrada, minutos 5× 
     });
     expect(again.changes).toEqual([]);
   });
+
+  it("ME-04-ROT-2: sin suplente del rol del excluido, un compañero que lo declara se reajusta y entra el relevo de su rol; sin reajuste posible, queda sin resolver", () => {
+    const p = (id: string, roles: number[], onCourt: boolean, extra: Partial<RotationPlayerState> = {}): RotationPlayerState => ({
+      id,
+      declaredRoles: roles as RotationPlayerState["declaredRoles"],
+      onCourt,
+      continuousMs: 100_000,
+      totalMs: 100_000,
+      disqualified: false,
+      locked: false,
+      ...extra,
+    });
+    // Caso real de la semilla 91 (Puerto): excluido el único alero en pista, el
+    // escolta en pista declara 2 y 3 y en el banquillo solo hay escoltas.
+    const players = [
+      p("A1", [1], true),
+      p("A2", [2, 3], true),
+      p("A3", [3], true, { disqualified: true }),
+      p("A4", [4], true),
+      p("A5", [5], true),
+      p("B2", [2], false, { totalMs: 50_000 }),
+      p("B2b", [2], false, { totalMs: 80_000 }),
+      p("B4", [4], false),
+    ];
+    const plan = planSubstitutions({ lineup: ["A1", "A2", "A3", "A4", "A5"], players, voluntaryCap: 2, continuousThresholdMs: 300_000, protectedIds: [] });
+    expect(plan.unresolved).toEqual([]);
+    expect(plan.changes).toEqual([
+      expect.objectContaining({ outId: "A3", inId: "B2", role: 2, reason: "exclusion", reassigned: { playerId: "A2", fromRole: 2, toRole: 3 } }),
+    ]);
+    // Nadie en pista ni en el banquillo declara 3: el guardián lo explicará.
+    const none = planSubstitutions({
+      lineup: ["A1", "A2", "A3", "A4", "A5"],
+      players: players.map((x) => (x.id === "A2" ? { ...x, declaredRoles: [2] as RotationPlayerState["declaredRoles"] } : x)),
+      voluntaryCap: 2,
+      continuousThresholdMs: 300_000,
+      protectedIds: [],
+    });
+    expect(none.changes).toEqual([]);
+    expect(none.unresolved).toEqual([{ outId: "A3", role: 3 }]);
+  });
 });
 
 // (5) Acta conciliada desde hechos.

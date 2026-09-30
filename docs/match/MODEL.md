@@ -125,7 +125,7 @@ tiempo avanza de hecho en hecho.
   equipo (copia profunda), cinco titulares en orden de rol, roles
   funcionales declarados (`players/functional-roles.ts`), prioridad tras tiro
   y **cobertura de cada equipo**, semilla y versiones (`FIBA-2026`,
-  `LAB-0.2`, `ME-04-GAME-1`, `ME-04-JUMP-1`, `ME-04-ROT-1`). Empieza 0–0, C1
+  `LAB-0.2`, `ME-04-GAME-1`, `ME-04-JUMP-1`, `ME-04-ROT-2`). Empieza 0–0, C1
   10:00, con el salto inicial; no reutiliza la entrada 7:12/18 s del tramo.
 - **Estado del partido:** período, sentido de ataque de cada equipo, flecha
   de alternancia, control/derecho a saque/balón suelto, relojes (partido,

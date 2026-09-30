@@ -67,6 +67,14 @@ decisiones duraderas viven en `docs/decisions/`, no aquí.
   trampa cerrada, rebote por encima de la espalda— se adjudican con M07
   (Disciplina, activa con relleno neutro 8; LAB-0.6). Foto seed: 70 → 230
   PF y ≈100 → 278 FTA; ya no dependen de las segundas oportunidades.
+- **Rotación `ME-04-ROT-2`.** Con las faltas de contacto reales (§2.5) las
+  exclusiones pasan a ≈0,7 por partido y la política rígida por rol paraba
+  por guardián partidos ordinarios (3 de 60 semillas naturales en `f4fe5f8`)
+  cuando ningún suplente declaraba el rol del excluido. Ahora un compañero
+  en pista que declara ese rol se reajusta a él y entra el suplente del rol
+  que deja; nadie juega fuera de un rol declarado. Si ni así hay relevo, el
+  guardián sigue explicándolo (queda 1 de 60: los cuatro aleros declarados
+  de Puerto excluidos; decisión requerida en el progreso).
 - **Pendiente**: coberturas switch/show/ICE/under/at the level, falta en
   ataque, respuesta defensiva «cerrar» tras el tiro (probada y retirada en
   v2-1; OREB tras fallo vivo aún 35–38 %), §§3–7 completos (gramática,

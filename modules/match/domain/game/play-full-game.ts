@@ -9,7 +9,7 @@
  * `ME-04-JUMP-1`, flecha de alternancia, sentido por período, bocina,
  * reloj tras canasta, faltas personales y de equipo con bonus, exclusión
  * por cinco faltas, sustituciones en oportunidades legales (política
- * `ME-04-ROT-1`) y la segunda entrada del bloqueo directo.
+ * `ME-04-ROT-2`) y la segunda entrada del bloqueo directo.
  *
  * No hay bucle de microticks: el tiempo avanza de hecho en hecho. El
  * guardián detiene y explica una corrida anómala; nunca inventa un ganador
@@ -848,6 +848,8 @@ class GameRun extends LinkedRun {
     const previous = this.tracks[change.inId];
     this.tracks[change.inId] = previous ? [...truncateTrajectory(previous, atMs), { atMs, position }] : [{ atMs, position }];
     lineup[index] = change.inId;
+    // ME-04-ROT-2: relevo por reajuste; el compañero pasa al rol del excluido.
+    if (change.reassigned) lineup[change.reassigned.toRole - 1] = change.reassigned.playerId;
     const out = this.players.get(change.outId)!;
     const inn = this.players.get(change.inId)!;
     out.onCourt = false;
@@ -878,7 +880,9 @@ class GameRun extends LinkedRun {
       actors: [change.inId, change.outId],
       text:
         change.reason === "exclusion"
-          ? `Sustitución obligatoria en ${this.team(teamId).name}: entra ${change.inId} (${roleLabel}) por ${change.outId}, excluido por cinco faltas.`
+          ? change.reassigned
+            ? `Sustitución obligatoria en ${this.team(teamId).name}: ${change.outId}, excluido por cinco faltas, no tiene relevo de su rol; ${change.reassigned.playerId} pasa de ${FUNCTIONAL_ROLE_LABELS[change.reassigned.fromRole]} a ${FUNCTIONAL_ROLE_LABELS[change.reassigned.toRole]} y entra ${change.inId} (${roleLabel}).`
+            : `Sustitución obligatoria en ${this.team(teamId).name}: entra ${change.inId} (${roleLabel}) por ${change.outId}, excluido por cinco faltas.`
           : `Sustitución en ${this.team(teamId).name}: entra ${change.inId} (${roleLabel}, ${minutes(change.inTotalMs)} jugados) por ${change.outId} (${minutes(change.outContinuousMs)} seguidos en pista).`,
       detail: {
         teamId,
@@ -888,6 +892,7 @@ class GameRun extends LinkedRun {
         position,
         outContinuousMs: change.outContinuousMs,
         inTotalMs: change.inTotalMs,
+        ...(change.reassigned ? { reassigned: change.reassigned } : {}),
         gameClockStopped: !this.game.running,
       },
     });

@@ -13,6 +13,12 @@
  *    ID estable. Para cada puesto entra el suplente elegible con ese rol
  *    declarado y **menos minutos en todo el partido**, desempate por ID.
  *    Sin suplente compatible, el jugador sigue en pista.
+ *    **Relevo por reajuste (ME-04-ROT-2):** si ningún suplente declara el
+ *    rol del excluido, un compañero en pista que sí lo declara pasa a ese
+ *    rol y entra por el suyo el suplente elegible (con ese rol declarado y
+ *    menos minutos; desempate por rol e ID). Todos siguen en un rol
+ *    declarado; solo si tampoco existe ese reajuste queda sin resolver y el
+ *    partido lo explica (guardián).
  * 3. Nadie que acabe de entrar o salir puede invertir su cambio hasta que
  *    haya corrido el reloj y llegue otro balón muerto (`locked`); así una
  *    misma parada nunca produce sustituciones infinitas. Quien debe tirar
@@ -21,7 +27,7 @@
 import type { Milliseconds } from "../time/clock";
 import type { FunctionalRole } from "../players/functional-roles";
 
-export const SUBSTITUTION_POLICY_VERSION = "ME-04-ROT-1";
+export const SUBSTITUTION_POLICY_VERSION = "ME-04-ROT-2";
 
 /** 5:00 de reloj jugado continuo (ME-04 §4). */
 export const CONTINUOUS_THRESHOLD_MS: Milliseconds = 5 * 60_000;
@@ -57,6 +63,12 @@ export interface PlannedSubstitution {
   readonly reason: SubstitutionReason;
   readonly outContinuousMs: Milliseconds;
   readonly inTotalMs: Milliseconds;
+  /**
+   * Reajuste en pista que hace posible el relevo de un excluido: `playerId`
+   * pasa de `fromRole` (que ocupa quien entra, `role`) a `toRole` (el del
+   * excluido).
+   */
+  readonly reassigned?: { readonly playerId: string; readonly fromRole: FunctionalRole; readonly toRole: FunctionalRole };
 }
 
 export interface SubstitutionPlan {
@@ -73,6 +85,8 @@ export function planSubstitutions(input: SubstitutionPlanInput): SubstitutionPla
   const byPlayer = new Map(input.players.map((p) => [p.id, p]));
   const lineup = [...input.lineup];
   const used = new Set<string>();
+  /** Compañeros reajustados de rol en esta parada: no salen en ella. */
+  const moved = new Set<string>();
   const changes: PlannedSubstitution[] = [];
   const unresolved: { outId: string; role: FunctionalRole }[] = [];
 
@@ -94,21 +108,53 @@ export function planSubstitutions(input: SubstitutionPlanInput): SubstitutionPla
     if (!player?.disqualified) return;
     const role = (index + 1) as FunctionalRole;
     const incoming = pickIncoming(role);
-    if (!incoming) {
+    if (incoming) {
+      used.add(incoming.id);
+      lineup[index] = incoming.id;
+      changes.push({ outId: id, inId: incoming.id, role, reason: "exclusion", outContinuousMs: player.continuousMs, inTotalMs: incoming.totalMs });
+      return;
+    }
+    // Relevo por reajuste: un compañero en pista que declara el rol del
+    // excluido pasa a él y el suplente entra por el rol que deja libre.
+    let best: { mateIndex: number; incoming: RotationPlayerState } | null = null;
+    lineup.forEach((mateId, mateIndex) => {
+      if (mateIndex === index || moved.has(mateId) || used.has(mateId)) return;
+      const mate = byPlayer.get(mateId);
+      if (!mate || mate.disqualified || !mate.declaredRoles.includes(role)) return;
+      const candidate = pickIncoming((mateIndex + 1) as FunctionalRole);
+      if (candidate && (!best || candidate.totalMs < best.incoming.totalMs)) best = { mateIndex, incoming: candidate };
+    });
+    if (!best) {
       unresolved.push({ outId: id, role });
       return;
     }
-    used.add(incoming.id);
-    lineup[index] = incoming.id;
-    changes.push({ outId: id, inId: incoming.id, role, reason: "exclusion", outContinuousMs: player.continuousMs, inTotalMs: incoming.totalMs });
+    const { mateIndex, incoming: viaMate } = best as { mateIndex: number; incoming: RotationPlayerState };
+    const mateId = lineup[mateIndex]!;
+    used.add(viaMate.id);
+    moved.add(mateId);
+    lineup[index] = mateId;
+    lineup[mateIndex] = viaMate.id;
+    const fromRole = (mateIndex + 1) as FunctionalRole;
+    changes.push({
+      outId: id,
+      inId: viaMate.id,
+      role: fromRole,
+      reason: "exclusion",
+      outContinuousMs: player.continuousMs,
+      inTotalMs: viaMate.totalMs,
+      reassigned: { playerId: mateId, fromRole, toRole: role },
+    });
   });
 
   // 2. Voluntarias: candidatos con 5:00 continuos, mayor tiempo primero.
-  const candidates = input.lineup
+  // Sobre el quinteto ya corregido por las exclusiones (índice = rol vigente).
+  const candidates = lineup
     .map((id, index) => ({ player: byPlayer.get(id)!, index }))
     .filter(
       ({ player }) =>
         !player.disqualified &&
+        !used.has(player.id) &&
+        !moved.has(player.id) &&
         !player.locked &&
         !input.protectedIds.includes(player.id) &&
         player.continuousMs >= input.continuousThresholdMs,

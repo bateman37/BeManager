@@ -217,7 +217,7 @@ ninguna tras ME-04B (ver
 actualizada); el mecanismo en sí es alcanzable de verdad con geometría
 construida a mano (`domain/game/me04b.test.ts`).
 
-**Sustituciones (art. 19, política `ME-04-ROT-1`).** Oportunidades: falta
+**Sustituciones (art. 19, política `ME-04-ROT-2`).** Oportunidades: falta
 (ambos equipos; se conserva al tirador de los libres), último libre
 anotado, balón fuera y violaciones (ambos), inicio de período (ambos) y,
 desde 2:00 en C4/prórroga, canasta **solo para el equipo que la recibe**;
@@ -227,7 +227,10 @@ por equipo y parada (cinco entre períodos) entre quienes llevan 5:00 de
 reloj continuo desde su entrada, mayor tiempo primero y desempate por ID;
 entra el suplente elegible con ese rol declarado y menos minutos, desempate
 por ID; sin compatible, sigue el mismo. Quien entra o sale no invierte el
-cambio hasta que corre el reloj. Si un excluido no tiene relevo compatible,
+cambio hasta que corre el reloj. Si ningún suplente declara el rol de un
+excluido, un compañero en pista que sí lo declara pasa a ese rol y entra el
+suplente elegible del rol que deja (menos minutos; `ME-04-ROT-2`, ME-07B
+v2); nadie juega fuera de un rol declarado. Si tampoco hay ese reajuste,
 el guardián lo explica y no hay ganador. Interpretación documentada: el
 umbral de 5:00 es condición para ser candidato voluntario (no se sustituye
 a nadie que no lo alcance).
