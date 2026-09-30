@@ -207,8 +207,15 @@ próxima sesión, no como "ya se ha corregido".
 4. `9b3fd12` — matriz táctica versionada `docs/match/TACTICAL-MATRIX.md`
    (ninguna fila jugable; existentes = parcial; resto pendiente).
 5. `fde84e1` — **§2.2 selector de familia** por proyección en seco de la
-   primera lectura (misma frontera y costes) + riesgo de pase. Monopolio
-   intacto, con causa física medida (roll libre 2.397/2.413 → §2.3).
+   primera lectura (misma frontera y costes) + riesgo de pase.
+6. `021d767` — **§2.3 defensa auto**: trampa decidida al preparar la
+   pantalla, concesiones drop/trampa proyectadas desde la misma geometría,
+   aprendizaje por muestras visibles del propio partido (LAB-0.4, ataque y
+   defensa). Foto seed: trampa 484 / drop 675 (Sierra defendiendo), 443 /
+   733 (Puerto).
+7. `9b032f9` — **§2.6 atribución**: `result.summary.shots` por FGA con
+   familia anterior, decisión causante, tirador, posición e instante;
+   `byFamily` usa esa atribución.
 
 #### Probado y retirado (no commiteado)
 Respuesta defensiva «cerrar» tras el tiro: cada cargador recibe al
@@ -222,13 +229,35 @@ oportunidad). Se reintroduce junto a §2.5 (faltas de contacto de
 rebote/penetración) para no dejar el partido sin faltas.
 
 #### Pruebas realmente pasadas
-`npm run check` completo (lint + typecheck + 245 tests + docs:check +
-build) en `fde84e1`.
+`npm run check` completo (lint + typecheck + 253 tests + docs:check +
+build) en `9b032f9`.
 
-#### No verificado / bloqueos
-- `/lab` con PostgreSQL y navegador: **no recorrido todavía** en v2.
-- ME-07B **no** está terminada: §2.3–§2.6 y §§3–7 pendientes; ninguna
-  táctica del capítulo es «jugable» según §0.4.
+#### `/lab` real (PostgreSQL 16 local + Chromium de Playwright), en `9b032f9`
+Script `walk.cjs` (fuera del repo) sobre `npm run dev`: restaurar ambos
+equipos desde el seed, partido auto/auto semilla 92 y 91, `+3` a Sierra,
+semilla 91, restaurar, semilla 91. Descargados y abiertos los `.json.gz`
+(esquema `ME-07B-AUDIT-1`, `stop=final`, actas conciliadas, ~0,8 MB):
+- 92 seed: 119–107, cobertura trampa 183 / drop 18, familias PnR 201.
+- 91 seed: 124–134 (huella `2d8067b0`), trampa 15 / drop 205.
+- 91 Sierra +3: 135–137 (huella `36caa0c5`) = mismo resultado que el
+  script de dominio; restaurar vuelve a `2d8067b0` y a 124–134 idéntico.
+No se han recorrido todavía: estructuras, fichas nombradas, zonas ni
+presión (no existen), ni el relato causal pantalla a pantalla.
+
+#### No verificado / bloqueos / honestidad
+- ME-07B **no** está terminada. Pendiente: §2.4 (lecturas y continuidad:
+  1ª lectura PnR sigue siendo casi siempre pase a O5), §2.5 (transición:
+  triple del portador 0; faltas solo en segunda oportunidad; reintroducir
+  «cerrar» tras el tiro), switch/show/at the level/ICE/under, trampa
+  proyectable para el ataque, todo §§3–7 (gramática, estructuras, libro,
+  inventario ofensivo y defensivo, 18 atributos candidatos, UI de Ataque/
+  Defensa/Libro, plan manual PowerShell).
+- La familia sigue ~99 % PnR en la foto seed (explicado por el roll libre
+  del drop; con la trampa en juego sigue ganando el PnR porque la mano a
+  mano proyecta menos). Sierra +3 sí elige mano a mano 128/623.
+- La trampa en `auto` eleva rebote ofensivo y pérdidas; no hay carrera
+  defensiva a cerrar tras el tiro (retirada, ver arriba).
+- Ninguna táctica del capítulo es «jugable» según §0.4.
 
 #### Reanudar
 ```bash
@@ -236,6 +265,10 @@ cd BeManager && git fetch origin && git checkout claude/me-07b-v2-capitulo-tacti
 npm ci && npm run check
 npx tsx scripts/me07b-v2-baseline-20.ts   # foto de las 20 semillas/fotos
 ```
-Siguiente paso: §2.3 defensa auto (decidir la cobertura cuando empieza a
-prepararse la pantalla, desde posiciones reales; drop/trampa/switch… en
-competencia), después §2.4–§2.6.
+Para `/lab`: `pg_ctlcluster 16 main start`, `npx prisma migrate deploy`,
+`npm run dev`, abrir `http://localhost:3000/lab`.
+
+Siguiente paso: §2.4 (lecturas del receptor: extra pass, media distancia
+T03, floater T02, re-screen, conservar), §2.5 (transición y faltas de
+contacto; volver a introducir «cerrar» tras el tiro), switch como tercera
+cobertura; después la gramática de §3.
