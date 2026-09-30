@@ -187,9 +187,55 @@ próxima sesión, no como "ya se ha corregido".
 
 ## ME-07B v2 — sesiones
 
-### Sesión v2-1 — 2026-09-30 (en curso)
+### Sesión v2-1 — 2026-09-30
 
-- Base: `origin/main` = `7b7eedd`; rama `claude/me-07b-v2-capitulo-tactico`.
-- Guardados literalmente el encargo v2 y el diagnóstico de 20 auditorías,
-  enlazados desde `docs/prompts/README.md`, `docs/match/README.md` y el
-  nuevo índice `docs/match/analysis/README.md`.
+**Base:** `origin/main` = `7b7eedd`; rama `claude/me-07b-v2-capitulo-tactico`;
+**PR #11** (https://github.com/bateman37/BeManager/pull/11), **Draft**.
+
+#### Hecho y verificado (con commits)
+1. `0d95892` — encargo v2 y diagnóstico guardados literalmente, índices.
+2. `ee58a58` — foto basal de las 20 auditorías recreada
+   (`scripts/me07b-v2-baseline-20.ts`): marcadores/tiros idénticos al anexo
+   del informe en los 20 partidos; huellas seed/+5 idénticas, +3 distinta
+   (campo no deportivo del perfil). Los `.json.gz` originales **no** están
+   en la sesión: no se han reanalizado.
+3. `8966fe6` — **§2.1 rebote**: retraso real del cierre (cerrador → rival,
+   T19/F05 del cerrador), ventana/pool/control con llegada efectiva, tirador
+   sin cierre durante su gesto, caída del tirador LAB-0.4, punto de
+   auditoría `disputa_rebote`, esquema `ME-07B-AUDIT-1`. Efecto
+   descompuesto en `docs/match/analysis/ME-07B-v2-foto-basal-20.md`.
+4. `9b3fd12` — matriz táctica versionada `docs/match/TACTICAL-MATRIX.md`
+   (ninguna fila jugable; existentes = parcial; resto pendiente).
+5. `fde84e1` — **§2.2 selector de familia** por proyección en seco de la
+   primera lectura (misma frontera y costes) + riesgo de pase. Monopolio
+   intacto, con causa física medida (roll libre 2.397/2.413 → §2.3).
+
+#### Probado y retirado (no commiteado)
+Respuesta defensiva «cerrar» tras el tiro: cada cargador recibe al
+defensor libre (sin el que cerró el tiro) que antes intercepta su carrera
+—latencia M01/M05 desde el gesto, carrera F01, búsqueda del primer
+instante en que ocupa la posición interior a 0,70 m entre cargador y aro
+antes del fallo; si llega, sella al cargador (su trayectoria se corta ahí).
+Efecto: OREB casi igual, **pero 0 faltas y 0 libres** en los 11 partidos
+seed (todas las faltas naturales nacen de faltas de tiro en la segunda
+oportunidad). Se reintroduce junto a §2.5 (faltas de contacto de
+rebote/penetración) para no dejar el partido sin faltas.
+
+#### Pruebas realmente pasadas
+`npm run check` completo (lint + typecheck + 245 tests + docs:check +
+build) en `fde84e1`.
+
+#### No verificado / bloqueos
+- `/lab` con PostgreSQL y navegador: **no recorrido todavía** en v2.
+- ME-07B **no** está terminada: §2.3–§2.6 y §§3–7 pendientes; ninguna
+  táctica del capítulo es «jugable» según §0.4.
+
+#### Reanudar
+```bash
+cd BeManager && git fetch origin && git checkout claude/me-07b-v2-capitulo-tactico && git pull
+npm ci && npm run check
+npx tsx scripts/me07b-v2-baseline-20.ts   # foto de las 20 semillas/fotos
+```
+Siguiente paso: §2.3 defensa auto (decidir la cobertura cuando empieza a
+prepararse la pantalla, desde posiciones reales; drop/trampa/switch… en
+competencia), después §2.4–§2.6.
