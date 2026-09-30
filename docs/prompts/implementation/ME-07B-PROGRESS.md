@@ -82,3 +82,38 @@ familias con interacciones nuevas, defensa asentada/presión/cobertura
 ampliada, 45 atributos con tarea alcanzable, UI de /lab, esquema de
 auditoría ME-07B-AUDIT-1, documentación y plan manual. Nada de esto está
 implementado todavía. No se declara ME-07B terminada.
+
+## Foto basal (previa a cualquier cambio), 2026-09-30
+
+Script: `scripts/me07b-baseline-snapshot.ts` (`npx tsx scripts/me07b-baseline-snapshot.ts`).
+Ambos equipos en auto (cobertura/orden sin balón/plan ofensivo/prioridad
+`equilibrado`), semillas 1/37/82/156, fixture Sierra Clara vs Puerto Ámbar.
+
+| Semilla | Coste | Hechos/Posesiones | stop.cause | Marcador | seleccion_familia | seleccion_cobertura | organizacion_creador (conserva) | lectura_transicion |
+|---|---|---|---|---|---|---|---|---|
+| 1 | 542 ms | 4710/203 | final | 130–159 | bloqueo_directo 217, mano_a_mano 6 | drop 223 | 224 (6) | 0 |
+| 37 | 267 ms | 4785/197 | final | 138–148 | bloqueo_directo 217, mano_a_mano 3 | drop 220 | 222 (3) | 0 |
+| 82 | 204 ms | 4751/207 | final | 144–139 | bloqueo_directo 212, mano_a_mano 5 | drop 217 | 219 (5) | 0 |
+| 156 | 224 ms | 4873/202 | final | 138–129 | bloqueo_directo 218, mano_a_mano 5 | drop 223 | 224 (5) | 0 |
+
+Confirma con evidencia fresca (no el resumen histórico de ME-06, que tiene
+el defecto de atribución conocido) los defectos de §2 de ME-07B:
+- Monopolio de bloqueo directo: 96–98 % de `seleccion_familia` en las
+  cuatro semillas.
+- Cobertura auto = drop en el 100 % de los casos, en las cuatro semillas.
+- `organizacion_creador` conserva al poseedor real en 2,3–2,7 % de los
+  casos (peor que el 5/219 citado en el prompt en algunas semillas).
+- **Hallazgo nuevo, peor que lo documentado en ME-07A**: `lectura_transicion`
+  tiene **cero** decisiones auditadas en las cuatro semillas naturales, no
+  solo cero *aciertos*. La ventana de triple de transición no se llega a
+  evaluar nunca en juego natural (ni siquiera se descarta con motivo);
+  hay que localizar por qué el punto de decisión no se alcanza antes de
+  arreglar la elección en sí (Tarea #3).
+- stop.cause = final en las cuatro semillas ya en el estado actual
+  (ninguna termina por guardián); hay que verificar que la prueba de
+  partido completo no acepte guardian como válido en fixture normal
+  (Tarea #7) — el motor en sí ya se comporta bien aquí.
+
+No se compara contra el resumen por familias de ME-06 (histórico, con
+defecto de atribución); esta tabla es la única referencia basal fiable
+para medir el cierre de estos defectos.
