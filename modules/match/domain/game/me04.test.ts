@@ -193,8 +193,9 @@ describe("ME-04 (2): bocina, tiro en el aire, reset del reloj de lanzamiento y r
     // (ahora de dos, antes un triple) soltado antes de la bocina final del
     // partido que entra y solo se resuelve ese tiro. §2.3 (trampa desde la
     // preparación y defensa que aprende) lo lleva a la semilla 309, y §2.4
-    // (asignación de creador/bloqueador por proyección) a la 179.
-    const r = game(179);
+    // (asignación de creador/bloqueador por proyección) a la 179 y la lectura
+    // del receptor del roll a la 316.
+    const r = game(316);
     const i = r.events.findIndex((e) => e.kind === "buzzer" && e.detail.shotInFlight === true);
     expect(i).toBeGreaterThan(0);
     const buzzer = r.events[i]!;
@@ -214,8 +215,8 @@ describe("ME-04 (2): bocina, tiro en el aire, reset del reloj de lanzamiento y r
     // soltado a tiempo sin rebote inventado tras la bocina final.
     // ME-07B v2 §2.1 (cierre de rebote y caída del tirador) desplaza ese
     // caso a la semilla 53, y §2.3 (defensa auto con trampa en competencia)
-    // a la 14, y §2.4 (asignación de creador/bloqueador) a la 144.
-    const r = game(144);
+    // a la 14, y §2.4 (asignación de creador/bloqueador y lectura del receptor) a la 60.
+    const r = game(60);
     const i = r.events.findIndex((e) => e.kind === "buzzer" && e.detail.shotInFlight === true);
     const next = r.events.slice(i + 1, i + 4).map((e) => e.kind);
     expect(next).toEqual(["field_goal_attempt", "possession_ended", "period_ended"]);
@@ -556,8 +557,8 @@ describe("ME-04 (6): empate → prórroga, empate en prórroga → otra; guardi�
     // 1–3000 da dos prórrogas con trampa/trampa y «cargar rebote»; la
     // semilla 225 con drop/drop y «proteger balance» sí es un partido
     // natural con dos prórrogas. §2.4 (asignación de creador/bloqueador por
-    // proyección) la desplaza a la semilla 682.
-    const r = game(682);
+    // proyección y lectura del receptor) la desplaza a la semilla 667.
+    const r = game(667);
     expect(r.periods.map((p) => p.label)).toEqual(["C1", "C2", "C3", "C4", "Prórroga 1", "Prórroga 2"]);
     const endOf = (period: number) => r.events.find((e) => e.kind === "period_ended" && e.period === period)!;
     expect(endOf(4).score[SC]).toBe(endOf(4).score[PA]);
@@ -575,7 +576,7 @@ describe("ME-04 (6): empate → prórroga, empate en prórroga → otra; guardi�
   });
 
   it("el guardián de prórrogas señala la anomalía sin cerrar el empate ni inventar ganador", () => {
-    const r = game(682, BASE, { maxOvertimes: 1 });
+    const r = game(667, BASE, { maxOvertimes: 1 });
     expect(r.stop.cause).toBe("guardian");
     expect(r.winnerTeamId).toBeNull();
     expect(r.finalScore[SC]).toBe(r.finalScore[PA]);
@@ -622,7 +623,9 @@ describe("ME-04 (7): regresión de ME-01/02/03 y segunda entrada del bloqueo", (
         out.push([t.events.map((e) => [e.kind, e.atMs, e.actors, e.text, e.positions, e.gameClockMs, e.shotClockMs, e.score]), t.stop, t.box]);
       }
     // Huella recalculada en ME-07B v2 §2.4 (creador y bloqueador se asignan
-    // por proyección al organizar, con los defensores siguiendo a su marca).
+    // por proyección al organizar, con los defensores siguiendo a su marca;
+    // lectura real del receptor del roll, ayuda de D3 leída, tiro parado de
+    // O1 y tipos floater/tiro medio).
     // Antes: recalculada en ME-07B (§2: elimina el veto absoluto T04>=9 del
     // triple de O1 en la primera lectura del bloqueo — ahora compite por
     // valor situacional con oposición geométrica en vez de excluirse por
@@ -658,7 +661,7 @@ describe("ME-04 (7): regresión de ME-01/02/03 y segunda entrada del bloqueo", (
     let seen = 0;
     for (let seed = 1; seed <= 10 && seen === 0; seed++) {
       const core = computePossessionCore(
-        { scenarioId: "drop_con_ayuda", coverage: "drop", seed, rulesetVersion: "FIBA-2026", labParametersVersion: "LAB-0.2", offensePlayers: SIERRA_CLARA.players, defensePlayers: PUERTO_AMBAR.players },
+        { scenarioId: "drop_con_ayuda", coverage: "drop", seed, rulesetVersion: "FIBA-2026", labParametersVersion: "LAB-0.2", offensePlayers: SIERRA_CLARA.players, defensePlayers: PUERTO_AMBAR.players, rollHelpCall: "siempre" },
         {
           linked: {
             binding,
@@ -688,7 +691,7 @@ describe("ME-04 (7): regresión de ME-01/02/03 y segunda entrada del bloqueo", (
       expect(core.ball).toMatchObject({ status: "held", holderId: core.terminal.creatorId });
       // Sin reglas de partido, la misma geometría conserva el tiro forzado de ME-01.
       const legacy = computePossessionCore(
-        { scenarioId: "drop_con_ayuda", coverage: "drop", seed, rulesetVersion: "FIBA-2026", labParametersVersion: "LAB-0.2", offensePlayers: SIERRA_CLARA.players, defensePlayers: PUERTO_AMBAR.players },
+        { scenarioId: "drop_con_ayuda", coverage: "drop", seed, rulesetVersion: "FIBA-2026", labParametersVersion: "LAB-0.2", offensePlayers: SIERRA_CLARA.players, defensePlayers: PUERTO_AMBAR.players, rollHelpCall: "siempre" },
         { linked: { binding, startPositions: start, shotClockMs: 20_000, gameClockMs: 400_000, rng: createResumableRandom(seed), attackingPriority: "proteger_balance", entry: { kind: "organized_set" } } },
       );
       expect(legacy.terminal.kind).not.toBe("second_entry_kick_out");
@@ -714,4 +717,4 @@ describe("ME-04 (7): regresión de ME-01/02/03 y segunda entrada del bloqueo", (
 // intencional de la mecánica deportiva del rebote, no una regresión. Otra
 // vez en §2.3: la trampa sale al preparar la pantalla (el tramo incluye
 // posesiones con trampa).
-const TRAMO_FINGERPRINT = "4e72de1cb802f57b64c303963248ea48ca3ce2058081999e5539d4d3dba9128f";
+const TRAMO_FINGERPRINT = "adcd4d77c797bb55a460af45afa3418ec171f0fa1c9679dc1fd21c85a13baa8e";

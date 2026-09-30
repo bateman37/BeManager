@@ -33,7 +33,7 @@ export interface FreeThrowAward {
  * rebote disputado aparte (prompt §2).
  */
 export function awardFreeThrowsForShootingFoul(
-  shotType: "close_finish" | "three_point",
+  shotType: "close_finish" | "floater" | "mid_range" | "three_point",
   madeShot: boolean,
 ): FreeThrowAward {
   if (madeShot) {

@@ -75,6 +75,16 @@ export type OffBallDefensiveCallChoice = "auto" | OffBallDefensiveCall;
 export type OffensiveCreationPriority = "equilibrado" | "buscar_aro" | "buscar_triple";
 
 /**
+ * Ayuda al continuador del bloqueo directo en drop («tag», ME-07B v2 §2.4 y
+ * §5): `siempre` obliga al defensor de la esquina débil a ayudar; `auto`
+ * deja que lo lea comparando lo que concede ayudando y sin ayudar («no
+ * dejar tirador de esquina»). En la posesión de laboratorio el escenario ya
+ * es una orden explícita (`drop_con_ayuda`/`drop_sin_ayuda`) y equivale a
+ * `siempre`; en el partido enlazado el valor por defecto es `auto`.
+ */
+export type RollHelpCall = "auto" | "siempre";
+
+/**
  * Entrada compartida por el motor detallado y el motor rápido (estudio de
  * referencia §13.2): una copia estable de perfiles y versiones. Modificar un
  * jugador en otra pantalla no altera una corrida ya iniciada, porque cada
@@ -115,6 +125,8 @@ export interface MatchInput {
    * prueba existente que no la declare.
    */
   readonly creationPriority?: OffensiveCreationPriority;
+  /** Ayuda al continuador del equipo que defiende (ME-07B v2 §2.4). Ver `RollHelpCall`. */
+  readonly rollHelpCall?: RollHelpCall;
 }
 
 export function findPlayerInInput(input: MatchInput, playerId: string): PlayerProfile {

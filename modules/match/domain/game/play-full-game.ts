@@ -661,7 +661,7 @@ class GameRun extends LinkedRun {
     fouledId: string,
     type: DefensiveFoulType,
     atMs: Milliseconds,
-    shot?: { readonly shotType: "close_finish" | "three_point"; readonly madeShot: boolean },
+    shot?: { readonly shotType: "close_finish" | "floater" | "mid_range" | "three_point"; readonly madeShot: boolean },
   ): DefensiveFoulAdjudication | null {
     const st = this.players.get(foulerId)!;
     if (st.disqualified || !st.onCourt) {

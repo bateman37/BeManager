@@ -534,9 +534,11 @@ describe("ME-03 (7): posesión individual y lotes rápidos conservan su recorrid
     // contacto/oposición, esta huella debe recalcularse otra vez aquí mismo.
     // Recalculada otra vez en ME-07B v2 §2.1 (retraso real del cierre de
     // rebote, tirador sin cierre durante su gesto y caída LAB-0.4) y en §2.3
-    // (el lote de trampa: D5 sale al preparar la pantalla).
+    // (el lote de trampa: D5 sale al preparar la pantalla), y en §2.4
+    // (lectura real del receptor del roll frente al mejor cierre, tiro parado
+    // de O1, triple con el cierre de D1 y tipos floater/tiro medio).
     expect(createHash("sha256").update(JSON.stringify(out)).digest("hex")).toBe(
-      "00632ae575f48625c7b7c9787ad9f6d28528543469762ce6c616bc3cd49bf365",
+      "e6679d3d1c58a6cb2f3b2111792666a42916838f5571e99f19cec2ca6880b341",
     );
   });
 

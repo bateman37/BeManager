@@ -227,7 +227,8 @@ describe("ME-04A: rutas de drop y trampa realmente evaluadas (semilla 1, fixture
     expect(secondReads.length).toBeGreaterThan(0);
     const chosenInvertO3 = secondReads[0]!;
     const shortCircuited = chosenInvertO3.options.find((o) => o.id === "segunda_entrada")!;
-    const rejected = chosenInvertO3.options.find((o) => o.id === "finalizar_bajo_contencion")!;
+    // ME-07B v2 §2.4: las vías de tiro del receptor son «finalizar_aro» y «flotadora».
+    const rejected = chosenInvertO3.options.find((o) => o.id === "finalizar_aro")!;
     expect(shortCircuited.status).toBe("no_evaluada_por_cortocircuito");
     expect(rejected.status).toBe("descartada_por_condicion");
     expect(shortCircuited.status).not.toBe(rejected.status);
@@ -238,7 +239,10 @@ describe("ME-04A: rutas de drop y trampa realmente evaluadas (semilla 1, fixture
     const exported = buildAuditExport(result.input, result);
     expect(result.fouls.some((f) => f.type === "sin_tiro")).toBe(false);
     const secondEntryRejections = exported.result.summary.rejectionReasons!.find((r) => r.point === "segunda_entrada")!;
-    expect(secondEntryRejections.total).toBe(0);
+    // ME-07B v2 §2.4: con la ayuda de D3 leída, el continuador puede quedar
+    // contenido y la segunda entrada llega a evaluarse; el sumario debe
+    // coincidir exactamente con las decisiones de la traza (no inventarse).
+    expect(secondEntryRejections.total).toBe(result.audit!.decisions.filter((d) => d.point === "segunda_entrada").length);
     const gateRejections = exported.result.summary.rejectionReasons!.find((r) => r.point === "puerta_falta_sin_tiro")!;
     // Todas las puertas evaluadas con este fixture se quedan en "no_evaluada" (elegida, no descartada): 0 rechazos registrados como tales.
     expect(gateRejections.total).toBeGreaterThanOrEqual(0);

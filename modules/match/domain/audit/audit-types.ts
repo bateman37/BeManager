@@ -87,6 +87,13 @@ export type AuditReasonCode =
   // ME-07B v2 §2.4: asignación de creador/bloqueador por proyección.
   | "creator_projected_value_higher"
   | "creator_ready_later_in_band"
+  // ME-07B v2 §2.4: tiro parado de dos (tiro medio T03 / floater T02).
+  | "pull_up_spot_available"
+  | "pull_up_no_spot"
+  // ME-07B v2 §2.4: lectura del receptor del continuador.
+  | "receiver_value_higher"
+  | "receiver_value_lower"
+  | "receiver_option_not_viable"
   | "not_evaluated_short_circuit"
   | "situational_value_lower"
   | "tie_band_resolved_by_tendency"

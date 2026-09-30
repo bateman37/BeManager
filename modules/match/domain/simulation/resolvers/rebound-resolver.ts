@@ -22,6 +22,8 @@ export interface ReboundSeed {
 /**
  * Genera una salida de balón tras un fallo que toca aro (estudio §9.5,
  * prompt §3): radial 0.8–2.5 m para tiro cercano, 2–5 m para triple;
+ * ME-07B v2 §2.4 reutiliza sin parámetro nuevo la geometría cercana para el
+ * floater (se suelta a ≤4,5 m) y la larga para el tiro medio;
  * dirección base desde el aro hacia el punto de tiro más variación
  * sembrada uniforme entre −π/2 y +π/2.
  */
@@ -32,10 +34,10 @@ export function seedReboundLanding(
   rng: SeededRandom,
 ): ReboundSeed {
   const [minRadius, maxRadius] =
-    shotType === "close_finish" ? REBOUND_SEED_RADIUS_CLOSE_METERS : REBOUND_SEED_RADIUS_THREE_METERS;
+    shotType === "close_finish" || shotType === "floater" ? REBOUND_SEED_RADIUS_CLOSE_METERS : REBOUND_SEED_RADIUS_THREE_METERS;
   const radius = rng.nextInRange(minRadius, maxRadius);
   const flightTimeSeconds =
-    shotType === "close_finish" ? REBOUND_FLIGHT_TIME_CLOSE_SECONDS : REBOUND_FLIGHT_TIME_THREE_SECONDS;
+    shotType === "close_finish" || shotType === "floater" ? REBOUND_FLIGHT_TIME_CLOSE_SECONDS : REBOUND_FLIGHT_TIME_THREE_SECONDS;
 
   const baseAngle = Math.atan2(shotOrigin.y - hoop.y, shotOrigin.x - hoop.x);
   const variation = rng.nextInRange(-Math.PI / 2, Math.PI / 2);

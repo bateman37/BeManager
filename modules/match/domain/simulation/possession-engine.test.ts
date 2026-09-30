@@ -144,8 +144,9 @@ describe("runPossession: HF-002 bug 2 (balón vivo hasta control real)", () => {
   // rama en sí sigue siendo alcanzable (recalculadas aquí, no eliminadas).
   it("un tapón deja el balón suelto, no muerto en el aro", () => {
     // Semilla recalculada en ME-07B v2 §2.1 (el rebote con cierre real y la
-    // caída del tirador cambian qué semillas llegan a un tapón).
-    const state = runPossession(buildInput("drop_con_ayuda", 66));
+    // caída del tirador cambian qué semillas llegan a un tapón) y en §2.4
+    // (lectura real del receptor del roll frente al mejor cierre).
+    const state = runPossession(buildInput("drop_con_ayuda", 12));
     expect(state.terminal!.kind).toBe("blocked_shot_live_ball");
     expect(state.ball.status).toBe("loose");
     expect(state.ball.holderId).toBeNull();
@@ -166,7 +167,8 @@ describe("runPossession: HF-002 bug 2 (balón vivo hasta control real)", () => {
   });
 
   it("una canasta anotada sí deja el balón muerto en el aro", () => {
-    const state = runPossession(buildInput("drop_con_ayuda", 4));
+    // Semilla recalculada en ME-07B v2 §2.4 (lectura del receptor del roll).
+    const state = runPossession(buildInput("drop_con_ayuda", 1));
     expect(state.terminal!.kind).toBe("made_basket");
     expect(state.ball).toEqual({ status: "dead", holderId: null, position: state.ball.position });
     expect(state.ball.position.x).toBeCloseTo(26.425);
@@ -214,9 +216,16 @@ describe("runPossession: HF-002 bug 4 (rebote ofensivo con segundo tiro reconcil
 });
 
 describe("runPossession: HF-002 bug 5 (T22/T23 afectan mecanismos reales)", () => {
-  it("subir T23 del ayudador D3 cambia el desenlace del roll manteniendo todo lo demás fijo", () => {
+  it("subir T23 del ayudador D3 cambia su llegada real a la ayuda y quién cierra al continuador, manteniendo todo lo demás fijo", () => {
+    // ME-07B v2 §2.4: el continuador se lee frente al mejor cierre real
+    // (D5 en drop y D3 si ayuda). T23 adelanta o retrasa la llegada de D3
+    // (hecho `help_left_assignment`) y cambia quién cierra el roll; con D5
+    // ya contestando al nivel máximo, ya no invierte por sí solo el tipo de
+    // desenlace en las 200 semillas, así que se exige el cambio causal
+    // intermedio (llegada y cerrador), no un desenlace distinto.
     let differs = false;
-    for (let seed = 1; seed <= 200 && !differs; seed++) {
+    let arrivalMoves = 0;
+    for (let seed = 1; seed <= 200; seed++) {
       const base = buildInput("drop_con_ayuda", seed);
       const lowResult = runPossession({
         ...base,
@@ -230,8 +239,12 @@ describe("runPossession: HF-002 bug 5 (T22/T23 afectan mecanismos reales)", () =
           p.id === "D3" ? { ...p, attributes: { ...p.attributes, T23: 15 } } : p,
         ),
       });
-      if (lowResult.terminal!.kind !== highResult.terminal!.kind) differs = true;
+      const helpAt = (r: typeof lowResult) => r.facts.find((f) => f.kind === "help_left_assignment")?.atMs;
+      if (helpAt(lowResult) !== undefined && helpAt(highResult)! < helpAt(lowResult)!) arrivalMoves += 1;
+      const trace = (r: typeof lowResult) => JSON.stringify(r.facts.map((f) => [f.kind, f.actors]));
+      if (trace(lowResult) !== trace(highResult)) differs = true;
     }
+    expect(arrivalMoves).toBeGreaterThan(0);
     expect(differs).toBe(true);
   });
 
