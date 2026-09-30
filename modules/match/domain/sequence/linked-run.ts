@@ -18,7 +18,7 @@
  */
 import type { Point2D } from "../geometry/point";
 import { distance, timeToReach } from "../geometry/point";
-import { ATTACKED_HOOP, isInsideCourt } from "../geometry/court";
+import { ATTACKED_HOOP, isInsideCourt, isBehindThreePointLine, distanceToHoop, FIBA_THREE_POINT_RADIUS_METERS } from "../geometry/court";
 import {
   toGlobal,
   toLocal,
@@ -47,6 +47,10 @@ import {
   closeoutBrakingExtraSeconds,
   PASS_FLIGHT_SPEED_MPS,
   PASS_RELEASE_SECONDS,
+  CATCH_AND_SHOOT_PREP_SECONDS,
+  THREE_POINT_BASE_PROBABILITY,
+  shotProbability,
+  secondOptionProbability,
 } from "../lab/lab-0-1-parameters";
 import type { PlayerProfile } from "../players/player-profile";
 import type { FactKind, FactPhase, PlayerSnapshot } from "../simulation/fact";
@@ -120,6 +124,18 @@ export interface LinkedRunSettings {
   /** Colector de auditoría (ME-04A); por defecto no hace nada (mismo coste que antes). */
   readonly audit?: AuditCollector;
 }
+
+/**
+ * ME-07A §3.2: profundidad máxima detrás de la línea de tres para
+ * considerar el triple de transición del propio portador. Sin este
+ * límite, "detrás de la línea" incluye todo el espacio entre el medio
+ * campo y el arco (>5 m de margen), lo que ofrecía la vía en casi
+ * cualquier transición sin ventaja y disparaba el volumen de tiro de
+ * forma irreal. Parámetro nuevo, declarado aquí explícitamente (no
+ * escondido en la interfaz): acota la vía a una posición ya de tiro
+ * real, no a "en algún punto del camino hacia el aro".
+ */
+export const TRANSITION_THREE_DEPTH_BUFFER_METERS = 2;
 
 export const OFFENSE_SLOTS = ["O1", "O2", "O3", "O4", "O5"] as const;
 export const DEFENSE_SLOTS = ["D1", "D2", "D3", "D4", "D5"] as const;
@@ -1437,6 +1453,115 @@ export abstract class LinkedRun {
     );
 
     if (read.kind === "sin_ventaja") {
+      // ME-07A §3.2: el aro contenido no cierra por sí solo una ventana de
+      // triple limpia del propio portador. Comprueba, con la misma
+      // geometría real ya calculada (posiciones, velocidades), si detrás
+      // de la línea le queda un margen real antes de que el defensor que
+      // protege el aro pueda cerrarle el tiro (mismo margen 0,25 s que la
+      // primera lectura del bloqueo directo). No es un tiro concedido: la
+      // tendencia de tiro del portador decide si lo toma (`decidida`
+      // siempre; `prudente` nunca; `equilibrada` con la misma elección
+      // sembrada `secondOptionProbability(M03)` que el resto del motor).
+      const remaining = this.shotRemainingAt(t1) / 1000;
+      const carrierPos = local[carrierSlot]!;
+      // El defensor real que contestaría el triple no es necesariamente
+      // `read.firstDefender` (el que protege el aro): es el que puede
+      // llegar antes hasta el propio portador desde su posición real. Usar
+      // el protector del aro por defecto subestimaría sistemáticamente la
+      // contestación siempre que alguien más cercano ya esté recuperando
+      // sobre el tirador.
+      const nearestDefender = [...defenders].sort(
+        (a, b) => timeToReach(a.position, carrierPos, a.lateralSpeedMps) - timeToReach(b.position, carrierPos, b.lateralSpeedMps),
+      )[0]!;
+      const closeoutArrivalSeconds = timeToReach(nearestDefender.position, carrierPos, nearestDefender.lateralSpeedMps);
+      const windowMarginSeconds = closeoutArrivalSeconds - CATCH_AND_SHOOT_PREP_SECONDS;
+      const depthBehindLineMeters = distanceToHoop(carrierPos) - FIBA_THREE_POINT_RADIUS_METERS;
+      const tripleEligible =
+        remaining > 2 &&
+        isBehindThreePointLine(carrierPos) &&
+        depthBehindLineMeters <= TRANSITION_THREE_DEPTH_BUFFER_METERS &&
+        windowMarginSeconds >= 0.25;
+      if (tripleEligible) {
+        const carrierProfile = this.profile(carrierId);
+        let takeTriple: boolean;
+        if (carrierProfile.shotTendency === "decidida") {
+          takeTriple = true;
+        } else if (carrierProfile.shotTendency === "prudente") {
+          takeTriple = false;
+        } else {
+          takeTriple = this.rng.next() < secondOptionProbability(carrierProfile.attributes.M03);
+        }
+        // Cuenta de 8 s (art. 28): solo se comprueba/limpia aquí cuando de
+        // verdad se va a tirar (se despacha directo a `runCore`, sin pasar
+        // por `runSet`, que es donde el resto de lecturas la comprueba más
+        // tarde con `tAllSet`). Si no se toma el triple, la cuenta sigue
+        // pendiente exactamente igual que en el `sin_ventaja` de siempre.
+        if (takeTriple && this.backcourt) {
+          const count = evaluateBackcourtCount(this.backcourt.startMs, crossOffset === null ? null : t1, this.backcourt.elapsedBeforeMs);
+          if (count.violation) return this.backcourtViolation(frame, count.violationAtMs!, carrierId);
+          this.backcourt = null;
+        }
+        const tripleValue = 3 * shotProbability(THREE_POINT_BASE_PROBABILITY, carrierProfile.attributes.T04, 0);
+        const reason = `Ventana de triple en transición: ${carrierId} está detrás de la línea con ${windowMarginSeconds.toFixed(2)} s de margen sobre ${nearestDefender.id} (aro contenido); tendencia ${carrierProfile.shotTendency}${takeTriple ? " toma el tiro" : " conserva y organiza"}.`;
+        this.setPhaseEntry(takeTriple ? "ventaja_temprana" : "ataque_organizado", reason);
+        if (!this.emit({ atMs: t1, phase: "reconocido", kind: "transition_read", actors: [carrierId, nearestDefender.id], text: reason, detail: { advantage: takeTriple, kind: "triple_portador", windowMarginSeconds, situationalValue: tripleValue } }))
+          return null;
+        this.auditDecision(t1, {
+          point: "entrada_fase_transicion",
+          holderId: carrierId,
+          participants: [carrierId, nearestDefender.id],
+          chosenOptionId: takeTriple ? "triple_portador" : "sin_ventaja",
+          factLinkKind: "transition_read",
+          options: [
+            {
+              id: "triple_portador",
+              status: takeTriple ? "elegida" : "descartada_por_condicion",
+              reasonCode: takeTriple ? "transition_three_point_window_open" : "shot_tendency_favors_continuation",
+              values: { windowMarginSeconds, situationalValue: tripleValue, shotTendency: carrierProfile.shotTendency },
+            },
+            {
+              id: "sin_ventaja",
+              status: takeTriple ? "descartada_por_condicion" : "elegida",
+              reasonCode: takeTriple ? "shot_tendency_favors_shot" : "transition_no_advantage",
+              reasonNote: read.reason,
+            },
+            { id: "penetracion", status: "no_evaluada_por_cortocircuito", reasonCode: "not_evaluated_short_circuit" },
+            { id: "pase_adelantado", status: "no_evaluada_por_cortocircuito", reasonCode: "not_evaluated_short_circuit" },
+            { id: "superioridad_2x1", status: "no_evaluada_por_cortocircuito", reasonCode: "not_evaluated_short_circuit" },
+            { id: "superioridad_3x2", status: "no_evaluada_por_cortocircuito", reasonCode: "not_evaluated_short_circuit" },
+          ],
+        });
+        if (takeTriple) {
+          this.assignResponsibility(t1, carrierId, "carril_transicion", "Toma el triple abierto detrás de la línea antes de organizar.");
+          const entry: LinkedEntry = {
+            kind: "direct_finish",
+            shooterSlot: carrierSlot,
+            finishSpot: carrierPos,
+            shooterAtSpotSeconds: 0,
+            shotType: "three_point",
+            pass: null,
+            contesterSlot: nearestDefender.slot,
+            contesterArrivalSeconds: closeoutArrivalSeconds,
+            contesterGeometry: {
+              originPos: nearestDefender.position,
+              destinationPos: carrierPos,
+              speedMps: nearestDefender.lateralSpeedMps,
+              brakingExtraSeconds: closeoutBrakingExtraSeconds(this.profile(nearestDefender.id).attributes.F03),
+            },
+          };
+          const legs: Record<string, PlannedLeg> = {};
+          for (const p of [...attackers, ...defenders]) {
+            if (p.slot === carrierSlot) continue;
+            const to = p.slot === nearestDefender.slot ? carrierPos : this.dispositionTargets()[p.slot]!;
+            legs[p.slot] = { departSeconds: 0, arriveSeconds: p.slot === nearestDefender.slot ? closeoutArrivalSeconds : timeToReach(p.position, to, p.runSpeedMps), to };
+          }
+          return this.runCore(frame, t1, entry, legs);
+        }
+        // `prudente` o `equilibrada` sin sorteo favorable: cae al mismo
+        // reorganizar de siempre, con la traza ya registrada arriba.
+        return { kind: "organize", frame, atMs: t1, holderId: carrierId };
+      }
+
       const reason = `Sin ventaja: ataque organizado. Primer defensor en el aro: ${read.firstDefender.id} (${formatSeconds(read.firstDefender.arrivalSeconds)}); atacante más rápido: ${read.fastestAttacker.id} (${formatSeconds(read.fastestAttacker.arrivalSeconds)}); ${read.reason}.`;
       this.setPhaseEntry("ataque_organizado", reason);
       // El hecho se emite primero: el enlace de auditoría (§4.2) apunta al

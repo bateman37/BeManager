@@ -206,6 +206,13 @@ export type LinkedEntry =
       readonly finishSpot: Point2D;
       /** Instante en que el tirador alcanza `finishSpot` (su pierna ya planificada). */
       readonly shooterAtSpotSeconds: number;
+      /**
+       * Tipo de tiro (ME-07A §3.2): `"close_finish"` (por defecto, T01) o
+       * `"three_point"` (T04, preparación de catch-and-shoot) para el
+       * triple del propio portador en transición cuando el aro está
+       * contenido pero queda una ventana real detrás de la línea.
+       */
+      readonly shotType?: "close_finish" | "three_point";
       readonly pass: {
         readonly passerSlot: string;
         readonly releaseSeconds: number;
@@ -723,13 +730,15 @@ function runDirectFinish(
     tCatch = Math.max(entry.shooterAtSpotSeconds, entry.pass.arrivalSeconds);
   }
 
+  const shotType = entry.shotType ?? "close_finish";
+  const prepSeconds = shotType === "three_point" ? CATCH_AND_SHOOT_PREP_SECONDS : CLOSE_FINISH_PREP_SECONDS;
   return resolveShotAttempt(ctx, {
     shooterId: entry.shooterSlot,
-    shooterSkill: shooter.attributes.T01,
-    shotType: "close_finish",
+    shooterSkill: shotType === "three_point" ? shooter.attributes.T04 : shooter.attributes.T01,
+    shotType,
     shooterPos: entry.finishSpot,
-    tReady: tCatch + readyDelay + CLOSE_FINISH_PREP_SECONDS,
-    prepSeconds: CLOSE_FINISH_PREP_SECONDS,
+    tReady: tCatch + readyDelay + prepSeconds,
+    prepSeconds,
     contesterId: entry.contesterSlot,
     contesterArrival: entry.contesterArrivalSeconds,
     contesterGeometry: entry.contesterGeometry,
