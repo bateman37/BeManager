@@ -1048,6 +1048,146 @@ function linkedShotClockViolation(ctx: CoreContext, holderSlot: string): Possess
   return finalize(ctx, { kind: "shot_clock_violation" }, { status: "dead", holderId: null, position: ballPos });
 }
 
+/**
+ * Plan de ayuda al continuador («tag», ME-07B v2 §2.4): D3 sale desde la
+ * esquina débil hacia el short roll tras reconocer el bloqueo (M01/M05,
+ * T23) y D4 rota a la esquina que D3 deja (M01/M05, T22). Se calcula en
+ * puro antes de decidir si se ejecuta; lo comparten drop y show.
+ */
+interface HelpPlan {
+  readonly origin: Point2D;
+  readonly decision: number;
+  readonly arrival: number;
+  readonly geometry: ContestGeometry;
+  readonly d4Start: number;
+  readonly d4Arrival: number;
+  readonly d4Geometry: ContestGeometry;
+}
+
+function buildTagHelpPlan(ctx: CoreContext, scenario: ScenarioDefinition, tUseScreen: number): HelpPlan {
+  const d3 = player(ctx, "D3");
+  const d4 = player(ctx, "D4");
+  const tHelpDecision = scenario.startsWithHelpAlreadyCommitted ? 0 : tUseScreen + recognitionLatencySeconds(d3.attributes.M01, d3.attributes.M05);
+  const d3HelpSpeed = defenderLateralSpeedMps(d3.attributes.F04);
+  const d4RepairSpeed = defenderLateralSpeedMps(d4.attributes.F04);
+  const d3StartPoint = scenario.startsWithHelpAlreadyCommitted ? SHORT_ROLL_SPOT : ctx.positions.D3!;
+  const rawD3Arrival = scenario.startsWithHelpAlreadyCommitted ? 0.1 : tHelpDecision + timeToReach(d3StartPoint, SHORT_ROLL_SPOT, d3HelpSpeed);
+  const tD3Arrive = Math.max(0, rawD3Arrival - interiorArrivalAdjustmentSeconds(d3.attributes.T23));
+  const d4OriginalPos = scenario.startsWithHelpAlreadyCommitted ? LATE_CLOSEOUT_D4_START : ctx.positions.D4!;
+  const tD4Start = tD3Arrive + recognitionLatencySeconds(d4.attributes.M01, d4.attributes.M05);
+  const tD4Arrive = Math.max(tD4Start, tD4Start + timeToReach(d4OriginalPos, WEAK_CORNER_SPOT, d4RepairSpeed) - perimeterArrivalAdjustmentSeconds(d4.attributes.T22));
+  return {
+    origin: d3StartPoint,
+    decision: tHelpDecision,
+    arrival: tD3Arrive,
+    geometry: { originPos: d3StartPoint, destinationPos: SHORT_ROLL_SPOT, speedMps: d3HelpSpeed, brakingExtraSeconds: closeoutBrakingExtraSeconds(d3.attributes.F03) },
+    d4Start: tD4Start,
+    d4Arrival: tD4Arrive,
+    d4Geometry: { originPos: d4OriginalPos, destinationPos: WEAK_CORNER_SPOT, speedMps: d4RepairSpeed, brakingExtraSeconds: closeoutBrakingExtraSeconds(d4.attributes.F03) },
+  };
+}
+
+/**
+ * Lectura del receptor del continuador (ME-07B v2 §2.4, primitiva compartida
+ * de §3 «lectura»): quien recibe en el short roll decide atacar el aro (T01),
+ * soltar un floater por encima de la primera contención (T02) o invertir a la
+ * esquina débil que dejó el ayudador (T04 del receptor de la inversión), cada
+ * vía frente al mejor cierre real que pasa quien llama (drop, show o cambio
+ * aportan sus propias trayectorias defensivas). Pura: la usan tanto la
+ * proyección del pase como la lectura real al recibir, con su instante.
+ */
+type ReceiverOptionId = "finalizar_aro" | "flotadora" | "invertir_o3";
+interface ReceiverOption {
+  readonly id: ReceiverOptionId;
+  readonly value: number;
+  readonly shot: ShotAttemptArgs | null;
+  readonly values: Record<string, number | string | boolean | null>;
+}
+interface RollReceiverEnv {
+  readonly receiverId: string;
+  readonly receiverPos: Point2D;
+  readonly rimCandidates: readonly ContestCandidate[];
+  readonly floaterCandidates: readonly ContestCandidate[];
+  /** Inversión a la esquina débil, solo si el ayudador dejó a O3: quién puede desviar y quién cierra. */
+  readonly invert: { readonly deflectorId: string; readonly closerId: string; readonly closerGeometry: ContestGeometry; readonly closerArrival: number } | null;
+}
+
+function readRollReceiver(ctx: CoreContext, env: RollReceiverEnv, tAct: number): ReceiverOption[] {
+  const receiver = player(ctx, env.receiverId);
+  const o3 = player(ctx, "O3");
+  const pos = env.receiverPos;
+  const clock = ctx.shotClockMs / 1000;
+  const options: ReceiverOption[] = [];
+  const tRimReady = tAct + timeToReach(pos, ATTACKED_HOOP, attackerMoveSpeedMps(receiver.attributes.F01)) + CLOSE_FINISH_PREP_SECONDS;
+  const rim = bestContest(ctx, env.rimCandidates, ATTACKED_HOOP, tRimReady, CLOSE_FINISH_PREP_SECONDS)!;
+  const rimValue = tRimReady < clock ? 2 * shotProbability(CLOSE_FINISH_BASE_PROBABILITY, receiver.attributes.T01, rim.level) : -Infinity;
+  options.push({
+    id: "finalizar_aro",
+    value: rimValue,
+    shot: {
+      shooterId: env.receiverId,
+      shooterSkill: receiver.attributes.T01,
+      shotType: "close_finish",
+      shooterPos: ATTACKED_HOOP,
+      tReady: tRimReady,
+      prepSeconds: CLOSE_FINISH_PREP_SECONDS,
+      contesterId: rim.id,
+      contesterArrival: rim.arrival,
+      contesterGeometry: rim.geometry,
+    },
+    values: { situationalValue: rimValue, contesterId: realId(ctx, rim.id), opposition: rim.level, readySeconds: tRimReady, rimOccupied: rim.occupied },
+  });
+  const tFloatReady = tAct + CLOSE_FINISH_PREP_SECONDS;
+  const floater = bestContest(ctx, env.floaterCandidates, pos, tFloatReady, CLOSE_FINISH_PREP_SECONDS)!;
+  const floaterValue =
+    isFloaterZone(pos) && tFloatReady < clock ? 2 * shotProbability(shotBaseProbability("floater"), receiver.attributes.T02, floater.level) : -Infinity;
+  options.push({
+    id: "flotadora",
+    value: floaterValue,
+    shot: {
+      shooterId: env.receiverId,
+      shooterSkill: receiver.attributes.T02,
+      shotType: "floater",
+      shooterPos: pos,
+      tReady: tFloatReady,
+      prepSeconds: CLOSE_FINISH_PREP_SECONDS,
+      contesterId: floater.id,
+      contesterArrival: floater.arrival,
+      contesterGeometry: floater.geometry,
+    },
+    values: { situationalValue: floaterValue, contesterId: realId(ctx, floater.id), opposition: floater.level, readySeconds: tFloatReady },
+  });
+  const tInvertReady = tAct + PASS_RELEASE_SECONDS + distanceSeconds(pos, WEAK_CORNER_SPOT) + CATCH_AND_SHOOT_PREP_SECONDS;
+  const inv = env.invert;
+  const invertLevel = inv ? estimateContestLevel(ctx, inv.closerId, inv.closerGeometry, inv.closerArrival, WEAK_CORNER_SPOT, tInvertReady, CATCH_AND_SHOOT_PREP_SECONDS) : 1;
+  const invertCompletion = inv ? 1 - deflectionProbability(player(ctx, inv.deflectorId).attributes.T17, receiver.attributes.T09) : 0;
+  const invertValue = inv && tInvertReady < clock ? invertCompletion * 3 * shotProbability(THREE_POINT_BASE_PROBABILITY, o3.attributes.T04, invertLevel) : -Infinity;
+  options.push({
+    id: "invertir_o3",
+    value: invertValue,
+    shot: null,
+    values: { situationalValue: invertValue, completion: invertCompletion, opposition: invertLevel, marginO3Seconds: inv ? inv.closerArrival - tInvertReady : null, d3LeftO3: inv !== null },
+  });
+  return options;
+}
+
+/** Elección del receptor: mayor valor; en la banda de empate decide su tendencia de tiro (ME-07A §2). */
+function chooseRollReceiverOption(ctx: CoreContext, receiverId: string, options: readonly ReceiverOption[]): { chosen: ReceiverOption; byTendency: boolean } {
+  const viable = options.filter((o) => Number.isFinite(o.value)).sort((a, b) => b.value - a.value);
+  let chosen = viable[0]!;
+  let byTendency = false;
+  const band = viable.filter((o) => chosen.value - o.value <= FIRST_READ_TIE_BAND_POINTS);
+  if (band.length > 1) {
+    const tendency = player(ctx, receiverId).shotTendency;
+    const pick = tendency === "decidida" ? band.find((o) => o.shot !== null) : tendency === "prudente" ? band.find((o) => o.shot === null) : undefined;
+    if (pick && pick !== chosen) {
+      chosen = pick;
+      byTendency = true;
+    }
+  }
+  return { chosen, byTendency };
+}
+
 function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition): PossessionCoreResult {
   const o1 = player(ctx, "O1");
   const o3 = player(ctx, "O3");
@@ -1116,59 +1256,13 @@ function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition): Possessio
     : tUseScreen + recognitionLatencySeconds(d3.attributes.M01, d3.attributes.M05);
   const d3HelpSpeed = defenderLateralSpeedMps(d3.attributes.F04);
   const d3BrakingExtra = closeoutBrakingExtraSeconds(d3.attributes.F03);
-  const d4RepairSpeed = defenderLateralSpeedMps(d4.attributes.F04);
-  const d4BrakingExtra = closeoutBrakingExtraSeconds(d4.attributes.F03);
   const d5DropPos = ctx.positions.D5!;
   const tRollStart = tRollReady - rollTravelSeconds;
   const d5DropSpeed = defenderLateralSpeedMps(d5.attributes.F04);
   const d5DropBraking = closeoutBrakingExtraSeconds(d5.attributes.F03);
 
-  /**
-   * Plan de ayuda de D3 al continuador (tag) y reparación de D4 a la
-   * esquina, calculado en puro antes de decidir si se ejecuta: D3 ayuda
-   * hacia la posición real donde O5 recibe/finaliza (short roll) y D4 sale
-   * hacia la esquina que D3 deja (C1, ME-02).
-   */
-  interface HelpPlan {
-    readonly origin: Point2D;
-    readonly decision: number;
-    readonly arrival: number;
-    readonly geometry: ContestGeometry;
-    readonly d4Start: number;
-    readonly d4Arrival: number;
-    readonly d4Geometry: ContestGeometry;
-  }
-  const d3StartPoint = scenario.startsWithHelpAlreadyCommitted ? SHORT_ROLL_SPOT : ctx.positions.D3!;
-  const rawD3Arrival = scenario.startsWithHelpAlreadyCommitted ? 0.1 : tHelpDecision + timeToReach(d3StartPoint, SHORT_ROLL_SPOT, d3HelpSpeed);
-  // T23 (defensa interior): D3 protege el espacio cercano al aro contra el
-  // continuador; ajusta su llegada real a la ayuda (HF-002 §1.5).
-  const tD3ArriveIfHelps = Math.max(0, rawD3Arrival - interiorArrivalAdjustmentSeconds(d3.attributes.T23));
-  const d4OriginalPos = scenario.startsWithHelpAlreadyCommitted ? LATE_CLOSEOUT_D4_START : ctx.positions.D4!;
-  const tD4StartIfHelps = tD3ArriveIfHelps + recognitionLatencySeconds(d4.attributes.M01, d4.attributes.M05);
-  // T22 (defensa perimetral): D4 cierra sobre una amenaza exterior (O3 en
-  // la esquina); ajusta su llegada real al cierre (HF-002 §1.5).
-  const tD4ArriveIfHelps = Math.max(
-    tD4StartIfHelps,
-    tD4StartIfHelps + timeToReach(d4OriginalPos, WEAK_CORNER_SPOT, d4RepairSpeed) - perimeterArrivalAdjustmentSeconds(d4.attributes.T22),
-  );
-  const candidateHelp: HelpPlan = {
-    origin: d3StartPoint,
-    decision: tHelpDecision,
-    arrival: tD3ArriveIfHelps,
-    geometry: { originPos: d3StartPoint, destinationPos: SHORT_ROLL_SPOT, speedMps: d3HelpSpeed, brakingExtraSeconds: d3BrakingExtra },
-    d4Start: tD4StartIfHelps,
-    d4Arrival: tD4ArriveIfHelps,
-    d4Geometry: { originPos: d4OriginalPos, destinationPos: WEAK_CORNER_SPOT, speedMps: d4RepairSpeed, brakingExtraSeconds: d4BrakingExtra },
-  };
+  const candidateHelp = buildTagHelpPlan(ctx, scenario, tUseScreen);
 
-  // --- Lectura del receptor del continuador (ME-07B v2 §2.4) ---------------
-  // O5 recibe en el short roll y **decide**: atacar el aro (T01), soltar un
-  // floater por encima de la primera contención (T02) o invertir a la
-  // esquina débil que dejó D3 (T04 de O3), comparando cada vía con el mejor
-  // cierre real que la defensa puede oponerle: D5, el pívot de drop que está
-  // junto al short roll (antes nunca contestaba al continuador), y D3 si
-  // ayuda. La misma función, pura, da el valor que O1 proyecta al pasar y la
-  // lectura real de O5 al recibir, con su instante real.
   // D5 en drop tiene una sola trayectoria real: desde que empieza el roll
   // retrocede a proteger el aro (T23). Todas las vías del receptor se valoran
   // contra esa misma trayectoria (dónde está D5 al empezar el gesto y al
@@ -1181,20 +1275,11 @@ function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition): Possessio
       arrivalSeconds: d5DropArrival,
     }),
   };
-  type ReceiverOptionId = "finalizar_aro" | "flotadora" | "invertir_o3";
-  interface ReceiverOption {
-    readonly id: ReceiverOptionId;
-    readonly value: number;
-    readonly shot: ShotAttemptArgs | null;
-    readonly values: Record<string, number | string | boolean | null>;
-  }
+
   function rollReceiverRead(tAct: number, help: HelpPlan | null): { options: ReceiverOption[]; contained: boolean } {
-    const o5Pos = SHORT_ROLL_SPOT;
-    const contained = help !== null && distance(positionAtInstant(help.geometry, help.arrival, tAct + CLOSE_FINISH_PREP_SECONDS), o5Pos) <= COMBINED_CONTACT_RADIUS_METERS;
-    const options: ReceiverOption[] = [];
-    // Aro: carrera desde el short roll; D5 retrocede al aro desde que empieza el roll (T23).
-    const tRimReady = tAct + timeToReach(o5Pos, ATTACKED_HOOP, attackerMoveSpeedMps(o5.attributes.F01)) + CLOSE_FINISH_PREP_SECONDS;
+    const contained = help !== null && distance(positionAtInstant(help.geometry, help.arrival, tAct + CLOSE_FINISH_PREP_SECONDS), SHORT_ROLL_SPOT) <= COMBINED_CONTACT_RADIUS_METERS;
     const rimCandidates: ContestCandidate[] = [d5DropRetreat];
+    const floaterCandidates: ContestCandidate[] = [d5DropRetreat];
     if (help) {
       rimCandidates.push({
         id: "D3",
@@ -1203,83 +1288,18 @@ function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition): Possessio
           arrivalSeconds: Math.max(help.decision, help.decision + distance(help.origin, spot) / d3HelpSpeed - interiorArrivalAdjustmentSeconds(d3.attributes.T23)),
         }),
       });
+      floaterCandidates.push({ id: "D3", geometryTo: () => ({ geometry: help.geometry, arrivalSeconds: help.arrival }) });
     }
-    const rim = bestContest(ctx, rimCandidates, ATTACKED_HOOP, tRimReady, CLOSE_FINISH_PREP_SECONDS)!;
-    const rimValue = tRimReady < ctx.shotClockMs / 1000 ? 2 * shotProbability(CLOSE_FINISH_BASE_PROBABILITY, o5.attributes.T01, rim.level) : -Infinity;
-    options.push({
-      id: "finalizar_aro",
-      value: rimValue,
-      shot: {
-        shooterId: "O5",
-        shooterSkill: o5.attributes.T01,
-        shotType: "close_finish",
-        shooterPos: ATTACKED_HOOP,
-        tReady: tRimReady,
-        prepSeconds: CLOSE_FINISH_PREP_SECONDS,
-        contesterId: rim.id,
-        contesterArrival: rim.arrival,
-        contesterGeometry: rim.geometry,
-      },
-      values: { situationalValue: rimValue, contesterId: realId(ctx, rim.id), opposition: rim.level, readySeconds: tRimReady, rimOccupied: rim.occupied },
-    });
-    // Floater desde el short roll: D5 se planta delante (sin chocar) o D3 llega a la ayuda.
-    const tFloatReady = tAct + CLOSE_FINISH_PREP_SECONDS;
-    const floatCandidates: ContestCandidate[] = [d5DropRetreat];
-    if (help) floatCandidates.push({ id: "D3", geometryTo: () => ({ geometry: help.geometry, arrivalSeconds: help.arrival }) });
-    const floater = bestContest(ctx, floatCandidates, o5Pos, tFloatReady, CLOSE_FINISH_PREP_SECONDS)!;
-    const floaterValue =
-      isFloaterZone(o5Pos) && tFloatReady < ctx.shotClockMs / 1000 ? 2 * shotProbability(shotBaseProbability("floater"), o5.attributes.T02, floater.level) : -Infinity;
-    options.push({
-      id: "flotadora",
-      value: floaterValue,
-      shot: {
-        shooterId: "O5",
-        shooterSkill: o5.attributes.T02,
-        shotType: "floater",
-        shooterPos: o5Pos,
-        tReady: tFloatReady,
-        prepSeconds: CLOSE_FINISH_PREP_SECONDS,
-        contesterId: floater.id,
-        contesterArrival: floater.arrival,
-        contesterGeometry: floater.geometry,
-      },
-      values: { situationalValue: floaterValue, contesterId: realId(ctx, floater.id), opposition: floater.level, readySeconds: tFloatReady },
-    });
-    // Inversión a la esquina débil: solo existe si D3 dejó a O3 para ayudar.
-    const tInvertArrival = tAct + PASS_RELEASE_SECONDS + distanceSeconds(o5Pos, WEAK_CORNER_SPOT);
-    const tInvertReady = tInvertArrival + CATCH_AND_SHOOT_PREP_SECONDS;
-    const invertLevel = help ? estimateContestLevel(ctx, "D4", help.d4Geometry, help.d4Arrival, WEAK_CORNER_SPOT, tInvertReady, CATCH_AND_SHOOT_PREP_SECONDS) : 1;
-    const invertCompletion = 1 - deflectionProbability(d3.attributes.T17, o5.attributes.T09);
-    const invertValue =
-      help && tInvertReady < ctx.shotClockMs / 1000
-        ? invertCompletion * 3 * shotProbability(THREE_POINT_BASE_PROBABILITY, o3.attributes.T04, invertLevel)
-        : -Infinity;
-    options.push({
-      id: "invertir_o3",
-      value: invertValue,
-      shot: null,
-      values: { situationalValue: invertValue, completion: invertCompletion, opposition: invertLevel, marginO3Seconds: help ? help.d4Arrival - tInvertReady : null, d3LeftO3: help !== null },
-    });
+    const options = readRollReceiver(ctx, {
+      receiverId: "O5",
+      receiverPos: SHORT_ROLL_SPOT,
+      rimCandidates,
+      floaterCandidates,
+      invert: help ? { deflectorId: "D3", closerId: "D4", closerGeometry: help.d4Geometry, closerArrival: help.d4Arrival } : null,
+    }, tAct);
     return { options, contained };
   }
-  /** Elección del receptor: mayor valor; en la banda de empate decide su tendencia de tiro (ME-07A §2). */
-  function chooseReceiverOption(options: readonly ReceiverOption[]): { chosen: ReceiverOption; byTendency: boolean } {
-    const viable = options.filter((o) => Number.isFinite(o.value)).sort((a, b) => b.value - a.value);
-    let chosen = viable[0]!;
-    let byTendency = false;
-    const band = viable.filter((o) => chosen.value - o.value <= FIRST_READ_TIE_BAND_POINTS);
-    if (band.length > 1) {
-      const tendency = o5.shotTendency;
-      const pick =
-        tendency === "decidida" ? band.find((o) => o.shot !== null) : tendency === "prudente" ? band.find((o) => o.shot === null) : undefined;
-      if (pick && pick !== chosen) {
-        chosen = pick;
-        byTendency = true;
-      }
-    }
-    return { chosen, byTendency };
-  }
-
+  const chooseReceiverOption = (options: readonly ReceiverOption[]) => chooseRollReceiverOption(ctx, "O5", options);
 
   // Decisión de D3 (ME-07B v2 §2.4/§5, «tag» frente a «no dejar tirador de
   // esquina»): con la orden de ayudar al continuador activa, D3 compara, en

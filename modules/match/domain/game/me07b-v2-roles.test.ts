@@ -1,4 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+// Partidos completos repetidos: más margen que el límite por defecto bajo carga paralela.
+vi.setConfig({ testTimeout: 60_000 });
 import { playFullGame } from "./play-full-game";
 import { buildGameInput } from "./game-model";
 import { SIERRA_CLARA, PUERTO_AMBAR } from "../players/lab-roster-fixture";
