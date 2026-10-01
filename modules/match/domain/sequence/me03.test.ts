@@ -119,8 +119,11 @@ describe("ME-03 (2): el mismo equipo de diez atraviesa el cambio de lado", () =>
       else expect(pos.x).toBeGreaterThan(14);
     }
     const entries = r.events.filter((e) => e.kind === "organized_entry");
-    expect(entries.some((e) => e.actors.join() === "O1,O5")).toBe(true);
-    expect(entries.some((e) => e.actors.join() === "D1,D5")).toBe(true);
+    // ME-07B v2 §2.4: creador y bloqueador se asignan por proyección entre
+    // jugadores reales (no siempre O1/O5 del orden del quinteto), así que se
+    // exige que cada equipo inicie acciones con sus propios jugadores.
+    expect(entries.some((e) => e.actors.every((a) => TEAM_OF[a] === SIERRA_CLARA.id))).toBe(true);
+    expect(entries.some((e) => e.actors.every((a) => TEAM_OF[a] === PUERTO_AMBAR.id))).toBe(true);
   });
 
   it("ninguna posesión posterior reinicia el fixture: ni 7:12/18 s ni la disposición de scenario.ts", () => {
@@ -529,8 +532,13 @@ describe("ME-03 (7): posesión individual y lotes rápidos conservan su recorrid
     // cambio intencional de la mecánica deportiva, no una regresión. Si un
     // futuro bloque cambia de nuevo el árbol de decisión o las fórmulas de
     // contacto/oposición, esta huella debe recalcularse otra vez aquí mismo.
+    // Recalculada otra vez en ME-07B v2 §2.1 (retraso real del cierre de
+    // rebote, tirador sin cierre durante su gesto y caída LAB-0.4) y en §2.3
+    // (el lote de trampa: D5 sale al preparar la pantalla), y en §2.4
+    // (lectura real del receptor del roll frente al mejor cierre, tiro parado
+    // de O1, triple con el cierre de D1 y tipos floater/tiro medio).
     expect(createHash("sha256").update(JSON.stringify(out)).digest("hex")).toBe(
-      "1792a9e38a1bbc7a729afa4525c3bcb31fb39bd0dc43c0b1661844773b9f2494",
+      "e6679d3d1c58a6cb2f3b2111792666a42916838f5571e99f19cec2ca6880b341",
     );
   });
 

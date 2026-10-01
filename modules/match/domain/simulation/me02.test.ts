@@ -143,8 +143,16 @@ describe("ME-02 (4): trampa cambia responsabilidades y puede abrir una salida", 
     expect(result.categories.fieldGoalMade2 + result.categories.fieldGoalMade3).toBeLessThan(result.sampleSize);
   });
 
-  it("cuando la trampa no cierra a tiempo (perfiles originales), O1 puede escapar por el carril que deja D5", () => {
-    const result = runScenarioBatch(buildInput("drop_con_ayuda", "trampa", 1), 1500);
+  it("cuando la trampa no cierra a tiempo (D5 lento en reconocer y desplazarse), O1 puede escapar por el carril que deja D5", () => {
+    // ME-07B v2 §2.3: D5 decide al empezar a prepararse la pantalla, así que
+    // con los perfiles originales la trampa ya cierra a tiempo; una trampa
+    // tardía se construye con un D5 lento (F04/M01/M05/T22 mínimos) y sigue
+    // siendo tardía: concede el carril, nunca un robo.
+    const slowTrapDefense = LAB_ROSTER_FIXTURE[1]!.players.map((p) =>
+      p.id === "D5" ? { ...p, attributes: { ...p.attributes, F04: 1, M01: 1, M05: 1, T22: 1 } } : p,
+    );
+    const input: MatchInput = { ...buildInput("drop_con_ayuda", "trampa", 1), defensePlayers: slowTrapDefense };
+    const result = runScenarioBatch(input, 1500);
     expect(result.categories.trapBrokenAdvantage).toBeGreaterThan(0);
     expect(result.categories.steals).toBe(0);
   });

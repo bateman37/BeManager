@@ -5,7 +5,7 @@
 **Debe leerse cuando:** vayas a modificar `possession-core.ts` o a añadir una tercera acción táctica, otra cobertura u otra orden defensiva.
 **No cubre:** ninguna otra familia táctica (poste, zonas, todas las variantes de mano a mano) ni otras coberturas de bloqueo (switch, ICE/veer...): llegan en entregas posteriores (ver `docs/match/roadmap.md`). La transición de ME-03 no es una táctica nueva: solo decide si existe ventana y reutiliza las ejecuciones ya existentes (sección final).
 **Documentos relacionados:** `docs/match/reference/BeManager-capitulo-tacticas-integradas-al-motor-v1.md`, `CAPABILITIES.md`, `RULES.md`.
-**Última actualización:** 2026-09-30 (ME-07A).
+**Última actualización:** 2026-10-01 (ME-07B v2, sesión v2-5: fichas Horns→Spain, LAB-0.9, y Delay→DHO con poste, LAB-0.10).
 
 ## Disposición y roles fijos
 
@@ -121,7 +121,214 @@ Una trampa rota nunca garantiza tiro cómodo; una trampa cerrada nunca
 garantiza robo ni canasta (ver pruebas discriminantes en
 `domain/simulation/me02.test.ts`).
 
-**Cobertura `auto` (ME-07A §4).** Antes de despachar el árbol, si
+**ME-07B v2 §2.3 — defensa `auto` desde la preparación.** D5 decide la
+trampa cuando empieza a prepararse la pantalla (instante 0 de la fase
+organizada) y sale tras su latencia M01/M05, no cuando O1 ya la usa; una
+trampa que aun así llega después del pase a O5 sigue siendo tardía y
+concede el carril. `auto` proyecta en seco ambas ejecuciones desde la
+misma geometría: `drop` concede la mejor vía de la primera lectura del
+bloqueo (con riesgo de pase); `trampa`, el valor esperado de la rama que
+alcanza su propia geometría (presión T07/T15, desvío T17/T09, low man
+tardío → O4 libre, inversión a O3 o tiro contenido de O5). Cada concesión
+se combina con lo que esa defensa ya ha concedido de verdad con esa
+cobertura en el partido (`blendProjectionWithObservation`, LAB-0.4, peso
+previo 6 usos); el ataque hace lo mismo con cada familia. Así la defensa
+alterna por resultados visibles, sin cuotas: foto seed 484 trampas / 675
+drops (Sierra defendiendo) y 443 / 733 (Puerto).
+
+**ME-07B v2 §5 — cambio, show, por debajo e ICE.** `auto` compite entre
+seis coberturas con la misma proyección en seco y la misma mezcla con lo
+observado; una concesión proyectada idéntica a la de drop conserva drop.
+*Cambio*: D5 canta (M01/M05) y sale a la altura del bloqueo (T22), D1 se
+queda con el bloqueador (aviso M09, T23); O1 lee frente al pívot
+(`lectura_cambio`) y el emparejamiento cambiado persiste en la posesión.
+*Show*: D5 sale delante del punto de uso y vuelve al aro cuando D1 supera
+la pantalla (M09); ventana del roll mientras vuelve (`lectura_show`).
+*Por debajo*: D1 pasa entre el bloqueador y su defensor sin ser bloqueado;
+sin retraso no hay dos contra uno (el pase al roll sigue la regla de drop
+con retraso nulo) y D1 contesta la entrada si ya espera en su punto; para
+cerrar el triple de O1 tiene que rodear al bloqueador y, si al soltar aún
+no lo ha rodeado, no contesta (`d1CloseoutMarginSeconds`, `d1WallsDrive`
+en `lectura_bloqueo_o1`). *ICE*: solo elegible con pantalla lateral; ante
+el bloqueo central no es elegible (`coverage_ice_central_not_eligible`) y
+la orden manual juega drop con el hecho `coverage_not_applicable`.
+Pendiente: la respuesta de zona.
+
+**ME-07B v2 §4–§5 (sesión v2-3, LAB-0.7) — bloqueo lateral, ICE y «a la
+altura».** *Colocación*: al organizar, `assignOrganizedRoles` compara
+además la colocación del bloqueo (`screenPlacement`: `auto` evalúa central
+y lateral con la misma proyección en seco que creador y bloqueador; el
+entrenador puede fijar una) y la audita en `colocacion_bloqueo`. Desde la sesión v2-6 la colocación
+(ficha) se elige por su mejor valor proyectado y la banda de empate
+(`FIRST_READ_TIE_BAND_POINTS`) solo desempata asignaciones de creador y
+bloqueador de la misma ficha y del mismo plan, por el instante de su primera
+lectura real (situarse + preparación de la ficha); antes desempataba también
+entre fichas por el instante de quedar situados. La lateral
+usa la disposición `LATERAL_PNR_TARGETS` (manejador en el ala, bloqueador a
+3,3 m del eje, misma distancia manejador–bloqueador que la central) y su
+short roll lateral; la mano a mano solo existe desde la central
+(`family_not_in_lateral_placement`). *ICE* (solo lateral): D1 reconoce la
+pantalla (M01/M05) y se pone de su lado a contacto del manejador (F04); si
+llega antes del uso (`ice_committed`), O1 no usa el bloqueo y D5 baja a la
+ayuda baja (M01/M05, T23); el bloqueador se abre al codo. `lectura_ice`:
+`penetrar_fondo` (frente a D5 abajo y D1 que se desliza), `parada_fondo`
+(tiro medio T03 tras rechazar hacia fondo), `pase_o5` (la línea pasa por
+D1, que puede desviar con T17), `pase_esquina_o2` (D2 en casa) y
+`salida_segura`. Si D1 llega tarde (`ice_late`), se juega drop. *Show* y
+*a la altura* comparten «el pívot sube al bloqueo» con tres diferencias:
+el show sale a contacto del punto de uso (línea del manejador) y, si llega
+antes que O1 a ese punto, frena su penetración hasta que D5 se retira
+(`halted`), y D5 vuelve al aro; «a la altura» sube a contacto del
+bloqueador (≥0,3 m más hondo), O1 dobla la esquina sin pausa con D5
+conteniéndole al decidir, y D5 vuelve con el continuador
+(`lectura_a_la_altura`, `at_level_committed`, `at_level_recovery`). `auto`
+compite ahora entre siete coberturas (ICE solo ante la lateral).
+
+**ME-07B v2 §3 — ficha de libro (primer paso).** `domain/tactics/playbook-card.ts`
+declara las tres acciones organizadas que existen (bloqueo directo central,
+mano a mano central, bloqueo directo lateral) como fichas con fase y
+condición (planes que la admiten), colocación, roles y sustitutos (creador
+O1 o poseedor real; bloqueador O5 u O4), primera acción, variantes (segunda
+entrada), lecturas permitidas, seguridad (salida segura y reorganizar) y
+prioridad. Al organizar, las colocaciones ofrecidas salen de las fichas
+compatibles con el plan y la orden de colocación; el núcleo devuelve la
+ficha en vigor (`organizedChoice.card`). No cambia la conducta (foto de las
+20 idéntica); Horns, Delay, Spain, drag y los saques siguen pendientes como
+fichas nuevas con su mecanismo.
+
+**ME-07B v2 §4 (sesión v2-4, LAB-0.8) — ficha `horns_bloqueo`
+(«Organizado: Horns→bloqueo»).** *Colocación* (`HORNS_PNR_TARGETS`):
+manejador arriba, los dos interiores del quinteto en los codos —uno es el
+bloqueador (O5, mismo punto de pantalla que la central) y el otro el
+**segundo cuerno** (rol canónico O3, en el codo contrario, zona de tiro
+medio)—, los dos exteriores en las esquinas (O2, O4) y el ala débil vacía;
+cada defensor sigue a su marca (D3 entre el segundo cuerno y el aro). Los
+cuernos son siempre los dos interiores por el orden de roles del quinteto en
+pista; si el poseedor es uno de ellos, devuelve el balón al manejador.
+*Entrada*: orden del entrenador (`screenPlacement=horns`, `/lab` «Colocación
+del bloqueo: Horns») o, en `auto`, la misma proyección en seco que compara
+creador, bloqueador y colocación (`colocacion_bloqueo`). *Acción*: el mismo
+árbol de coberturas del bloqueo (drop, por debajo, show, a la altura,
+cambio, trampa; ICE no aplicable: pantalla dentro de la franja de la zona),
+con otra **responsabilidad**: el jugador que deja libre la ayuda al roll es
+el segundo cuerno en el codo (tiro medio T03 de recepción, `helpLeftSpot`)
+y la reparación sale del defensor de la esquina débil, que deja la esquina.
+Ante la trampa, el low man (defensor del codo) llega a tiempo más a menudo y
+la inversión va al codo (tiro medio); en la central nunca se invierte. Ante
+drop, el receptor del roll valora un tiro medio del codo en lugar de un
+triple de esquina. *Negación y salida*: la ayuda contiene al continuador y
+su lectura reevalúa (aro, floater, codo, segunda entrada con motivo); la
+trampa puede robar; sin opción, salida segura y reorganizar. Técnico y
+local: el defensor que ayuda no se mete en el mismo punto del short roll si
+llegaría mientras el continuador aún corre (contiene a contacto, en su línea
+de llegada) y el solape corporal de la contención es estrictamente menor que
+la suma de radios; sin esto, el defensor del codo (a 2 m) chocaba de frente
+en carrera y cada ayuda era falta. Pruebas: `me07b-v2-horns.test.ts`,
+`lab-0-8-parameters.test.ts`, `playbook-card.test.ts`.
+
+**ME-07B v2 §4 (sesión v2-5, LAB-0.9) — ficha `horns_spain`
+(«Organizado: Horns→Spain»).** *Colocación*: la de Horns. *Entrada*: orden
+(`chainedVariant=spain`, «Variante encadenada» en `/lab`) o, en `auto`,
+`seleccion_variante` compara la ficha base y Spain con la misma proyección en
+seco frente a cada cobertura vista (ante drop y por debajo, la ejecución de
+Spain suponiendo la mejor respuesta del rival; ante el resto, el valor de la
+base: no hay a quién bloquear). *Lectura del bloqueador ciego*
+(`lectura_spain_bloqueador`): hay objetivo si la defensa juega drop o por
+debajo (ICE ante pantalla no lateral es drop), D5 está a más de 2,7 m del aro
+y hay reloj para sincronizar; si no, se queda en el codo y se juega el árbol
+de Horns con la misma ficha. *Acción*: el segundo cuerno (O3) rodea a su
+defensor y llega a contacto de D5 en su línea de retroceso
+(`spainBackScreenPoint`), se coloca (0,3 s) y el manejador espera en el punto
+de uso hasta que el roll pueda arrancar con el bloqueo ciego puesto (cuesta
+reloj). D5 queda retenido `screenInterceptDelaySeconds(T13, F05 de O3; T16 de
+D5)` + peso desde que el roll arranca y luego rodea al bloqueador; O5 rueda
+profundo al poste bajo débil (`SPAIN_ROLL_SPOT`) por fuera del bloqueo y O3 se
+abre al pop (`SPAIN_POP_SPOT`) al soltar a D5. *Respuesta*
+(`respuesta_bloqueo_ciego`, orden `backScreenCall`): `seguir` (D3 va con O3 al
+pop; el roll solo lo protege D5 retenido), `ayudar` (D3 rodea al bloqueador y
+contiene el roll desde la pintura; deja el pop y lo cierra al recuperar) o
+`cambiar` (D3 al roll, D5 al pop; solo si D3 reconoce el corte y lo canta, M09,
+antes de que el roll arranque; el cambio persiste); en `auto` la de menor
+concesión proyectada; con `seguir`, D3 lee entre seguir y ayudar. *Lectura de
+O1* (`lectura_spain`): aro, pase al roll (el receptor lee aro, floater o pase
+al pop, que puede no haber llegado aún), pase al pop, triple tras la pantalla
+o salida segura. Pruebas: `me07b-v2-spain.test.ts`, `lab-0-9-parameters.test.ts`.
+
+**ME-07B v2 §4 (sesión v2-5, LAB-0.10) — ficha `delay_mano_a_mano`
+(«Organizado: Delay→DHO/corte y entrada a poste con salidas»).**
+*Colocación* (`DELAY_TARGETS`): un interior arriba por encima del arco (O5),
+el otro en el poste bajo del lado del balón (O4), el manejador en el ala
+derecha, la esquina fuerte (O2) y el ala débil (O3) ocupadas; los dos
+interiores por el orden de roles del quinteto. *Entrada*: por orden
+(`screenPlacement=delay`) o, desde la sesión v2-6, en la colocación `auto`
+(`offeredInAuto=true`): compite por su valor proyectado, ponderado por las
+respuestas a la entrega que el rival ha mostrado (`defenseByHandoffResponse`,
+aparte de las coberturas de pantalla; sus resultados tampoco cuentan como
+mano a mano central). Familia: la de la entrega en mano. *Acción*: pase de
+entrada arriba (desvío por D5); el manejador sigue su pase y recibe la
+entrega en mano a contacto del pívot: el cuerpo de O5 retrasa a D1 como una
+pantalla (T13/F05 de O5, T16 de D1, peso), ajustado por la orden sin balón de
+D1 (±0,15 s, la misma del mano a mano; en `auto`, la de menor concesión).
+*Respuesta de D5* (por su cobertura; en `auto`, la menor concesión de tres;
+el resto de coberturas no aplican: `coverage_not_in_card`): `hundirse`
+(drop y demás), `cambiar_entrega` (cambio: D5 a O1 y D1 a O5, persiste) o
+`saltar_entrega` (show/trampa): si D5 está colocado en el punto de la entrega
+antes que O1, la niega. *Lecturas*: entrega hecha → `lectura_delay` (aro,
+triple, tiro parado, entrada al poste, salida al pívot); negada →
+`lectura_delay_pivote` (el pívot ataca el aro rodeando a D5, puerta de atrás de
+O1 rodeando a D5 con D1 persiguiendo, alto-bajo al poste o inversión al ala
+débil). *Poste* (`respuesta_poste`, `lectura_poste`): el defensor de la
+esquina lee el pase al poste en el aire y ayuda a contacto («dig») si concede
+menos; el poste reconoce (M01/M05) y gira (0,4 s) antes de moverse; si la
+ayuda llega antes del giro son dos sobre el balón y cada movimiento puede ser
+robo (T07 del poste frente al peor T15, como en la trampa). Salidas: aro
+rodeando a D4, gancho desde el poste (T02, D4 a contacto), salida a la
+esquina (solo si ayudó), corte del ala débil (rodea a su defensor; le cierran
+él, D5 y D4 girándose desde el poste) y repostear (devolver arriba y
+reorganizar). Pruebas: `me07b-v2-delay.test.ts`, `lab-0-10-parameters.test.ts`.
+
+**ME-07B v2 §2.2/§5 (sesión v2-4) — el ataque proyecta contra la defensa
+observada.** Antes el selector de familia y `assignOrganizedRoles`
+proyectaban el bloqueo directo **solo contra drop**. Ahora proyectan en seco
+la concesión de cada cobertura que el rival ha usado en el partido y la
+ponderan por su frecuencia observada (`shownCoverageWeights`, LAB-0.4: peso
+`(usos_c + K·[c=drop]) / (Σusos + K)`, mismo K = 6 usos); sin muestras es la
+proyección de siempre. ICE ante pantalla no lateral pesa como drop.
+Auditoría en `seleccion_familia`: `coverageWeight_*`, `valueAgainst_*`,
+`expectedValueOverShownCoverages` (`situationalValue` sigue siendo la
+proyección contra drop). Prueba: `me07b-v2-coverage-projection.test.ts`.
+
+**ME-07B v2 §2.4 — lecturas frente al mejor cierre real.** Cada vía de
+tiro de la primera lectura del bloqueo y de la lectura del continuador se
+valora con la oposición que resultará de verdad (`bestContest`, misma regla
+R_contest que `resolveShotAttempt`). O1: `finalizar`, `pase_o5` (valor =
+la misma lectura del receptor proyectada), `pase_o3`, `triple_o1` (cierra
+el mejor de D1, que sale de la pantalla con su retraso, y D5 solo si el
+continuador ya está contenido), `parada_o1` y `flotadora_o1` (se detiene
+antes del protector: fuera de su alcance o justo antes del contacto; el
+tipo, tiro medio T03 o floater T02, lo decide la zona real, LAB-0.5) y
+`salida_segura`. O5 al recibir (`lectura_segunda_o5`): `finalizar_aro`,
+`flotadora` o `invertir_o3`, frente a D5 con **una sola trayectoria de
+drop** (retrocede al aro desde que empieza el roll) y D3 si ayuda; en la
+banda de empate decide su tendencia de tiro. Contenido y sin vía mejor,
+conserva la segunda entrada de ME-04. D3 decide la ayuda (`help_decision`)
+comparando la concesión con y sin ayuda en la recepción prevista; en la
+posesión de laboratorio el escenario sigue siendo una orden explícita y en
+el partido `rollHelpCall` (`auto` por defecto, `siempre`) la gobierna. Al
+organizar, `assignOrganizedRoles` (linked-run) compara creador (poseedor u
+O1) y bloqueador (O5 u O4) por proyección; los defensores siguen a su marca.
+
+**ME-07B v2 §2.5 — transición y faltas.** Sin ventaja, el portador sigue
+botando hasta un punto detrás del arco (`planTransitionPullUps`, a 2/1,25/
+0,5 m) y cada defensor cierra desde su posición real en el cruce; el triple
+tras bote (preparación T06) compite con el valor proyectado de organizar y
+la tendencia decide en la banda. Los contactos defensivos reales se
+adjudican con M07 del defensor (LAB-0.6): cierre legal con solape en una
+finalización o tiro (`resolucion_tiro`, falta de tiro), trampa cerrada y
+rebote por encima de la espalda (`puerta_falta_sin_tiro`, falta sin tiro).
+Pendiente: falta en ataque y carrera defensiva a cerrar tras el tiro.
+
+**Cobertura `auto` (ME-07A §4, superado en parte por ME-07B v2).** Antes de despachar el árbol, si
 `coverage: "auto"`, compara de forma pura (sin RNG) qué concede `drop`
 (el short roll de O5 queda libre si la pantalla retiene a D1 lo
 suficiente) frente a si `trampa` es siquiera elegible (D5 debe poder
@@ -188,6 +395,27 @@ elige la mano a mano cuando de verdad es mejor
 directo (kick-out) sigue siendo exclusivamente del bloqueo directo: no
 se reevalúa la familia en esa continuación.
 
+**ME-07B v2 §2.2 — comparador en la misma frontera.** `auto` ya no usa
+dos estimadores ad hoc (`estimateBloqueoDirectoOpportunity` suponía una
+recepción limpia futura de O5; la mano a mano estimaba otra cadena). Cada
+familia se **proyecta en seco con su propia ejecución** (`runDropPhase`,
+`runHandoffPhase` sobre una copia del contexto, sin azar, hechos ni
+auditoría) hasta su primera lectura real: mismas posiciones, reloj,
+preparación, ayudas y concesiones que luego se ejecutan. El valor de la
+familia es la mejor vía viable × la probabilidad de que sus pases no se
+desvíen (`deflectionProbability`, LAB-0.1; en la mano a mano incluye el
+pase de entrada). El bloqueo directo se proyecta contra `drop` (la trampa
+no tiene aún una lectura por valor proyectable; pendiente con §2.3).
+**Resultado medido:** el monopolio **no desaparece** (seed: PnR 1.197/1.235
+Sierra, 1.216/1.217 Puerto) y ahora tiene explicación física
+reproducible: en 2.397 de 2.413 primeras lecturas del bloqueo, la ayuda de
+D3 llega después de que O5 esté listo en el short roll, así que el drop
+concede un tiro cercano libre (≈1,17 puntos) frente a la mejor salida
+proyectada de la mano a mano (triple libre o contestado, ≈0,8–0,94 tras
+riesgo de entrada). Brecha mediana PnR−DHO +0,336 (p10 +0,244, p90
++0,369; 39/2.452 negativas). Es la defensa (§2.3) la que concede esa
+ventana, no un sesgo del comparador.
+
 No autoriza mover D5, adelantar la ayuda de D3 del bloqueo directo, ni
 resolver la decisión pendiente de faltas sin tiro/segunda entrada
 (sigue abierta). Sin fórmulas LAB-0.1 nuevas: dos puntos de cancha
@@ -220,6 +448,14 @@ de la ventana de vuelo, o los más próximos si nadie llega dentro de ella:
 un balón que sigue en la cancha nunca se declara "fuera" solo porque nadie
 llegó a tiempo); el palmeo se decide por T20 únicamente entre esos
 candidatos reales, no entre los diez jugadores sin filtrar (HF-002 §1.4).
+**ME-07B v2 §2.1:** la llegada que decide ventana, primer optante e
+instante de control es la **efectiva**: un rival cerrado de forma legal y
+próxima llega más tarde (ver `CAPABILITIES.md`), y el tirador sale hacia
+el rebote al caer de su salto (LAB-0.4), sin cerrar a nadie durante su
+gesto. Los defensores todavía **no** reaccionan al tiro desplazándose a
+cerrar a los cargadores: una primera versión se probó y se retiró porque
+eliminaba la única fuente natural de faltas del fixture (faltas de tiro en la
+segunda oportunidad); queda pendiente junto a las faltas (§2.5).
 
 ## Falta ordinaria de tiro y libres
 

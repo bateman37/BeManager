@@ -103,21 +103,44 @@ describe("ME-07A §3.2: el poseedor real puede conservar la iniciativa (partido 
 });
 
 describe("ME-07A §4: cobertura y orden sin balón en auto, con denominadores reales", () => {
-  it("con la disposición inicial estándar del fixture, auto reconoce que la trampa no es elegible (D5 no llega a tiempo desde drop) y conserva drop como plan base", () => {
-    // Hallazgo de calibración (a documentar en la PR, ME-07B): con las
-    // posiciones iniciales fijas de los tres escenarios de laboratorio,
-    // D5 arranca en la protección del aro, lejos del punto de pantalla;
-    // ninguna combinación de atributos alcanzables (F04/M01/M05/T22 en su
-    // máximo) lo hace llegar a tiempo para comprometer antes de que O1 use
-    // la pantalla. La política sigue siendo real y auditable (nunca un
-    // bono oculto): declara `coverage_trap_not_eligible` en vez de fingir
-    // una comparación imposible.
-    const gameInput = input(1);
+  it("si ningún D5 puede cerrar la trampa antes del pase, auto declara la trampa no elegible y conserva drop", () => {
+    // ME-07B v2 §2.3 sustituye el hallazgo de ME-07A («la trampa nunca es
+    // elegible con la disposición estándar»): D5 decide ya al empezar a
+    // prepararse la pantalla y, con los perfiles del fixture, la trampa sí
+    // puede cerrar a tiempo (ver `me07b-v2-coverage.test.ts`). La regla de
+    // elegibilidad sigue viva: con todos los jugadores lentos en reconocer
+    // y desplazarse (F04/M01/M05/T22 = 1), la trampa llegaría tarde y `auto`
+    // declara `coverage_trap_not_eligible` en vez de fingir una comparación.
+    const slow = (players: typeof SIERRA_CLARA.players) =>
+      players.map((p) => ({ ...p, attributes: { ...p.attributes, F04: 1, M01: 1, M05: 1, T22: 1 } }));
+    const gameInput = buildGameInput({
+      seed: 1,
+      auditEnabled: true,
+      // Sin la variante Spain (LAB-0.9): la prueba es de la regla de elegibilidad de la trampa y
+      // conserva la misma secuencia natural en la que se comprobó (con Spain en `auto` cambia la secuencia).
+      // Sesión v2-6: también con la pantalla central (la regla es la de la trampa sobre esa geometría; en
+      // `auto` la colocación se elige por valor y una pantalla lateral sí puede atraparse con margen).
+      home: { id: SC, name: SIERRA_CLARA.name, players: slow(SIERRA_CLARA.players), priority: "proteger_balance", coverage: "auto", offBallDefensiveCall: "auto", chainedVariant: "ninguna", screenPlacement: "central" },
+      away: { id: PA, name: PUERTO_AMBAR.name, players: slow(PUERTO_AMBAR.players), priority: "proteger_balance", coverage: "auto", offBallDefensiveCall: "auto", chainedVariant: "ninguna", screenPlacement: "central" },
+    });
     const result = playFullGame(gameInput);
     const decisions = result.audit!.decisions.filter((d) => d.point === "seleccion_cobertura");
     expect(decisions.length).toBeGreaterThan(0);
-    expect(decisions.every((d) => d.chosenOptionId === "drop")).toBe(true);
-    expect(decisions.every((d) => d.options.find((o) => o.id === "drop")!.status === "elegida")).toBe(true);
+    // ME-07B v2 §5: con cambio/show/por debajo en competencia, lo que se exige
+    // es que una trampa no elegible nunca se elija.
+    for (const d of decisions) {
+      if (d.options.find((o) => o.id === "trampa")!.reasonCode === "coverage_trap_not_eligible") expect(d.chosenOptionId).not.toBe("trampa");
+    }
+    // ME-07B v2 §2.4: con creador/bloqueador asignados por proyección, el
+    // defensor del bloqueador puede ser otro jugador lento con otra posición
+    // de partida; la trampa sigue siendo inelegible en la gran mayoría y,
+    // cuando llega, lo hace en el límite (D5 casi a la vez que el pase).
+    const trapOptions = decisions.map((d) => d.options.find((o) => o.id === "trampa")!);
+    const notEligible = trapOptions.filter((o) => o.reasonCode === "coverage_trap_not_eligible");
+    expect(notEligible.length / trapOptions.length).toBeGreaterThan(0.9);
+    for (const o of trapOptions.filter((t) => t.reasonCode !== "coverage_trap_not_eligible")) {
+      expect((o.values!.tPassArrivalToO5Seconds as number) - (o.values!.tD5TrapArrivalSeconds as number)).toBeLessThan(0.05);
+    }
   });
 
   it("la orden sin balón en auto compara negar_primera_salida frente a guardar_espacio con la geometría real de cada mano a mano y declara un motivo estable", () => {
@@ -139,7 +162,8 @@ describe("ME-07A §4: cobertura y orden sin balón en auto, con denominadores re
 });
 
 describe("ME-07A §6: partido e integridad con dos equipos completamente en auto", () => {
-  it("dos equipos en auto (plan, cobertura, orden sin balón, prioridad de creación) completan un partido reproducible y conciliado", () => {
+  // Dos partidos completos con auditoría (≈2,3 s cada uno desde LAB-0.9): más margen que el límite por defecto.
+  it("dos equipos en auto (plan, cobertura, orden sin balón, prioridad de creación) completan un partido reproducible y conciliado", { timeout: 60_000 }, () => {
     const gameInput = buildGameInput({
       seed: 82,
       auditEnabled: true,

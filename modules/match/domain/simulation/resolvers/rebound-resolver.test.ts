@@ -4,8 +4,9 @@ import { createSeededRandom } from "../../random/seeded-random";
 
 function candidate(overrides: Partial<ReboundCandidate> & { playerId: string }): ReboundCandidate {
   return {
+    teamId: overrides.playerId.startsWith("O") ? "ataque" : "defensa",
+    position: { x: 20, y: 7.5 },
     arrivalTimeSeconds: 5,
-    closedOut: false,
     t19: 8,
     f05: 8,
     t20: 8,

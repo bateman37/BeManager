@@ -38,7 +38,27 @@ export type AuditDecisionPoint =
   | "seleccion_cobertura"
   | "seleccion_orden_sin_balon"
   // ME-07A §3.2: transición con tiro de tres del propio portador.
-  | "lectura_transicion";
+  | "lectura_transicion"
+  // ME-07B v2 §2.1: disputa del rebote con cierres legales y próximos.
+  | "disputa_rebote"
+  // ME-07B v2 §5: lecturas del manejador ante cambio (switch) y show.
+  | "lectura_cambio"
+  | "lectura_show"
+  // ME-07B v2 §4–§5 (LAB-0.7): colocación del bloqueo, ICE y «a la altura».
+  | "colocacion_bloqueo"
+  | "lectura_ice"
+  | "lectura_a_la_altura"
+  // ME-07B v2 §4 (LAB-0.9): variante encadenada Horns→Spain.
+  | "seleccion_variante"
+  | "lectura_spain_bloqueador"
+  | "respuesta_bloqueo_ciego"
+  | "lectura_spain"
+  // ME-07B v2 §4 (LAB-0.10): Delay→DHO con entrada a poste y salidas.
+  | "entrega_delay"
+  | "lectura_delay"
+  | "lectura_delay_pivote"
+  | "respuesta_poste"
+  | "lectura_poste";
 
 /**
  * Motivo estructurado y estable de cada opción. Uno por causa real del
@@ -82,6 +102,48 @@ export type AuditReasonCode =
   // devolver siempre el balón al rol fijo O1.
   | "creator_kept_by_real_holder"
   | "creator_pass_back_faster"
+  // ME-07B v2 §2.4: asignación de creador/bloqueador por proyección.
+  | "creator_projected_value_higher"
+  | "creator_ready_later_in_band"
+  // ME-07B v2 §2.4: tiro parado de dos (tiro medio T03 / floater T02).
+  | "pull_up_spot_available"
+  | "pull_up_no_spot"
+  // ME-07B v2 §2.4: lectura del receptor del continuador.
+  | "receiver_value_higher"
+  | "receiver_value_lower"
+  | "receiver_option_not_viable"
+  // ME-07B v2 §2.5: contacto defensivo real sancionado (LAB-0.6).
+  | "contact_foul_drawn"
+  | "contact_foul_not_drawn"
+  // ME-07B v2 §5: lectura genérica por valor (cambio, show).
+  | "read_value_higher"
+  | "read_value_lower"
+  | "read_option_not_viable"
+  | "coverage_ice_central_not_eligible"
+  | "coverage_ice_late"
+  | "placement_projected_value_higher"
+  | "placement_projected_value_lower"
+  // ME-07B v2 §2.2 (sesión v2-6): a igual valor exacto, pierde la ficha cuya primera lectura real llega después.
+  | "placement_tied_first_read_later"
+  | "placement_forced_by_plan"
+  | "family_not_in_lateral_placement"
+  // ME-07B v2 §4 (LAB-0.8): la colocación de la ficha (Horns) solo admite el bloqueo directo.
+  | "family_not_in_card_placement"
+  // ME-07B v2 §4 (LAB-0.9): variante encadenada (Spain) y respuesta al bloqueo ciego.
+  | "variant_projected_value_higher"
+  | "variant_projected_value_lower"
+  | "variant_forced_by_plan"
+  | "back_screen_target_present"
+  | "back_screen_target_absent"
+  | "back_screen_shot_clock_insufficient"
+  | "back_screen_lower_concession"
+  | "back_screen_higher_concession"
+  | "back_screen_forced_by_call"
+  | "back_screen_switch_recognized_late"
+  // ME-07B v2 §4 (LAB-0.10): ayuda al poste («dig») y coberturas que no aplican a la entrega.
+  | "help_lower_concession"
+  | "help_higher_concession"
+  | "coverage_not_in_card"
   | "not_evaluated_short_circuit"
   | "situational_value_lower"
   | "tie_band_resolved_by_tendency"
@@ -117,7 +179,16 @@ export type AuditReasonCode =
   // ME-07A §3.2: triple del portador en transición.
   | "transition_three_point_window_open"
   | "transition_three_point_window_closed"
-  | "transition_three_point_ineligible_skill";
+  | "transition_three_point_ineligible_skill"
+  // ME-07B v2 §2.1: disputa del rebote (llegada efectiva tras cierre).
+  | "rebound_boxed_out_by_rival"
+  | "rebound_arrival_in_window"
+  | "rebound_arrival_outside_window"
+  // ME-04-ROT-3 (ME-07B v2): relevo de emergencia tras una exclusión.
+  | "emergency_fill_chosen"
+  | "emergency_fill_fewer_declared_roles"
+  | "emergency_fill_lower_role_fit"
+  | "emergency_fill_lost_tie_break";
 
 export interface AuditOptionRecord {
   /** Identificador estable de la opción dentro de este punto (p. ej. "pase_o5", "finalizar"). */

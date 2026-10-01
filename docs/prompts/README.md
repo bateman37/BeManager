@@ -5,7 +5,7 @@
 **Debe leerse cuando:** vayas a guardar un nuevo prompt de implementación o hotfix.
 **No cubre:** el contenido de cada prompt (son registros inmutables, no se resumen aquí).
 **Documentos relacionados:** `docs/prompts/hotfix/README.md`, `docs/process/DOCUMENTATION_STANDARD.md`.
-**Última actualización:** 2026-09-30 (ME-07B).
+**Última actualización:** 2026-09-30 (ME-07B v2).
 
 ## Convención
 
@@ -58,7 +58,18 @@
   asentada/presión/cobertura de bloqueo) y los 45 atributos con tarea
   alcanzable, en la **misma rama y PR ya abiertas** (`claude/new-session-p9xna7`,
   PR #10, Draft). Dennis decide su fusión desde `main`; esta entrega no
-  la fusiona ni abre rama o PR alternativa.
+  la fusiona ni abre rama o PR alternativa. **Histórico:** la PR #10 se
+  fusionó en `main` (`7b7eedd`) con el comienzo parcial de ME-07B; su rama
+  y su PR no se continúan.
+- `implementation/ME-07B-v2-capitulo-tactico-y-20-auditorias.md` — encargo
+  vigente de ME-07B (30-09-2026): amplía el alcance a **todo** el capítulo
+  táctico, exige reparar primero el flujo causal (rebote, selección de
+  familia, defensa auto, lecturas, transición, atribución) a partir del
+  diagnóstico de 20 auditorías
+  (`docs/match/analysis/ME-07A-diagnostico-20-auditorias.md`) y prevalece
+  sobre los recortes del prompt anterior. Rama nueva
+  `claude/me-07b-v2-capitulo-tactico` desde `main` en `7b7eedd`, una sola
+  PR Draft. Progreso por sesión en `implementation/ME-07B-PROGRESS.md`.
 
 ## Hotfixes existentes
 

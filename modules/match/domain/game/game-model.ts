@@ -13,6 +13,8 @@ import type {
   OffensivePlanChoice,
   OffBallDefensiveCallChoice,
   OffensiveCreationPriority,
+  ChainedVariantChoice,
+  BackScreenCallChoice,
 } from "../lab/match-input";
 import { LAB_0_3_PARAMETERS_VERSION } from "../lab/lab-0-3-parameters";
 import type { ReboundPriority } from "../simulation/possession-core";
@@ -20,9 +22,10 @@ import { LAB_STARTER_IDS } from "../players/lab-roster-fixture";
 import { LAB_DECLARED_ROLES, type FunctionalRole } from "../players/functional-roles";
 import type { PhaseEntry, PossessionRecord, ResponsibilityChange, TramoEvent } from "../sequence/tramo-model";
 import { JUMP_BALL_APPROXIMATION_VERSION, type DeadBallCause, type FoulSanction, type DefensiveFoulType } from "./fiba-2026-rules";
-import { SUBSTITUTION_POLICY_VERSION, type SubstitutionReason } from "./substitution-policy";
+import { SUBSTITUTION_POLICY_VERSION, type EmergencyFill, type SubstitutionReason } from "./substitution-policy";
 import type { BoxScore } from "./box-score";
 import type { RawAuditLog } from "../audit/audit-types";
+import type { ScreenPlacementChoice } from "../lab/lab-0-7-parameters";
 
 export const GAME_VERSION = "ME-06-GAME-1";
 export const MAX_ROSTER_SIZE = 12;
@@ -45,6 +48,12 @@ export interface GameTeamInput {
   readonly offBallDefensiveCall: OffBallDefensiveCallChoice;
   /** Prioridad de creación de este equipo para todo el partido (ME-07A §3.1). */
   readonly creationPriority: OffensiveCreationPriority;
+  /** Colocación del bloqueo directo de este equipo (ME-07B v2 §4, LAB-0.7): `auto`, central o lateral. */
+  readonly screenPlacement: ScreenPlacementChoice;
+  /** Variante encadenada que este equipo puede llamar al atacar (ME-07B v2 §4, LAB-0.9): `auto`, `ninguna` o `spain`. */
+  readonly chainedVariant: ChainedVariantChoice;
+  /** Respuesta de este equipo al bloqueo ciego de Spain cuando defiende (LAB-0.9): `auto`, `seguir` o `cambiar`. */
+  readonly backScreenCall: BackScreenCallChoice;
 }
 
 export interface GameInput {
@@ -79,6 +88,12 @@ export interface BuildGameTeamArgs {
   readonly offBallDefensiveCall?: OffBallDefensiveCallChoice;
   /** ME-07A §3.1: por defecto `"equilibrado"`. */
   readonly creationPriority?: OffensiveCreationPriority;
+  /** ME-07B v2 §4: por defecto `"auto"`. */
+  readonly screenPlacement?: ScreenPlacementChoice;
+  /** ME-07B v2 §4 (LAB-0.9): por defecto `"auto"`. */
+  readonly chainedVariant?: ChainedVariantChoice;
+  /** ME-07B v2 §4 (LAB-0.9): por defecto `"auto"`. */
+  readonly backScreenCall?: BackScreenCallChoice;
 }
 
 function buildTeam(args: BuildGameTeamArgs): GameTeamInput {
@@ -109,6 +124,9 @@ function buildTeam(args: BuildGameTeamArgs): GameTeamInput {
     offensivePlan: args.offensivePlan ?? "auto",
     offBallDefensiveCall: args.offBallDefensiveCall ?? "guardar_espacio",
     creationPriority: args.creationPriority ?? "equilibrado",
+    screenPlacement: args.screenPlacement ?? "auto",
+    chainedVariant: args.chainedVariant ?? "auto",
+    backScreenCall: args.backScreenCall ?? "auto",
   };
 }
 
@@ -157,6 +175,8 @@ export interface SubstitutionRecord {
   readonly reason: SubstitutionReason;
   readonly window: DeadBallCause;
   readonly outContinuousMs: Milliseconds;
+  /** Relevo de emergencia ME-04-ROT-3: quién asume un rol no declarado y por qué. */
+  readonly emergency?: EmergencyFill;
 }
 
 export interface FoulRecord {
