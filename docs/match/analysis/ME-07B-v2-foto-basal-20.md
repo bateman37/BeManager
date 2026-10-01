@@ -255,3 +255,41 @@ mano a mano); su efecto principal está en creador, bloqueador y colocación
 seco cada cobertura vista y una colocación más. (4) Los puntos vuelven a
 subir (1.201–1.210 → 1.335–1.388); no se calibra nada con ello (ver
 `ME-07B-v2-descomposicion-puntos-v2-3.md` sobre el sorteo en 11 partidos).
+
+## Tras Horns→Spain y Delay (sesión v2-5, LAB-0.9 y LAB-0.10)
+
+Mismas 20 semillas y fotos sobre `a7e341c` (idénticas a `e48e5db`: Delay
+solo se juega por orden y no cambia la foto natural; Spain sí, porque en
+`auto` compite con Horns→bloqueo). Las 20 terminan `final` con actas
+conciliadas; barrido 1–60 × 3 fotos: 180/180 `final`, 0 actas sin
+conciliar, 5 relevos de emergencia (seed 14, 29, 47, 58; +5 semilla 3),
+ningún `menos_de_cinco`. Entre paréntesis, `dc71e16` (v2-4) recalculado en
+esta sesión con el mismo script.
+
+| Métrica | seed Sierra | seed Puerto | +3 Sierra | +3 Puerto | +5 Sierra | +5 Puerto |
+|---|---:|---:|---:|---:|---:|---:|
+| Puntos · posesiones | 1.338 (1.335) · 1.179 | 1.366 (1.388) · 1.179 | 901 (890) · 644 | 684 (649) · 639 | 419 (445) · 319 | 291 (311) · 319 |
+| 2FGM/2FGA · 3FGM/3FGA | 347/712 · 176/510 | 406/802 · 144/456 | 325/562 · 51/158 | 207/464 · 72/216 | 98/160 · 56/230 | 62/162 · 49/150 |
+| FTM/FTA · PF | 116/157 · 114 | 122/155 · 132 | 98/118 · 55 | 54/69 · 81 | 55/61 · 20 | 20/27 · 39 |
+| OREB tras fallo de campo vivo | 218/532 | 193/595 | 130/248 | 94/301 | 110/174 | 49/150 |
+| Familias PnR / DHO | 1.196 / 49 | 1.164 / 108 | 568 / 137 | 701 / 11 | 57 / 264 | 306 / 52 |
+| Colocación central / lateral / Horns | 1.182 / 59 / 10 (1.218/45/7) | 1.178 / 65 / 35 (1.116/64/86) | 649 / 40 / 23 | 688 / 21 / 7 | 297 / 26 / 0 | 339 / 18 / 2 |
+| Cobertura como defensa: drop / trampa / under / cambio / show / a la altura / ICE | 647/156/160/47/98/130/34 | 696/279/92/42/77/32/27 | 229/123/123/64/158/4/11 | 292/24/20/102/210/33/24 | 186/76/30/3/9/53/1 | 192/83/5/23/0/4/14 |
+
+**Lectura.** (1) En la foto seed (ambos equipos), Horns se elige 44 veces y,
+de ellas, la variante Spain 37 (ficha base 7): Spain vale más que la base
+frente a una defensa que hace drop. El bloqueador ciego encuentra a quién
+bloquear 17 veces y se queda en el codo 20 (cobertura con D5 arriba); la
+respuesta al bloqueo ciego es `ayudar` 16 y `cambiar` 1. (2) Con Spain en
+`auto` la secuencia natural cambia y con ella el resto de cifras (la
+colocación Horns de Puerto baja de 86 a 35 y la trampa de Sierra de 296 a
+156: no es efecto directo de Spain sino de otra secuencia); no se calibra
+nada con ello. (3) Coste: 11 partidos seed con auditoría 20,3 s → 24,8 s
+(≈2,3 s por partido; cada organización con Horns proyecta además Spain
+frente a cada cobertura vista). (4) Delay no aparece en ninguna foto: solo se
+juega por orden («Colocación: Delay»). Con Delay en la colocación `auto`
+(probado y retirado, ver progreso v2-5) la foto natural pasaba a tener Delay
+en el 6–40 % de las organizaciones y el coste por partido subía ≈50 %, sin
+contrastar todavía sus concesiones (poste, corte) con las del bloqueo.
+Las huellas de equipo cambian (seed `ca9919b7` → `dceae4f9`) porque la
+configuración exportada añade `chainedVariant` y `backScreenCall`.

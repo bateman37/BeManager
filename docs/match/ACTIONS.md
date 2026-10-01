@@ -5,7 +5,7 @@
 **Debe leerse cuando:** vayas a modificar `possession-core.ts` o a añadir una tercera acción táctica, otra cobertura u otra orden defensiva.
 **No cubre:** ninguna otra familia táctica (poste, zonas, todas las variantes de mano a mano) ni otras coberturas de bloqueo (switch, ICE/veer...): llegan en entregas posteriores (ver `docs/match/roadmap.md`). La transición de ME-03 no es una táctica nueva: solo decide si existe ventana y reutiliza las ejecuciones ya existentes (sección final).
 **Documentos relacionados:** `docs/match/reference/BeManager-capitulo-tacticas-integradas-al-motor-v1.md`, `CAPABILITIES.md`, `RULES.md`.
-**Última actualización:** 2026-10-01 (ME-07B v2, sesión v2-4: ficha Horns→bloqueo, LAB-0.8; proyección del ataque frente a la defensa observada).
+**Última actualización:** 2026-10-01 (ME-07B v2, sesión v2-5: fichas Horns→Spain, LAB-0.9, y Delay→DHO con poste, LAB-0.10).
 
 ## Disposición y roles fijos
 
@@ -220,6 +220,64 @@ de llegada) y el solape corporal de la contención es estrictamente menor que
 la suma de radios; sin esto, el defensor del codo (a 2 m) chocaba de frente
 en carrera y cada ayuda era falta. Pruebas: `me07b-v2-horns.test.ts`,
 `lab-0-8-parameters.test.ts`, `playbook-card.test.ts`.
+
+**ME-07B v2 §4 (sesión v2-5, LAB-0.9) — ficha `horns_spain`
+(«Organizado: Horns→Spain»).** *Colocación*: la de Horns. *Entrada*: orden
+(`chainedVariant=spain`, «Variante encadenada» en `/lab`) o, en `auto`,
+`seleccion_variante` compara la ficha base y Spain con la misma proyección en
+seco frente a cada cobertura vista (ante drop y por debajo, la ejecución de
+Spain suponiendo la mejor respuesta del rival; ante el resto, el valor de la
+base: no hay a quién bloquear). *Lectura del bloqueador ciego*
+(`lectura_spain_bloqueador`): hay objetivo si la defensa juega drop o por
+debajo (ICE ante pantalla no lateral es drop), D5 está a más de 2,7 m del aro
+y hay reloj para sincronizar; si no, se queda en el codo y se juega el árbol
+de Horns con la misma ficha. *Acción*: el segundo cuerno (O3) rodea a su
+defensor y llega a contacto de D5 en su línea de retroceso
+(`spainBackScreenPoint`), se coloca (0,3 s) y el manejador espera en el punto
+de uso hasta que el roll pueda arrancar con el bloqueo ciego puesto (cuesta
+reloj). D5 queda retenido `screenInterceptDelaySeconds(T13, F05 de O3; T16 de
+D5)` + peso desde que el roll arranca y luego rodea al bloqueador; O5 rueda
+profundo al poste bajo débil (`SPAIN_ROLL_SPOT`) por fuera del bloqueo y O3 se
+abre al pop (`SPAIN_POP_SPOT`) al soltar a D5. *Respuesta*
+(`respuesta_bloqueo_ciego`, orden `backScreenCall`): `seguir` (D3 va con O3 al
+pop; el roll solo lo protege D5 retenido), `ayudar` (D3 rodea al bloqueador y
+contiene el roll desde la pintura; deja el pop y lo cierra al recuperar) o
+`cambiar` (D3 al roll, D5 al pop; solo si D3 reconoce el corte y lo canta, M09,
+antes de que el roll arranque; el cambio persiste); en `auto` la de menor
+concesión proyectada; con `seguir`, D3 lee entre seguir y ayudar. *Lectura de
+O1* (`lectura_spain`): aro, pase al roll (el receptor lee aro, floater o pase
+al pop, que puede no haber llegado aún), pase al pop, triple tras la pantalla
+o salida segura. Pruebas: `me07b-v2-spain.test.ts`, `lab-0-9-parameters.test.ts`.
+
+**ME-07B v2 §4 (sesión v2-5, LAB-0.10) — ficha `delay_mano_a_mano`
+(«Organizado: Delay→DHO/corte y entrada a poste con salidas»).**
+*Colocación* (`DELAY_TARGETS`): un interior arriba por encima del arco (O5),
+el otro en el poste bajo del lado del balón (O4), el manejador en el ala
+derecha, la esquina fuerte (O2) y el ala débil (O3) ocupadas; los dos
+interiores por el orden de roles del quinteto. *Entrada*: solo por orden
+(`screenPlacement=delay`); en la colocación `auto` no compite todavía
+(`offeredInAuto=false`). Familia: la de la entrega en mano. *Acción*: pase de
+entrada arriba (desvío por D5); el manejador sigue su pase y recibe la
+entrega en mano a contacto del pívot: el cuerpo de O5 retrasa a D1 como una
+pantalla (T13/F05 de O5, T16 de D1, peso), ajustado por la orden sin balón de
+D1 (±0,15 s, la misma del mano a mano; en `auto`, la de menor concesión).
+*Respuesta de D5* (por su cobertura; en `auto`, la menor concesión de tres;
+el resto de coberturas no aplican: `coverage_not_in_card`): `hundirse`
+(drop y demás), `cambiar_entrega` (cambio: D5 a O1 y D1 a O5, persiste) o
+`saltar_entrega` (show/trampa): si D5 está colocado en el punto de la entrega
+antes que O1, la niega. *Lecturas*: entrega hecha → `lectura_delay` (aro,
+triple, tiro parado, entrada al poste, salida al pívot); negada →
+`lectura_delay_pivote` (el pívot ataca el aro rodeando a D5, puerta de atrás de
+O1 rodeando a D5 con D1 persiguiendo, alto-bajo al poste o inversión al ala
+débil). *Poste* (`respuesta_poste`, `lectura_poste`): el defensor de la
+esquina lee el pase al poste en el aire y ayuda a contacto («dig») si concede
+menos; el poste reconoce (M01/M05) y gira (0,4 s) antes de moverse; si la
+ayuda llega antes del giro son dos sobre el balón y cada movimiento puede ser
+robo (T07 del poste frente al peor T15, como en la trampa). Salidas: aro
+rodeando a D4, gancho desde el poste (T02, D4 a contacto), salida a la
+esquina (solo si ayudó), corte del ala débil (rodea a su defensor; le cierran
+él, D5 y D4 girándose desde el poste) y repostear (devolver arriba y
+reorganizar). Pruebas: `me07b-v2-delay.test.ts`, `lab-0-10-parameters.test.ts`.
 
 **ME-07B v2 §2.2/§5 (sesión v2-4) — el ataque proyecta contra la defensa
 observada.** Antes el selector de familia y `assignOrganizedRoles`

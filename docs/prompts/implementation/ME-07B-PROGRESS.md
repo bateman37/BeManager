@@ -662,3 +662,145 @@ npx tsx scripts/me07b-v2-baseline-20.ts
 ```
 Siguiente paso: segunda ficha (Delay→DHO/corte o Horns→Spain con tercer
 bloqueador) sobre la misma gramática; abaratar la proyección por coberturas.
+
+### Sesión v2-5 — 2026-10-01
+
+**Base:** `dc71e16`; rama `claude/me-07b-v2-capitulo-tactico`, **PR #11 Draft**
+(no se fusiona ni se marca Ready).
+
+#### Hecho y verificado (con commits)
+1. `e48e5db` — **ficha `horns_spain` (LAB-0.9)**. Desde Horns, el segundo
+   cuerno rodea a su defensor y pone un bloqueo ciego a D5 a contacto, en su
+   línea de retroceso al aro; el manejador espera en el punto de uso a que esté
+   puesto (reloj real); D5 queda retenido `screenInterceptDelaySeconds` (T13/F05
+   del bloqueador, T16 de D5) + peso y rodea al bloqueador; O5 rueda profundo al
+   poste bajo débil y el bloqueador ciego se abre al pop. Entrada:
+   `chainedVariant` (orden «Variante encadenada», o `auto`: `seleccion_variante`
+   con la misma proyección frente a la defensa observada). Lectura del
+   bloqueador (`lectura_spain_bloqueador`): sin objetivo (cambio, trampa, show,
+   a la altura) se queda en el codo y se juega Horns con la misma ficha.
+   Respuesta (`respuesta_bloqueo_ciego`, orden `backScreenCall`
+   auto/seguir/cambiar): seguir, ayudar desde la pintura (deja el pop) o cambiar
+   (D3 al roll, D5 al pop; persiste). Lectura de O1 `lectura_spain`. Técnico:
+   `RollReceiverEnv.invert.targetReadySeconds` (el pop aún se abre),
+   `CoreContext.set` mutable, `roll_continuation`/`back_screen_pop` fechados al
+   arrancar (un triple rápido no adelanta el relato). Default de la variante
+   en el partido: `auto`.
+2. `6157d03` — **ficha `delay_mano_a_mano` (LAB-0.10)**: interior arriba, el otro
+   en el poste bajo, esquina fuerte y ala débil; pase de entrada, entrega en mano
+   (cuerpo del pívot como pantalla; orden sin balón de D1 por concesión en
+   `auto`), respuesta de D5 hundirse/cambiar/saltar la entrega (`seleccion_cobertura`
+   propia: el resto `coverage_not_in_card`), `lectura_delay`,
+   `lectura_delay_pivote` (aro, puerta de atrás, alto-bajo, invertir),
+   `respuesta_poste` («dig» por concesión; si llega antes del giro, dos sobre el
+   balón con robo T07/T15) y `lectura_poste` (aro rodeando a D4, gancho T02,
+   salida a la esquina, corte del ala débil, repostear). `decideHandlerRead`
+   admite quién lee. **Solo por orden** (`offeredInAuto=false`).
+3. `a7e341c` — **arreglo encontrado en el recorrido de `/lab`**: ante saltar la
+   entrega o el cambio, 15–22 de cada 19–36 cortes eran falta tardía (Puerto
+   23–33 PF, 3–5 excluidos por partido). Causa geométrica: el corte atravesaba
+   a D3 (a 0,01 m de su línea) y solo D3/D5 cerraban; la llegada repetida de D3
+   caía siempre en la ventana de frenada. Ahora el corte rodea a D3, el pívot y
+   la puerta de atrás rodean a D5 en el punto de la entrega y D4 se gira al
+   cortador desde el poste. Semillas 91–94: faltas tardías en el corte 0 de
+   16–28, PF de Puerto 10–21. Prueba de regresión.
+4. Documentación (este commit): matriz (Spain, Delay, poste con salidas y su
+   colocación jugables; roll profundo, pop, keeper, backdoor, corte, poste y
+   dig parciales; nota de saques), `ACTIONS`, `AUDIT`, `CAPABILITIES`,
+   `CHANGELOG`, foto de las 20 (sección v2-5).
+
+#### Pruebas realmente pasadas
+`npm run check` completo (lint + typecheck + test + docs:check + build) en
+`e48e5db` (333 tests), `6157d03` (344) y `a7e341c` (345). Nuevas:
+`me07b-v2-spain.test.ts` (10), `lab-0-9-parameters.test.ts` (3),
+`me07b-v2-delay.test.ts` (9), `lab-0-10-parameters.test.ts` (3); ampliada
+`playbook-card.test.ts`. Recalculadas con causa (Spain en `auto` cambia la
+secuencia natural): dos prórrogas/guardián 984 → **1718** (ninguna en 1–1717);
+la prueba de faltas de tiro fuera de segundas oportunidades pasa de 2 a 8
+partidos (92+93 daban 13/29 con Spain y 25/42 sin él; las ocho, 79/125 y
+84/135); la de trampa no elegible y las de Horns→bloqueo fijan
+`chainedVariant: "ninguna"` (son de esa regla y de esa ficha); el partido
+reproducible de ME-07A tiene 60 s de límite.
+
+#### Evidencia de «jugable»
+- **Horns→Spain** (semilla 92, Sierra Horns+Spain): ante drop 108/108
+  bloqueos ciegos físicos (bloqueador a 0,7 m de D5, espera del manejador ≥ 0,
+  retraso > 0), 96/96 tiros con `cardId=horns_spain` y lectura causante de su
+  ficha. **Discriminante, misma defensa (drop):** Horns→bloqueo `lectura_bloqueo_o1`
+  pase_o5 102 / finalizar 0, remata tras segunda entrada 67; Spain
+  `lectura_spain` finalizar 48 / pase_o5 45 / triple 13 / pop 2, segunda entrada
+  0; la ayuda deja libre «en el codo» (base) frente a «en el pop» (Spain).
+  **Contrafactual (misma ficha y semilla):** `seguir` → ayudar 91 / seguir 21,
+  O1 pasa al pop 49 (47 triples), finalizar 45; `cambiar` → 112 cambios
+  cantados, pop 8 (6 triples), finalizar 65 y 33 remates del roll. **Negación:** ante
+  cambio y trampa, 115/115 «quedarse en el codo» (`back_screen_target_absent`)
+  y se juega Horns. En la foto natural seed, Spain 37 de 44 Horns.
+- **Delay** (semilla 92, Sierra Delay): drop → 101 entregas hechas y
+  `lectura_delay` (aro 64, poste 35); show → 103-104 entregas negadas y
+  `lectura_delay_pivote` (aro del pívot 60-67, poste 25-31, puerta de atrás 6-17);
+  cambio → 102 cambios en la entrega, triple tras la entrega menos valioso.
+  Poste: con defensores rápidos (F04/M01/M05 = 15) la ayuda llega antes del
+  giro y el poste sale a la esquina; con un tirador de esquina malo la ayuda
+  no le deja esa salida.
+- **`/lab` real** (PostgreSQL 16 + Chromium de Playwright, `walk-spain-delay.cjs`
+  y `walk-delay2.cjs` en el scratchpad; árbol de `6157d03` y de `a7e341c` para
+  Delay): restaurar ambos equipos desde el seed; semilla 92 con Sierra
+  «Colocación: Horns» + «Variante encadenada: Spain» y Puerto drop → 102–122;
+  Puerto «Bloqueo ciego: Cambiar» → 89–101; Puerto «Cambio» → 103–126 (115
+  «quedarse en el codo»); Sierra «Colocación: Delay» y Puerto drop → 97–116,
+  show → 104–150, cambio → 93–104, auto → 86–122; auto/auto → 133–136 (igual que
+  v2-4). Las diez exportaciones `ME-07B-AUDIT-1` (~1 MB) abiertas: `stop=final`,
+  actas conciliadas, `chainedVariant`/`backScreenCall` en la configuración,
+  todos los tiros de la ficha enlazados (Spain 96/96, 101/101, 103/103; Delay
+  tras `a7e341c` 82/82, 82/82, 91/91, 91/91; auto/auto 107/107; las dos de Delay
+  sobre `6157d03`, antes del arreglo, 85/85 y 80/80). Repetidas con el dominio desde la configuración
+  exportada: mismo marcador y mismo número de hechos en las diez.
+
+#### Regresión
+Barrido `scripts/me07b-v2-stop-sweep.ts 1 60` en `e48e5db` y en `6157d03`
+(idénticos entre sí): **180/180 `final`**, 0 actas sin conciliar, 5 relevos de
+emergencia ROT-3, ningún `menos_de_cinco`. Foto de las 20: 20 `final` y
+conciliadas (sección v2-5 de `ME-07B-v2-foto-basal-20.md`, con `dc71e16`
+recalculado al lado); idéntica entre `e48e5db` y `a7e341c`. Coste: 11 partidos
+seed con auditoría 20,3 s → 24,8 s.
+
+#### Probado y retirado (no commiteado)
+- Spain sin sincronizar: el bloqueador ciego salía con el resto y buscaba el
+  primer punto del retroceso de D5 que podía cortar; llegaba con D5 ya a 2 m
+  del aro en casi todas las combinaciones de F01/F04 (el drop retrocede desde
+  que arranca el roll). Se sustituyó por la espera del manejador.
+- Delay en la colocación `auto`: elegido en el 6–40 % de las organizaciones
+  naturales, coste por partido ≈ +50 % y 15 pruebas de semilla natural rotas.
+  No se deja competir hasta contrastar sus concesiones (poste, corte) con las
+  del bloqueo; queda por orden.
+- Ayudas de Delay que paran a contacto del tirador (y solape estricto global):
+  quitaban casi todas las faltas de las finalizaciones de Delay (PF 1–5), al
+  revés que el resto del motor; se retiró por el arreglo geométrico de `a7e341c`.
+
+#### No verificado / pendiente
+- **Saques** (stack, Iverson, box, diamond, elevator): el contexto
+  reglamentario existe (5 s, reloj al toque, 24/14, alternancia), pero el
+  receptor es «el más cercano, recibe donde está» y **nadie defiende el
+  saque**; falta la primitiva de saque defendido (nota en la matriz). No se
+  inició para no dejar a medias algo que cambia todos los saques.
+- Delay no compite en `auto`; el poste no trabaja de espaldas; la ayuda de la
+  esquina llega tarde con el fixture; el «dump-off» al poste cuando D4 ayuda no
+  existe.
+- En Spain la puerta del cambio tardío nunca se cierra con el fixture (≤ 0,52 s
+  frente a ≥ 0,65 s del corte); flare y otras salidas de Spain pendientes.
+- La regla de falta tardía de cierre es determinista (`evaluateCloseoutLegality`):
+  con geometría repetida puede concentrar faltas; aquí se corrigió la geometría,
+  no la regla.
+- Resto de §4–§7 y `menos_de_cinco` como en v2-4.
+
+#### Reanudar
+```bash
+cd BeManager && git fetch origin && git checkout claude/me-07b-v2-capitulo-tactico && git pull
+npm ci && npm run check
+npx tsx scripts/me07b-v2-stop-sweep.ts 1 60
+npx tsx scripts/me07b-v2-baseline-20.ts
+```
+Siguiente paso: la primitiva de saque defendido (colocación por ficha, marca
+de cada receptor, pantallas sin balón, lectura del sacador con la cuenta de
+5 s, pase con desvío) y sobre ella una ficha de saque; contrastar Delay para
+dejarlo competir en `auto`.

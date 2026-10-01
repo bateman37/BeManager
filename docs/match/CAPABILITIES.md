@@ -264,6 +264,25 @@ incremento +1/+3/+5 también las alcanza.
   0,06; −0,008 por punto; [0,01; 0,35]). No cambia llegadas, alcance ni
   acierto. Prueba discriminante en `me07b-v2-fouls.test.ts`.
 
+## ME-07B v2 §4 (sesión v2-5): nuevas tareas de capacidades ya activas en Spain y Delay
+
+Ninguna capacidad nueva ni coeficiente nuevo de acierto; LAB-0.9 y LAB-0.10
+solo añaden puntos de la disposición. Tareas nuevas, localizadas:
+
+- **T13/F05 del bloqueador ciego (O3) frente a T16 de D5, y peso:** retraso del
+  bloqueo ciego de Spain (misma `screenInterceptDelaySeconds`); **F01 de O3** su
+  llegada y su pop; **M04 de O5** la sincronización (cuánto espera el manejador).
+- **M01/M05 y M09 de D3:** reconocer el corte del bloqueador ciego y cantar el
+  cambio a D5 (con el fixture siempre llega antes del roll: la puerta existe
+  pero no se cierra); **F04/T23 de D3** su llegada al roll profundo.
+- **T13/F05 del pívot de Delay frente a T16 de D1:** retraso de la entrega en
+  mano (el cuerpo del pívot como pantalla); **F04/M01/M05/T22 de D5** si salta
+  la entrega a tiempo.
+- **M01/M05 del poste:** cuándo lee y gira; **M01/M05/F04 del defensor de la
+  esquina:** si su ayuda llega antes del giro; **T07 del poste frente al peor
+  T15** de los dos que le doblan: robo (misma regla que la trampa); **T02** el
+  gancho desde el poste; **T21** la salida del corte del ala débil.
+
 ## Editor de equilibrio
 
 Los coeficientes son datos versionados por el desarrollo, no un panel de

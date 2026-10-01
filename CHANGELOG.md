@@ -95,6 +95,26 @@ decisiones duraderas viven en `docs/decisions/`, no aquí.
   persiste tras un pase desviado recuperado, el marco se reasigna aunque
   gane el primer candidato, los tiros tras lecturas de cambio/show/a la
   altura/ICE tienen acción causante y cada tiro lleva `cardId`.
+- **§4 Ficha Horns→Spain (LAB-0.9), jugable.** Desde Horns, el segundo cuerno
+  pone un bloqueo ciego real a D5 (a contacto, en su retroceso al aro) y el
+  manejador espera a que esté puesto; D5 queda retenido (T13/F05 frente a T16)
+  y rodea al bloqueador; roll profundo al poste bajo débil y pop del bloqueador
+  ciego. Entrada por orden («Variante encadenada: Spain» en `/lab`) o en `auto`
+  frente a Horns→bloqueo; sin objetivo (cambio, trampa, show, a la altura)
+  se juega el árbol de Horns. Respuesta defensiva nueva («Bloqueo ciego
+  (Spain)»: seguir, ayudar desde la pintura o cambiar), por concesión en
+  `auto`. Pruebas en `me07b-v2-spain.test.ts`; `/lab` recorrido. Semillas
+  naturales recalculadas (dos prórrogas 984 → 1718; faltas sobre 8 partidos).
+- **§4 Ficha Delay→DHO con puerta de atrás y entrada a poste con salidas
+  (LAB-0.10), jugable por orden.** Interior arriba, entrega en mano con el
+  cuerpo del pívot como pantalla, respuesta hundirse/cambiar/saltar la
+  entrega (la negada da la puerta de atrás y el alto-bajo), poste con ayuda
+  «dig» de la esquina, salida a la esquina, corte del ala débil y repostear.
+  Solo por orden («Colocación: Delay»): en `auto` no compite todavía. Corregido
+  en el recorrido de `/lab`: el corte atravesaba a su defensor y cada corte era
+  falta tardía (3–5 excluidos por partido). Pruebas en `me07b-v2-delay.test.ts`.
+- **Saques (stack, Iverson, box, diamond, elevator):** analizados, sin
+  mecanismo nuevo; falta la primitiva de saque defendido (nota en la matriz).
 - **§2.2/§5 El ataque proyecta contra la defensa observada.** Selector de
   familia y asignación de roles ponderan la concesión de cada cobertura que
   el rival ha mostrado por su frecuencia (`shownCoverageWeights`, LAB-0.4;

@@ -5,14 +5,15 @@
 **Debe leerse cuando:** vayas a implementar, probar o declarar jugable cualquier táctica de ME-07B.
 **No cubre:** el diseño de cada táctica (ver `reference/BeManager-capitulo-tacticas-integradas-al-motor-v1.md`) ni el detalle del árbol ya implementado (ver `ACTIONS.md`).
 **Documentos relacionados:** `ACTIONS.md`, `AUDIT.md`, `docs/prompts/implementation/ME-07B-v2-capitulo-tactico-y-20-auditorias.md`, `docs/prompts/implementation/ME-07B-PROGRESS.md`.
-**Última actualización:** 2026-10-01 (ME-07B v2, sesión v2-4: ficha Horns→bloqueo jugable, LAB-0.8; el ataque proyecta contra la defensa observada).
+**Última actualización:** 2026-10-01 (ME-07B v2, sesión v2-5: fichas Horns→Spain (LAB-0.9) y Delay→DHO con entrada a poste (LAB-0.10) jugables; saques analizados y pendientes).
 
 ## Reglas de estado
 
 - **jugable**: un partido completo puede ejecutarla, negarla y continuar con
   reloj, balón y participantes coherentes; tiene prueba de ejecución y de
-  negación/respuesta rival y se ha visto en `/lab`. Desde v2-4 solo la
-  ficha **Horns→bloqueo** (y su colocación) cumple las cuatro condiciones.
+  negación/respuesta rival y se ha visto en `/lab`. Cumplen las cuatro
+  condiciones las fichas **Horns→bloqueo** (v2-4), **Horns→Spain** y
+  **Delay→DHO con entrada a poste y salidas** (v2-5), con sus colocaciones.
 - **parcial**: existe mecanismo real en el motor pero falta configuración,
   negación, auditoría o recorrido de `/lab`; la columna «estado» dice qué.
 - **pendiente**: sin mecanismo. Ningún nombre pendiente se oculta ni se
@@ -46,7 +47,7 @@ auditoría** · **Prueba** · **Estado**. «—» = no existe todavía.
 | 3-out/2-in | Espaciado | — | — | — | — | — | — | pendiente |
 | Horns | Colocación | `screenPlacement=horns` («Colocación del bloqueo: Horns» en `/lab`) | Ataque organizado con bloqueo permitido | Disposición LAB-0.8: los dos interiores en los codos, esquinas llenas, ala débil vacía; ficha `horns_bloqueo` (ver «Libro por fase») | Central (la mano a mano no se juega desde Horns) | `colocacion_bloqueo` (`horns`), `organized_entry.detail.placement` | `lab-0-8-parameters.test.ts`, `me07b-v2-horns.test.ts` | jugable como colocación de la ficha Horns→bloqueo (ver «Libro por fase») |
 | 1-4 alto | Colocación | — | — | — | — | — | — | pendiente |
-| Delay | Colocación | — | — | — | — | — | — | pendiente |
+| Delay | Colocación | `screenPlacement=delay` («Colocación del bloqueo: Delay» en `/lab`) | Ataque organizado con plan `auto` o mano a mano (solo por orden: en la colocación `auto` no compite todavía) | Disposición LAB-0.10: interior arriba por encima del arco, el otro interior en el poste bajo del lado del balón, esquina fuerte y ala débil; ficha `delay_mano_a_mano` (ver «Libro por fase») | Con el bloqueo obligado, central | `colocacion_bloqueo` (`delay`), `organized_entry.detail.placement` | `lab-0-10-parameters.test.ts`, `me07b-v2-delay.test.ts` | jugable como colocación de la ficha Delay (por orden; ver nota v2-5) |
 | Empty side | Ocupación | — | — | — | — | — | — | pendiente |
 | Dunker spot | Ocupación | — | — | — | — | — | — | pendiente |
 | Sobrecarga | Ocupación | — | — | — | — | — | — | pendiente |
@@ -58,10 +59,10 @@ auditoría** · **Prueba** · **Estado**. «—» = no existe todavía.
 |---|---|---|---|---|---|---|---|---|
 | Bloqueo directo central | Familia | `offensivePlan`, `screenPlacement=central` | Ataque organizado | Pantalla del bloqueador asignado, lectura por valor frente al mejor cierre real (§2.4) | Salida segura | `seleccion_familia`, `colocacion_bloqueo`, `lectura_bloqueo_o1` | `me04b`, `me06`, `me07b-v2-reads.test.ts` | parcial: sin /lab v2-3; foto seed (v2-3) colocación central 1.175 / lateral 55 (Sierra) |
 | Bloqueo directo lateral | Familia / colocación | `screenPlacement` (`auto`/`central`/`lateral`, selector «Colocación del bloqueo» en `/lab`) | Ataque organizado con bloqueo directo permitido | Disposición LAB-0.7 (manejador en el ala, bloqueador fuera de la franja de la zona, short roll lateral); en `auto` el poseedor real elige colocación junto con creador y bloqueador por la misma proyección en seco | Central (la mano a mano solo se juega desde la central) | `colocacion_bloqueo`, `organized_entry.detail.placement`, `screen_set.detail.placement`, `seleccion_familia` (`family_not_in_lateral_placement`) | `lab-0-7-parameters.test.ts`, `me07b-v2-lateral-ice.test.ts` | parcial: ejecutable, negable (ICE) y elegido en `auto` (foto seed 55 Sierra / 32 Puerto); sin `/lab` recorrido; lado derecho y espaciado propio pendientes |
-| Mano a mano (DHO) | Familia | `offensivePlan` | Ataque organizado | Entrada a O5 en codo, entrega a O2 | O5 conserva | `entrada/transferencia_mano_a_mano` | `me06-mano-a-mano.test.ts` | parcial: casi nunca elegido en `auto` |
+| Mano a mano (DHO) | Familia | `offensivePlan` | Ataque organizado | Entrada a O5 en codo, entrega a O2 (central); desde v2-5 también la entrega de Delay: el manejador sigue su pase y el cuerpo del pívot es la pantalla (T13/F05/T16, peso) | O5 conserva | `entrada/transferencia_mano_a_mano`; `entrega_delay` | `me06-mano-a-mano.test.ts`, `me07b-v2-delay.test.ts` | parcial: la central casi nunca se elige en `auto`; la de Delay es jugable por orden |
 | Pindown | Familia | — | — | Solo el indirecto O4→O3 dentro del DHO | — | `bloqueo_indirecto_o3` | `me06` | pendiente como familia propia |
-| Poste alto / bajo / alto-bajo | Familia | — | — | — | — | — | — | pendiente |
-| Corte | Familia | — | — | Corte de O3 dentro del DHO | — | — | `me06` | pendiente como familia propia |
+| Poste alto / bajo / alto-bajo | Familia | — (dentro de Delay) | Entrada al poste bajo desde la entrega (O1) o desde arriba (O5, alto-bajo) | El poste lee tras reconocer (M01/M05) y girar: aro rodeando a D4, gancho (T02), salida a la esquina, corte del ala débil, repostear; la ayuda «dig» de la esquina lo dobla si llega antes del giro (presión T07/T15) | Repostear y reorganizar | `lectura_poste`, `respuesta_poste` | `me07b-v2-delay.test.ts` | parcial: solo poste bajo dentro de Delay; sin poste alto propio ni trabajo de espaldas (back-down) |
+| Corte | Familia | — | — | Corte de O3 dentro del DHO (central); en Delay, corte del ala débil al recibir el poste, rodeando a su defensor, y puerta de atrás de O1 si la entrega está negada | — | `weak_side_cut`, `backdoor_cut`, `lectura_poste` (`corte_o3`), `lectura_delay_pivote` (`puerta_atras_o1`) | `me06`, `me07b-v2-delay.test.ts` | parcial: solo dentro de fichas; sin familia propia |
 | Aislamiento contextual | Familia | — | — | — | — | — | — | pendiente |
 | Drive-and-kick | Familia | — | — | — | — | — | — | pendiente |
 | Pase extra | Familia | — | Receptor del roll con D3 fuera de O3 | Inversión O5→O3 valorada con desvío y cierre real de D4 (§2.4) | Tiro del receptor | `lectura_segunda_o5` | `me04b`, `me07b-v2-reads.test.ts` | parcial: una sola ruta |
@@ -74,12 +75,12 @@ auditoría** · **Prueba** · **Estado**. «—» = no existe todavía.
 |---|---|---|---|---|---|---|---|---|
 | Drag | Variante | — | — | — | — | — | — | pendiente |
 | Double drag | Variante | — | — | — | — | — | — | pendiente |
-| Spain | Variante | — | — | — | — | — | — | pendiente |
+| Spain | Variante | `chainedVariant` (`auto`/`ninguna`/`spain`, «Variante encadenada» en `/lab`); defensa `backScreenCall` (`auto`/`seguir`/`cambiar`, «Bloqueo ciego (Spain)») | Desde Horns; el bloqueador ciego lee si hay a quién bloquear (D5 detrás de la pantalla y fuera del aro) | Ficha `horns_spain` (ver «Libro por fase») | Sin objetivo: árbol de Horns | `seleccion_variante`, `lectura_spain_bloqueador`, `respuesta_bloqueo_ciego`, `lectura_spain` | `lab-0-9-parameters.test.ts`, `me07b-v2-spain.test.ts` | jugable (ver nota v2-5) |
 | Ram | Variante | — | — | — | — | — | — | pendiente |
 | Chicago / Zoom | Variante | — | — | — | — | — | — | pendiente |
 | Pistol | Variante | — | — | — | — | — | — | pendiente |
 | Hammer | Variante | — | — | — | — | — | — | pendiente |
-| Flare (salida desde Spain) | Lectura | — | — | — | — | — | — | pendiente |
+| Flare (salida desde Spain) | Lectura | — | — | — | — | — | — | pendiente: Spain existe desde v2-5 pero su salida es el pop, no un flare |
 | Segunda pantalla sobre el perseguidor | Continuación | — | — | — | — | — | — | pendiente |
 | Shake (lado débil) | Principio | — | — | — | — | — | — | pendiente |
 
@@ -92,18 +93,18 @@ auditoría** · **Prueba** · **Estado**. «—» = no existe todavía.
 | Re-screen | Lectura | — | Primera lectura negada | Segunda entrada del bloqueo (ME-04) | Tiro forzado | `segunda_entrada` | `me04.test.ts` | parcial: 0 naturales |
 | Slip | Lectura | — | — | — | — | — | — | pendiente |
 | Ghost | Lectura | — | — | — | — | — | — | pendiente |
-| Keeper | Lectura | — | Entrega negada | O5 conserva y lee | — | `transferencia_mano_a_mano` | `me06` | parcial: solo por negación, no elección |
+| Keeper | Lectura | — | Entrega negada | O5 conserva y lee (central); en Delay, si D5 salta la entrega, O5 se la queda con la pintura vacía: aro, puerta de atrás, alto-bajo o invertir | — | `transferencia_mano_a_mano`, `lectura_delay_pivote` | `me06`, `me07b-v2-delay.test.ts` | parcial: solo por negación, no elección |
 | Curl | Lectura | — | — | — | — | — | — | pendiente |
-| Backdoor | Lectura | — | — | — | — | — | — | pendiente |
+| Backdoor | Lectura | — | Entrega de Delay negada (D5 en el punto de la entrega) | O1 corta al aro rodeando a D5; D1 persigue desde atrás, D4 ayuda | Otra vía del pívot | `backdoor_cut`, `lectura_delay_pivote` (`puerta_atras_o1`) | `me07b-v2-delay.test.ts` | parcial: solo ante la entrega negada; sin backdoor ante deny/top-lock |
 | Tiro temprano/penetración del base libre | Lectura | — | 1ª lectura del bloqueo | Finalizar, triple con cierre de D1, tiro parado (T03) o floater (T02) antes del protector (§2.4) | Pase / salida | `lectura_bloqueo_o1` (`parada_o1`, `flotadora_o1`) | `me04b`, `me07b-v2-reads.test.ts` | parcial: sin /lab v2-2 |
 
 ## Ataque — continuaciones
 
 | Nombre | Capa | Config. | Entrada | Mecanismo | Fallback | Hecho/auditoría | Prueba | Estado |
 |---|---|---|---|---|---|---|---|---|
-| Roll profundo | Continuación | — | Recepción en el short roll | El receptor ataca el aro (`finalizar_aro`) frente a D5/D3 reales (§2.4) | Floater / inversión | `lectura_segunda_o5` | `me07b-v2-reads.test.ts` | parcial: el roll sigue parando en el short roll antes de decidir |
+| Roll profundo | Continuación | — | Recepción en el short roll; en Spain, roll al poste bajo débil por fuera del bloqueo ciego | El receptor ataca el aro (`finalizar_aro`) frente a D5/D3 reales (§2.4); en Spain D5 está retenido por el bloqueo ciego | Floater / inversión (en Spain, pase al pop) | `lectura_segunda_o5`, `roll_continuation.detail.deep` | `me07b-v2-reads.test.ts`, `me07b-v2-spain.test.ts` | parcial: fuera de Spain el roll para en el short roll |
 | Short roll | Continuación | — | Pase a O5 | Recepción en `SHORT_ROLL_SPOT`; lee aro/floater/inversión frente al mejor cierre; tendencia en la banda (§2.4) | Segunda entrada / tiro contenido | `lectura_segunda_o5` | `me02`, `me04b`, `me07b-v2-reads.test.ts` | parcial: única continuación física |
-| Pop | Continuación | — | ICE ante bloqueo lateral | Con la pantalla negada, el bloqueador se abre al codo (`ICE_POP_SPOT`) mientras su defensor está abajo; lee aro/floater frente a D5 desde la ayuda baja y D3 | Tiro del receptor | `roll_continuation`, `lectura_ice` (`pase_o5`), `lectura_segunda_o5` | `me07b-v2-lateral-ice.test.ts` | parcial: solo como concesión del ICE; sin pop exterior elegido por el bloqueador |
+| Pop | Continuación | — | ICE ante bloqueo lateral; en Spain, el bloqueador ciego al soltar a D5 | Con la pantalla negada, el bloqueador se abre al codo (`ICE_POP_SPOT`); en Spain el bloqueador ciego se abre por encima del arco (`SPAIN_POP_SPOT`) y lo cierra quien le sigue (D3) o D5 si cambian | Tiro del receptor | `roll_continuation`, `lectura_ice`, `back_screen_pop`, `lectura_spain` (`pase_pop_o3`) | `me07b-v2-lateral-ice.test.ts`, `me07b-v2-spain.test.ts` | parcial: sin pop del bloqueador del bloqueo directo elegido por él |
 | Mantener perseguidor detrás | Continuación | — | — | — | — | — | — | pendiente |
 | Lift | Continuación | — | — | — | — | — | — | pendiente |
 | Drift | Continuación | — | — | — | — | — | — | pendiente |
@@ -115,8 +116,10 @@ Primitiva común (§3, sesión v2-3): `PlaybookCard` en
 `domain/tactics/playbook-card.ts` con fase/condición, colocación, roles y
 sustitutos, primera acción, variantes, lecturas permitidas, seguridad y
 prioridad; describe las tres acciones organizadas de partida (bloqueo
-central, mano a mano, bloqueo lateral) y, desde v2-4, **Horns→bloqueo**
-(`horns_bloqueo`, LAB-0.8), y gobierna qué colocaciones se ofrecen al
+central, mano a mano, bloqueo lateral), desde v2-4 **Horns→bloqueo**
+(`horns_bloqueo`, LAB-0.8) y desde v2-5 **Horns→Spain** (`horns_spain`,
+LAB-0.9, variante encadenada) y **Delay→DHO con poste** (`delay_mano_a_mano`,
+LAB-0.10, `offeredInAuto=false`), y gobierna qué colocaciones se ofrecen al
 organizar (`playbook-card.test.ts`: cada lectura de un partido completo
 pertenece a la ficha de su fase).
 
@@ -132,20 +135,60 @@ encadenadas pendientes; la segunda entrada (variante) se juega desde el
 nuevo ángulo con la geometría central; el defensor del codo no ayuda sobre
 la penetración de O1 (solo sobre el roll).
 
+**Nota v2-5 (Horns→Spain y Delay→DHO con poste, jugables).** *Spain*
+(LAB-0.9): desde Horns, el segundo cuerno pone un bloqueo ciego a D5 (a
+contacto, en su retroceso) y el manejador espera a que esté puesto; D5 queda
+retenido (T13/F05 frente a T16) y rodea al bloqueador; roll profundo al poste
+bajo débil y pop del bloqueador ciego por encima del arco. Entrada por orden o
+en `auto` frente a Horns→bloqueo (`seleccion_variante`); el bloqueador lee si
+hay a quién bloquear (drop/por debajo); la defensa sigue, ayuda desde la
+pintura (deja el pop) o cambia (D3 al roll, D5 al pop). Ante drop la misma
+defensa da otra primera decisión que Horns→bloqueo (el manejador ataca el aro
+o encuentra el roll profundo; sin segunda entrada) y otra responsabilidad de
+ayuda («en el pop» frente a «en el codo»); seguir/cambiar dan pop frente a
+aro; cambio y trampa dejan sin objetivo (fallback a Horns). *Delay* (LAB-0.10,
+**solo por orden**): entrada arriba, entrega en mano con el cuerpo del pívot
+como pantalla, respuesta hundirse/cambiar/saltar la entrega, lectura del
+receptor o del pívot (puerta de atrás, alto-bajo) y del poste (aro, gancho,
+salida a la esquina si ayudan a tiempo, corte del ala débil, repostear).
+`/lab` recorrido (sección de progreso v2-5). Limitaciones: Delay no compite en
+la colocación `auto`; sin trabajo de espaldas en el poste; el cambio en el
+bloqueo ciego siempre llega a tiempo con el fixture (la sincronización da
+tiempo a cantarlo).
+
 | Nombre | Capa | Config. | Entrada | Mecanismo | Fallback | Hecho/auditoría | Prueba | Estado |
 |---|---|---|---|---|---|---|---|---|
 | Organizado: Horns→bloqueo | Libro | `screenPlacement=horns` (orden) o `auto` (proyección) | Ataque organizado sin superioridad; los dos cuernos son los dos interiores en pista (si el poseedor es interior, devuelve al manejador) | Ficha `horns_bloqueo`: el bloqueo del cuerno (O5) con el árbol de coberturas real (drop, por debajo, show, a la altura, cambio, trampa); ayuda al roll el defensor del segundo cuerno, que deja un tiro medio en el codo (T03); la reparación sale de la esquina débil | Lectura del receptor (aro, floater, codo, segunda entrada con motivo), salida segura y reorganizar; trampa puede robar | `colocacion_bloqueo`, `seleccion_familia.cardId=horns_bloqueo`, `organized_entry` (roles), `help_left_assignment` («en el codo»), lecturas, `summary.shots[].cardId` + `causingDecision` | `me07b-v2-horns.test.ts` (ejecución, cadena auditada, drop/cambio/trampa → tres desenlaces, Horns ≠ central, negación y continuidad), `playbook-card.test.ts` | **jugable** (ver nota v2-4) |
-| Organizado: Horns→Spain | Libro | — | — | — | — | — | — | pendiente: falta el tercer bloqueador (Spain) |
-| Organizado: Delay→DHO/corte | Libro | — | — | — | — | — | — | pendiente |
-| Organizado: entrada a poste con salidas | Libro | — | — | — | — | — | — | pendiente |
+| Organizado: Horns→Spain | Libro | `screenPlacement=horns` + `chainedVariant=spain` (orden) o `auto` (proyección frente a la defensa observada, `seleccion_variante`); defensa `backScreenCall` | Colocación Horns; el bloqueador ciego (segundo cuerno) encuentra a D5 detrás de la pantalla (drop, por debajo; ICE no aplicable) fuera del radio del aro y hay reloj para sincronizar | Ficha `horns_spain`: bloqueo ciego real a D5 (a contacto en su retroceso), el manejador espera en el punto de uso, D5 retenido el retraso de pantalla y rodea al bloqueador, roll profundo al poste bajo débil, pop del bloqueador ciego; respuesta de D3/D5 seguir/ayudar/cambiar por concesión (cambiar solo si D3 lo reconoce y canta antes del roll); O1 lee aro, roll (con pase al pop), pop, triple o salida | Sin objetivo (cambio, trampa, show, a la altura): el bloqueador se queda en el codo y se juega el árbol de Horns con la misma ficha; salida segura | `seleccion_variante`, `lectura_spain_bloqueador`, `respuesta_bloqueo_ciego`, `lectura_spain`, hechos `back_screen_set`/`back_screen_switch`/`back_screen_pop`, `summary.shots[].cardId=horns_spain` | `me07b-v2-spain.test.ts` (ejecución física, cadena auditada, auto, misma defensa frente a Horns→bloqueo, seguir/cambiar, negación por cobertura, cambio con defensores lentos), `lab-0-9-parameters.test.ts`, `playbook-card.test.ts` | **jugable** (ver nota v2-5) |
+| Organizado: Delay→DHO/corte | Libro | `screenPlacement=delay` (solo por orden) | Ataque organizado con plan `auto` o mano a mano | Ficha `delay_mano_a_mano`: pase de entrada arriba, el manejador sigue su pase y recibe la entrega (cuerpo del pívot como pantalla; orden sin balón de D1 en `auto` por concesión); respuesta de D5 hundirse/cambiar/saltar la entrega (en `auto`, menor concesión); con la entrega: aro, triple, tiro parado, poste, salida; negada: el pívot ataca el aro, puerta de atrás de O1, alto-bajo o invierte | Entrada desviada (balón suelto), salida segura y reorganizar | `colocacion_bloqueo` (`delay`), `seleccion_familia.cardId=delay_mano_a_mano`, `seleccion_orden_sin_balon`, `entrega_delay`, `lectura_delay`, `lectura_delay_pivote`, hechos `delay_hold`/`dho_completed`/`dho_denied`/`backdoor_cut` | `me07b-v2-delay.test.ts`, `lab-0-10-parameters.test.ts`, `playbook-card.test.ts` | **jugable por orden** (en `auto` no compite todavía; ver nota v2-5) |
+| Organizado: entrada a poste con salidas | Libro | Dentro de Delay | Pase al poste bajo desde la entrega o desde arriba | El poste lee (M01/M05) y gira; la ayuda de la esquina («dig») por concesión, a tiempo solo si llega antes del giro (dos sobre el balón: robo T07/T15); salidas: aro rodeando a D4, gancho, salida a la esquina, corte del ala débil (rodea a D3; D4 se gira al cortador), repostear | Repostear y reorganizar | `respuesta_poste`, `lectura_poste`, hechos `post_dig`/`weak_side_cut` | `me07b-v2-delay.test.ts` (salidas con ayuda rápida/lenta, tirador de esquina malo, regresión de faltas tardías en el corte) | **jugable por orden** dentro de Delay |
 | Temprano: drag / double drag / pistol | Libro | — | — | — | — | — | — | pendiente |
-| Saque lateral: stack | Libro | — | — | — | — | — | — | pendiente |
-| Saque lateral: Iverson | Libro | — | — | — | — | — | — | pendiente |
-| Saque de fondo: box | Libro | — | — | — | — | — | — | pendiente |
-| Saque de fondo: diamond | Libro | — | — | — | — | — | — | pendiente |
-| Saque de fondo: elevator | Libro | — | — | — | — | — | — | pendiente |
-| Saque de fondo: corte a aro/esquina | Libro | — | — | — | — | — | — | pendiente |
+| Saque lateral: stack | Libro | — | — | — | — | — | — | pendiente: falta la primitiva de saque defendido (ver nota de saques) |
+| Saque lateral: Iverson | Libro | — | — | — | — | — | — | pendiente: ídem |
+| Saque de fondo: box | Libro | — | — | — | — | — | — | pendiente: ídem |
+| Saque de fondo: diamond | Libro | — | — | — | — | — | — | pendiente: ídem |
+| Saque de fondo: elevator | Libro | — | — | — | — | — | — | pendiente: ídem |
+| Saque de fondo: corte a aro/esquina | Libro | — | — | — | — | — | — | pendiente: ídem |
 | Especial: último tiro / necesidad de triple / poco reloj | Libro | — | — | — | — | — | — | pendiente |
+
+**Nota de saques (v2-5, análisis; sin mecanismo nuevo).** El partido ya
+modela el *contexto reglamentario* del saque (`linked-run.ts` `throwIn`:
+sacador = el más cercano al punto, cuenta de 5 s, reloj que arranca con el
+toque legal, 24/14 s, flecha de alternancia, saque tras canasta/libre/fuera/
+falta/violación), y en 4 partidos naturales (91–94) hay ≈19 saques por partido que
+no son tras canasta ni libre (balón fuera, falta sin tiro, alternancia). Falta la **capa táctica** que exige §4: (1) el
+receptor es «el compañero más cercano, recibe donde está» (no hay colocación
+ni movimiento de los cuatro de dentro); (2) **nadie defiende el saque**: el
+pase se resuelve sin defensor (`resolvePass(..., false, 0, 0)`), así que no
+puede haber negación, cambio de receptor ni robo; (3) el sacador no lee
+opciones (primera, segunda, salida de seguridad) ni consume la cuenta
+esperando; (4) tras el toque se pasa a `advance`/organizar, sin jugada de
+salida. Una ficha stack/Iverson/box/diamond/elevator jugable necesita antes
+esa primitiva común de «saque defendido» (posiciones de partida por ficha,
+marca de cada receptor, pantallas sin balón reutilizando el retraso
+T13/F05/T16, lectura del sacador con la cuenta de 5 s y pase con desvío
+real). No se ha iniciado para no dejar a medias una primitiva que cambia
+todos los saques del partido.
 
 ## Defensa — asentada y presión
 
@@ -194,7 +237,7 @@ la penetración de O1 (solo sobre el roll).
 | Low man | Ayuda | — (en trampa) | Trampa | D3 sobre el short roll | — | `lectura_trampa` | `me02` | parcial: solo dentro de la trampa |
 | Tag | Ayuda | `rollHelpCall` (motor; escenario en lab) | Drop | D3 decide ayudar comparando concesión con/sin ayuda (§2.4); `siempre` obliga | Conserva marca | `help_decision` | `me02`, `me07b-v2-reads.test.ts` | parcial: orden sin control en /lab |
 | Stunt | Ayuda | — | — | — | — | — | — | pendiente |
-| Dig | Ayuda | — | — | — | — | — | — | pendiente |
+| Dig | Ayuda | — (lectura en `auto` dentro de Delay) | Balón en el poste bajo de Delay | El defensor de la esquina fuerte lee el pase al poste en el aire (M01/M05) y ayuda a contacto del poste si concede menos; si llega antes del giro son dos sobre el balón (robo T07/T15) y deja la esquina | Quedarse en la esquina (no dejar tirador) | `respuesta_poste`, `post_dig` | `me07b-v2-delay.test.ts` | parcial: solo en el poste de Delay; con el fixture llega tarde casi siempre (a tiempo con F04/M01/M05 altos) |
 | No dejar tirador de esquina | Ayuda | — (dentro de `rollHelpCall=auto`) | Drop con continuador | D3 no ayuda si la esquina concede más que el roll (§2.4) | Ayuda | `help_decision.detail.concession*` | `me07b-v2-reads.test.ts` | parcial: sin orden propia ni emergencia |
 | X-out | Reparación | — | — | — | — | — | — | pendiente |
 | Sink-and-fill | Reparación | — | — | — | — | — | — | pendiente |

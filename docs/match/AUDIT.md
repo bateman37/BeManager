@@ -11,9 +11,9 @@ hechos (ver `MODEL.md`) ni el acta (ver `BOXSCORE.md`): este documento solo
 describe cómo se observa y se exporta lo que esos documentos ya definen.
 **Documentos relacionados:** `MODEL.md`, `ACTIONS.md`, `BOXSCORE.md`,
 `docs/decisions/DECISION-REQUERIDA-ME-04-alcance-natural-faltas-y-segunda-entrada.md`.
-**Última actualización:** 2026-10-01 (ME-07B v2, sesión v2-4: ficha Horns,
-`cardId` por tiro, acción causante de cambio/show/a la altura/ICE y
-proyección frente a la defensa observada).
+**Última actualización:** 2026-10-01 (ME-07B v2, sesión v2-5: puntos y
+hechos de Horns→Spain y de Delay, configuración `chainedVariant`/
+`backScreenCall` exportada).
 
 ## Qué es y qué no es
 
@@ -154,6 +154,36 @@ acción causante incluye ahora `lectura_cambio`, `lectura_show`,
 `bloqueo_directo` de `seleccion_familia` pasa a `projectedCoverage:
 "observada"` con `coverageWeight_<cobertura>`, `valueAgainst_<cobertura>` y
 `expectedValueOverShownCoverages` (tendencia observada del rival, LAB-0.4).
+**v2-5 (LAB-0.9, Horns→Spain):** puntos `seleccion_variante` (opciones
+`horns_bloqueo`/`horns_spain`; en `auto`, `expectedValueOverShownCoverages`,
+`valueAgainst_*`, `coverageWeight_*`; motivos `variant_projected_value_*`,
+`variant_forced_by_plan`), `lectura_spain_bloqueador` (`bloqueo_ciego`/
+`quedarse_en_codo`; motivos `back_screen_target_present/absent`,
+`back_screen_shot_clock_insufficient`; valores `coverage`, `d5DistanceToHoop`,
+`backScreenSetSeconds`), `respuesta_bloqueo_ciego` (`seguir`/`ayudar`/
+`cambiar` con `concessionValue`, `call`, `switchCallSeconds`,
+`rollStartSeconds`, `d5ReleaseSeconds`; motivos `back_screen_lower/
+higher_concession`, `back_screen_forced_by_call`,
+`back_screen_switch_recognized_late`) y `lectura_spain` (acción causante de
+tiro). Hechos `back_screen_set` (`screenPoint`, `backScreenDelay`,
+`d5ReleaseAt`, `handlerWaitSeconds`), `back_screen_switch`, `back_screen_pop`
+(`popSpot`, `arrivesAt`); `roll_continuation` lleva `deep` y se fecha al
+arrancar el roll en Spain. `seleccion_familia.cardId` y `summary.shots[].cardId`
+valen `horns_spain`. **v2-5 (LAB-0.10, Delay):** `colocacion_bloqueo` admite
+`delay`; `seleccion_familia` elige la mano a mano con `cardId:
+delay_mano_a_mano` (el bloqueo, `family_not_in_card_placement`);
+`seleccion_cobertura` ante Delay compara solo drop/cambio/show (respuestas
+hundirse/cambiar/saltar la entrega, `delayResponse`, `concessionValue`) y marca
+el resto `coverage_not_in_card`; puntos `entrega_delay` (`entrega_completada`/
+`entrega_negada`/`entrada_negada` con `handoffScreenDelay`, `d1BackSeconds`,
+`d5JumpArrivalSeconds`), `lectura_delay`, `lectura_delay_pivote`,
+`respuesta_poste` (`ayudar_poste`/`quedarse_esquina`, `digArrivalSeconds`,
+`postTurnSeconds`, `digInTime`; motivos `help_lower/higher_concession`) y
+`lectura_poste` (las tres de lectura son acción causante de tiro; `holderId`
+es quien lee: manejador, pívot o poste). Hechos `delay_hold`, `dho_completed`,
+`dho_denied`, `backdoor_cut`, `post_dig` (`digPoint`), `weak_side_cut`. La
+configuración exportada de cada equipo añade `chainedVariant` y
+`backScreenCall` (entran en la huella).
 **§2.6:** `result.summary.shots` enlaza cada FGA a la
 familia elegida antes que él en su fase y a la última decisión de
 lectura/entrada anterior (`causingDecision` con id, punto, opción,
