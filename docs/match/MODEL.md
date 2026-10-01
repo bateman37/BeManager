@@ -76,6 +76,13 @@ por defecto `guardar_espacio`), ambos independientes de `coverage` y del
 escenario: la misma disposición admite las dos familias ofensivas y
 cualquier combinación de cobertura/orden (ver `ACTIONS.md`).
 
+**ME-07B v2 (LAB-0.7):** `GameTeamInput.screenPlacement`
+(`"auto" | "central" | "lateral"`, por defecto `auto`) y
+`MatchInput.screenPlacement` (`"central" | "lateral"`, por defecto
+`central`): la colocación del bloqueo directo de cada acción organizada,
+con su propia disposición (`LATERAL_PNR_TARGETS`) y continuación; la mano
+a mano solo desde la central. `coverage` admite además `a_la_altura`.
+
 **ME-07A:** `coverage` y `offBallDefensiveCall` admiten `"auto"` (ver
 `ACTIONS.md`, resuelto de forma pura antes del árbol); `GameTeamInput`
 añade `creationPriority` (`"equilibrado" | "buscar_aro" | "buscar_triple"`,

@@ -75,6 +75,22 @@ decisiones duraderas viven en `docs/decisions/`, no aquí.
   que deja; nadie juega fuera de un rol declarado. Si ni así hay relevo, el
   guardián sigue explicándolo (queda 1 de 60: los cuatro aleros declarados
   de Puerto excluidos; decisión requerida en el progreso).
+- **§4–§5 Bloqueo directo lateral, ICE ejecutable y «a la altura» (LAB-0.7).**
+  Segunda colocación real del bloqueo (`screenPlacement`, selector en
+  `/lab`; en `auto` el poseedor real la elige con creador y bloqueador por
+  la misma proyección en seco, punto `colocacion_bloqueo`), con su
+  disposición y su short roll. ICE solo ante ella: D1 se pone del lado de la
+  pantalla si llega antes del uso (M01/M05/F04), D5 baja a la ayuda baja, el
+  bloqueador se abre al codo y O1 lee fondo, tiro medio, pase al bloqueador
+  por la línea de D1, esquina fuerte o salida; ICE tardío juega drop.
+  «A la altura» sube junto al bloqueador y vuelve con el continuador sin
+  frenar al manejador; el show sale a la línea del manejador y le frena si
+  llega antes que él, y vuelve al aro. `auto` compite entre siete
+  coberturas. Foto seed (Sierra/Puerto): colocación lateral 55/32 de
+  1.230/1.294; ICE elegido 9/38 (como defensa), a la altura 5/135, show
+  1/61; puntos 1.201–1.210 (antes 1.317–1.307). 180/180 semillas 1–60 en
+  las tres fotos `final` con acta conciliada. Semillas de prueba de
+  bocina/prórrogas recalculadas (325, 69, 1, 246).
 - **Rotación `ME-04-ROT-3` (decisión de Dennis, semilla 39).** Si ni el
   relevo por rol ni el reajuste ROT-2 completan el quinteto tras una
   exclusión, entra un suplente habilitado aunque no declare el rol vacante:

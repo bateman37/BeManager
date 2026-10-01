@@ -235,6 +235,17 @@ El tramo enlazado no activa capacidades nuevas ni coeficientes nuevos:
   (reconocer la pantalla al prepararse), M09 (aviso entre D1 y D5 en cambio
   y show), T22/T23 (llegada al perímetro y al aro), F04/F03 (desplazamiento
   lateral y frenada del cierre de D1 que rodea al bloqueador en el under).
+- **ME-07B v2 §4–§5 (v2-3, LAB-0.7):** el bloqueo lateral, el ICE y «a la
+  altura» solo añaden **geometría** (puntos en metros, LAB-0.7), ningún
+  coeficiente. ICE: M01/M05 + F04 de D1 deciden si se pone del lado de la
+  pantalla antes del uso (un D1 con los tres a 1 llega tarde en casi todas,
+  `me07b-v2-lateral-ice.test.ts`); M01/M05 + T23 de D5 su llegada a la ayuda
+  baja; T17 de D1 el desvío del pase al bloqueador; T03/T06 del manejador el
+  tiro medio tras rechazar; T22 de D2 el cierre de la esquina. Show y «a la
+  altura»: M01/M05/T22 hasta su punto, M09 el aviso de vuelta, T23 la vuelta
+  (al aro o con el continuador), F01 del manejador la carrera hasta el punto
+  del show (decide si le frena). El relevo de emergencia `ME-04-ROT-3` lee
+  atributos solo para ordenar candidatos (no cambia ninguno).
 
 ## ME-07B v2 §2.4–§2.5: T02, T03 y M07 activas; LAB-0.5 y LAB-0.6
 

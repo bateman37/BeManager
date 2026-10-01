@@ -150,10 +150,34 @@ con retraso nulo) y D1 contesta la entrada si ya espera en su punto; para
 cerrar el triple de O1 tiene que rodear al bloqueador y, si al soltar aún
 no lo ha rodeado, no contesta (`d1CloseoutMarginSeconds`, `d1WallsDrive`
 en `lectura_bloqueo_o1`). *ICE*: solo elegible con pantalla lateral; ante
-el bloqueo central (el único que se arma hoy) no es elegible
-(`coverage_ice_central_not_eligible`) y la orden manual juega drop con el
-hecho `coverage_not_applicable`. Pendiente: ICE ejecutable (bloqueo
-lateral), at the level y la respuesta de zona.
+el bloqueo central no es elegible (`coverage_ice_central_not_eligible`) y
+la orden manual juega drop con el hecho `coverage_not_applicable`.
+Pendiente: la respuesta de zona.
+
+**ME-07B v2 §4–§5 (sesión v2-3, LAB-0.7) — bloqueo lateral, ICE y «a la
+altura».** *Colocación*: al organizar, `assignOrganizedRoles` compara
+además la colocación del bloqueo (`screenPlacement`: `auto` evalúa central
+y lateral con la misma proyección en seco que creador y bloqueador; el
+entrenador puede fijar una) y la audita en `colocacion_bloqueo`. La lateral
+usa la disposición `LATERAL_PNR_TARGETS` (manejador en el ala, bloqueador a
+3,3 m del eje, misma distancia manejador–bloqueador que la central) y su
+short roll lateral; la mano a mano solo existe desde la central
+(`family_not_in_lateral_placement`). *ICE* (solo lateral): D1 reconoce la
+pantalla (M01/M05) y se pone de su lado a contacto del manejador (F04); si
+llega antes del uso (`ice_committed`), O1 no usa el bloqueo y D5 baja a la
+ayuda baja (M01/M05, T23); el bloqueador se abre al codo. `lectura_ice`:
+`penetrar_fondo` (frente a D5 abajo y D1 que se desliza), `parada_fondo`
+(tiro medio T03 tras rechazar hacia fondo), `pase_o5` (la línea pasa por
+D1, que puede desviar con T17), `pase_esquina_o2` (D2 en casa) y
+`salida_segura`. Si D1 llega tarde (`ice_late`), se juega drop. *Show* y
+*a la altura* comparten «el pívot sube al bloqueo» con tres diferencias:
+el show sale a contacto del punto de uso (línea del manejador) y, si llega
+antes que O1 a ese punto, frena su penetración hasta que D5 se retira
+(`halted`), y D5 vuelve al aro; «a la altura» sube a contacto del
+bloqueador (≥0,3 m más hondo), O1 dobla la esquina sin pausa con D5
+conteniéndole al decidir, y D5 vuelve con el continuador
+(`lectura_a_la_altura`, `at_level_committed`, `at_level_recovery`). `auto`
+compite ahora entre siete coberturas (ICE solo ante la lateral).
 
 **ME-07B v2 §2.4 — lecturas frente al mejor cierre real.** Cada vía de
 tiro de la primera lectura del bloqueo y de la lectura del continuador se

@@ -5,7 +5,7 @@
 **Debe leerse cuando:** vayas a cambiar el comportamiento del motor en ME-07B v2 o a comparar una muestra nueva.
 **No cubre:** la interpretación completa del diagnóstico (ver `ME-07A-diagnostico-20-auditorias.md`) ni el diseño táctico.
 **Documentos relacionados:** `ME-07A-diagnostico-20-auditorias.md`, `docs/prompts/implementation/ME-07B-PROGRESS.md`.
-**Última actualización:** 2026-09-30 (ME-07B v2, sesión 1, tras §2.1).
+**Última actualización:** 2026-10-01 (ME-07B v2, sesión v2-3, tras LAB-0.7).
 
 ## Procedencia y fidelidad de la réplica
 
@@ -187,3 +187,39 @@ elige la mano a mano 139/308). **Limitaciones abiertas:** la geometría de
 entrada sigue siendo única (4-out/1-in), así que la variedad nace de
 personal, reloj y respuestas defensivas, no de estructuras (§4); sin falta
 en ataque; OREB aún alto (35–38 % tras fallo vivo en seed).
+
+## Tras el bloqueo lateral, el ICE ejecutable y «a la altura» (sesión v2-3, LAB-0.7)
+
+Mismas 20 semillas y fotos, `npx tsx scripts/me07b-v2-baseline-20.ts` sobre
+el commit de LAB-0.7 (ver `ME-07B-PROGRESS.md`). Las huellas cambian porque
+la configuración exportada añade `screenPlacement` (`auto`) y la rotación
+pasa a `ME-04-ROT-3`. Las 20 terminan `final` con actas conciliadas; ningún
+relevo de emergencia en estas 20.
+
+| Métrica | seed Sierra | seed Puerto | +3 Sierra | +3 Puerto | +5 Sierra | +5 Puerto |
+|---|---:|---:|---:|---:|---:|---:|
+| Puntos · posesiones | 1.201 · 1.166 | 1.210 · 1.168 | 888 · 653 | 640 · 650 | 436 · 327 | 322 · 327 |
+| 2FGM/2FGA · 3FGM/3FGA | 334/694 · 141/525 | 338/719 · 150/548 | 347/602 · 42/128 | 161/430 · 82/275 | 145/269 · 37/139 | 87/190 · 41/119 |
+| Tipos: aro / floater / medio / triple | 583/42/69/525 | 271/344/104/548 | 447/153/2/128 | 154/44/232/275 | 203/65/1/139 | 154/0/36/119 |
+| FTM/FTA · PF | 110/147 · 88 | 84/106 · 127 | 68/80 · 67 | 72/95 · 59 | 35/44 · 23 | 25/29 · 35 |
+| OREB tras fallo de campo vivo | 212/555 | 201/636 | 108/257 | 125/373 | 99/171 | 37/128 |
+| Familias PnR / DHO | 1.089 / 133 | 1.063 / 225 | 657 / 45 | 729 / 25 | 219 / 136 | 350 / 5 |
+| Colocación central / lateral | 1.175 / 55 | 1.262 / 32 | 611 / 95 | 743 / 12 | 332 / 26 | 347 / 11 |
+| Cobertura como defensa: drop / trampa / under / cambio / show / a la altura / ICE | 878/346/44/5/1/5/9 | 608/315/40/25/61/135/38 | 391/150/123/34/48/3/5 | 328/31/37/62/51/165/28 | 62/128/24/87/4/45/5 | 206/6/19/15/65/35/9 |
+
+**Lectura.** (1) El lateral aparece por proyección, no por cuota: 2–14 %
+de las organizaciones según foto; Sierra +3 (más rápido y mejor tirador) lo
+elige más (95/706). (2) ICE solo compite ante el lateral y gana cuando
+concede menos que drop allí; su concesión habitual es el bloqueador abierto
+en el codo (`ice:pase_o5` 31 de 38 lecturas de Sierra en seed). (3) «A la
+altura» se elige sobre todo con Puerto defendiendo (135 seed, 165 +3) y
+el show deja de ser casi idéntico: frena al manejador cuando llega antes
+(semilla 92 forzada: 58/116). (4) Los puntos bajan respecto a v2-2
+(1.317–1.307 → 1.201–1.210 en seed); no se ha descompuesto qué parte es
+del ICE/lateral y qué parte del efecto mariposa de la secuencia (pendiente).
+
+Parejas: 91 seed 92–99 (Puerto 20/72) → +3 142–127 (Puerto 45/65); 102
+seed 68–120 (Puerto 92/25) → +5 159–107 (Puerto 91/10). **Limitaciones:**
+un solo lado lateral (izquierdo) y el resto del espaciado igual que en la
+central; el ataque proyecta la familia y la colocación contra drop (no
+anticipa ICE ni las demás coberturas); sin `/lab` recorrido en v2-3.

@@ -125,6 +125,21 @@ idéntica a la de drop y `coverage_ice_central_not_eligible`). Nuevos puntos
 `read_option_not_viable`) y hechos `switch_committed`, `show_committed`,
 `show_recovery` y `coverage_not_applicable` (`requested`, `applied`,
 `lateral`); `screen_navigated.detail.route = "por_debajo"` en el under.
+**LAB-0.7 (v2-3):** punto `colocacion_bloqueo` (una opción por colocación
+evaluada con `projectedValue`, creador, bloqueador, plan y lectura
+proyectados; motivos `placement_projected_value_higher/lower`,
+`placement_forced_by_plan`, `creator_ready_later_in_band`);
+`organizacion_creador` añade `placement`; `seleccion_familia` ante la
+lateral marca la mano a mano `family_not_in_lateral_placement`;
+`seleccion_cobertura` añade `a_la_altura` y da a `ice` su concesión
+proyectada cuando la pantalla es lateral (`lateralScreen`). Puntos
+`lectura_ice` y `lectura_a_la_altura`; `lectura_show`/`lectura_a_la_altura`
+llevan `halted`, `driveStartSeconds` y `d5RecoversTo`. Hechos
+`ice_committed` (`icePoint`, `d1IceAt`, `screenUsedAt`, `lowHelpSpot`,
+`d5LowAt`), `ice_late`, `at_level_committed`/`show_committed`
+(`depthToHoop`) y `at_level_recovery`; `organized_entry` y `screen_set`
+llevan `placement`. La configuración exportada de cada equipo añade
+`screenPlacement` (entra en la huella).
 **§2.6:** `result.summary.shots` enlaza cada FGA a la
 familia elegida antes que él en su fase y a la última decisión de
 lectura/entrada anterior (`causingDecision` con id, punto, opción,

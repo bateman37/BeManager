@@ -464,3 +464,78 @@ de Sierra +5.
   decisión de Dennis cuando haga falta; hoy guardián explicado.
 - La comparación completa de candidatos solo se audita en la emergencia; las
   sustituciones ordinarias siguen como `coverageGaps` declarado.
+- **Nota posterior (ea4e50b):** el bloqueo lateral y el ICE cambian la
+  secuencia de la semilla 39 y ya no llega a excluir a los dos bases; su
+  estado real se conserva como prueba pura y la prueba de partido completo
+  pasa a la semilla 23 (Sierra: O5, SC11 y SC12, los tres que declaran el
+  rol 5, excluidos; O4 [4] pasa a interior y entra SC10 [3,4] de ala-pívot,
+  `capacidad_pertinente`). Barrido 1–60 × 3 fotos repetido tras ea4e50b:
+  **180/180 `final`, actas conciliadas**; 2 emergencias (seed 23 Sierra;
+  +5 semilla 47 Puerto: PA08 alero → D4 [4] de alero, entra PA11), ninguna
+  `menos_de_cinco`.
+
+#### Hecho y verificado (con commits, continuación de v2-3)
+6. `ea4e50b` — **bloqueo directo lateral, ICE ejecutable y «a la altura»**
+   (LAB-0.7, `lab-0-7-parameters.ts`, solo geometría en metros):
+   - *Colocación* `screenPlacement` (`auto`/`central`/`lateral`; selector
+     «Colocación del bloqueo» en `/lab`). En `auto`, `assignOrganizedRoles`
+     compara creador × bloqueador × colocación con la misma proyección en
+     seco y lo audita en `colocacion_bloqueo`. Disposición lateral: manejador
+     en el ala (19,32; 2,23), bloqueador a 3,3 m del eje (20,8; 4,2), misma
+     distancia manejador–bloqueador que la central (2,46 m), short roll
+     lateral; lado débil y esquina fuerte iguales. La mano a mano solo desde
+     la central. Antes: un solo bloqueo (central) y 48 usos de puntos fijos.
+   - *ICE* real ante el lateral: D1 se pone del lado de la pantalla, a
+     contacto del manejador (M01/M05/F04), si llega antes del uso; D5 baja a
+     la ayuda baja (T23); el bloqueador se abre al codo; `lectura_ice` con
+     cinco vías. ICE tardío → drop (`ice_late`). Ante el central sigue no
+     elegible. Antes: «no elegible» siempre (`coverage_not_applicable`).
+     Semilla 92 forzada (Sierra lateral, Puerto ICE): 235 ICE puestos, 0
+     tardíos; lecturas `pase_o5` 219 / `parada_fondo` 16; con D1 lento
+     (M01/M05/F04 = 1) aparecen los tardíos.
+   - *A la altura* frente a *show*: antes el show usaba el punto «a la
+     altura» y no frenaba a nadie (mismo mecanismo con dos nombres). Ahora
+     el show sale a contacto del punto de uso y frena al manejador si llega
+     antes (semilla 92 central: 58/116 lecturas frenadas; misma decisión:
+     penetración lista 3,54 s frente a 3,27 s «a la altura») y vuelve al
+     aro; «a la altura» sube ≥0,3 m más hondo junto al bloqueador, no frena,
+     contiene al decidir y vuelve con el continuador.
+   - `auto` compite entre siete coberturas. Pruebas nuevas
+     `lab-0-7-parameters.test.ts` (4) y `me07b-v2-lateral-ice.test.ts` (8).
+     Semillas naturales de ME-04 recalculadas (bocina 325 y 69, canasta
+     tardía 1, dos prórrogas 246).
+7. Foto de las 20 tras `ea4e50b` en
+   `docs/match/analysis/ME-07B-v2-foto-basal-20.md` (sección v2-3): las 20
+   `final` y conciliadas; seed: lateral 55/1.230 (Sierra) y 32/1.294
+   (Puerto); ICE 9/38, a la altura 5/135, show 1/61 como defensa; puntos
+   1.201–1.210 (antes 1.317–1.307, sin descomponer).
+8. `npm run check` completo (lint + typecheck + 300 tests + docs:check +
+   build) en `ea4e50b`.
+
+#### `/lab` real en `ea4e50b` (PostgreSQL 16 + Chromium de Playwright)
+`walk.cjs` (fuera del repo, en el scratchpad) sobre `npm run dev`:
+restaurar ambos equipos desde el seed; semilla 92 con Sierra «Colocación
+del bloqueo: Lateral» y Puerto «ICE lateral» → 88–103, `final`, 116
+`ice_committed`, `lectura_ice` pase_o5 110 / parada_fondo 6; semilla 92 con
+Sierra «Central» y Puerto «A la altura» → 152–115, 111 `at_level_committed`;
+auto/auto semilla 91 → 92–99 (= script de dominio), colocación central 204
+/ lateral 6, una ICE. Las tres exportaciones `ME-07B-AUDIT-1` (~1 MB)
+abiertas: `stopCause=final`, actas conciliadas, `screenPlacement` en la
+configuración, rotación `ME-04-ROT-3`. Mismos marcadores que el dominio con
+la misma configuración (la huella difiere por campos de perfil persistido).
+
+#### No verificado / pendiente (v2-3)
+- Bloqueo lateral solo a la izquierda; sin espaciado propio (empty side,
+  lift del ala débil). El ataque proyecta familia y colocación contra drop
+  (no anticipa ICE/show/a la altura).
+- Descomponer la bajada de puntos de la foto seed.
+- §3: ficha de libro compartida (no iniciada en esta parte), §4–§7 resto;
+  ninguna fila de la matriz es «jugable».
+
+#### Reanudar
+```bash
+cd BeManager && git fetch origin && git checkout claude/me-07b-v2-capitulo-tactico && git pull
+npm ci && npm run check
+npx tsx scripts/me07b-v2-stop-sweep.ts 1 60     # 60 semillas × 3 fotos: parada y acta
+npx tsx scripts/me07b-v2-baseline-20.ts          # foto de las 20
+```
