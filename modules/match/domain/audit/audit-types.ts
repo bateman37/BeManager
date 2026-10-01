@@ -114,6 +114,8 @@ export type AuditReasonCode =
   | "placement_projected_value_lower"
   | "placement_forced_by_plan"
   | "family_not_in_lateral_placement"
+  // ME-07B v2 §4 (LAB-0.8): la colocación de la ficha (Horns) solo admite el bloqueo directo.
+  | "family_not_in_card_placement"
   | "not_evaluated_short_circuit"
   | "situational_value_lower"
   | "tie_band_resolved_by_tendency"

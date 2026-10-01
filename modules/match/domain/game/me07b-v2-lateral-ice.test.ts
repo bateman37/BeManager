@@ -73,16 +73,18 @@ describe("ME-07B v2 §4: bloqueo directo lateral", () => {
       expect(d.chosenOptionId).toBe("bloqueo_directo");
       expect(d.options.find((o) => o.id === "mano_a_mano_sin_balon")!.reasonCode).toBe("family_not_in_lateral_placement");
     }
-    // En auto, el poseedor real compara las dos colocaciones con su valor proyectado y elige ambas en el partido.
+    // En auto, el poseedor real compara las colocaciones de las fichas (central, lateral y Horns, LAB-0.8)
+    // con su valor proyectado y elige la central y la lateral en el partido.
     const auto = play(92, "drop", "auto");
     const placements = bySierra(auto, "colocacion_bloqueo");
     expect(placements.length).toBeGreaterThan(50);
     for (const d of placements) {
-      expect(d.options.map((o) => o.id)).toEqual(["central", "lateral"]);
+      expect(d.options.map((o) => o.id)).toEqual(["central", "lateral", "horns"]);
       for (const o of d.options) expect(typeof o.values!.projectedValue).toBe("number");
     }
     const chosen = new Set(placements.map((d) => d.chosenOptionId));
-    expect(chosen).toEqual(new Set(["central", "lateral"]));
+    expect(chosen.has("central")).toBe(true);
+    expect(chosen.has("lateral")).toBe(true);
   });
 });
 

@@ -25,11 +25,12 @@
  */
 import type { Point2D } from "../geometry/point";
 import { SHORT_ROLL_SPOT, DEEP_CONTINUATION_SPOT } from "./lab-0-2-parameters";
+import { HORNS_SECOND_HORN_SPOT, WEAK_CORNER_HELP_LEFT_SPOT } from "./lab-0-8-parameters";
 
 export const LAB_0_7_PARAMETERS_VERSION = "LAB-0.7";
 
-/** Colocación del bloqueo directo: central (ME-01) o lateral (ME-07B v2). */
-export type ScreenPlacement = "central" | "lateral";
+/** Colocación del bloqueo directo: central (ME-01), lateral (ME-07B v2) u Horns (LAB-0.8). */
+export type ScreenPlacement = "central" | "lateral" | "horns";
 
 /** Colocación pedida por el entrenador: `auto` la decide el poseedor real por proyección. */
 export type ScreenPlacementChoice = "auto" | ScreenPlacement;
@@ -87,10 +88,22 @@ export interface PnrSetGeometry {
   readonly placement: ScreenPlacement;
   readonly shortRoll: Point2D;
   readonly deepContinuation: Point2D;
+  /**
+   * Dónde espera el jugador que deja libre la ayuda al roll (rol canónico
+   * O3) y hacia dónde repara D4: la esquina débil en las colocaciones
+   * 4-out/1-in (central y lateral), el codo contrario en Horns (LAB-0.8).
+   */
+  readonly helpLeftSpot: Point2D;
+  /** Texto del lugar para los hechos («en la esquina débil», «en el codo»). */
+  readonly helpLeftLabel: string;
 }
 
 export function pnrSetGeometry(placement: ScreenPlacement): PnrSetGeometry {
-  return placement === "lateral"
-    ? { placement, shortRoll: LATERAL_SHORT_ROLL_SPOT, deepContinuation: LATERAL_DEEP_CONTINUATION_SPOT }
-    : { placement, shortRoll: SHORT_ROLL_SPOT, deepContinuation: DEEP_CONTINUATION_SPOT };
+  if (placement === "lateral") {
+    return { placement, shortRoll: LATERAL_SHORT_ROLL_SPOT, deepContinuation: LATERAL_DEEP_CONTINUATION_SPOT, helpLeftSpot: WEAK_CORNER_HELP_LEFT_SPOT, helpLeftLabel: "en la esquina débil" };
+  }
+  if (placement === "horns") {
+    return { placement, shortRoll: SHORT_ROLL_SPOT, deepContinuation: DEEP_CONTINUATION_SPOT, helpLeftSpot: HORNS_SECOND_HORN_SPOT, helpLeftLabel: "en el codo" };
+  }
+  return { placement, shortRoll: SHORT_ROLL_SPOT, deepContinuation: DEEP_CONTINUATION_SPOT, helpLeftSpot: WEAK_CORNER_HELP_LEFT_SPOT, helpLeftLabel: "en la esquina débil" };
 }

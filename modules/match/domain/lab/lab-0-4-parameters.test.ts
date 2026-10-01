@@ -38,3 +38,23 @@ describe("LAB-0.4: aprendizaje por muestras visibles", () => {
     expect(OBSERVATION_PRIOR_WEIGHT_USES).toBeLessThanOrEqual(20);
   });
 });
+
+import { shownCoverageWeights } from "./lab-0-4-parameters";
+
+describe("LAB-0.4: tendencia observada de la cobertura rival", () => {
+  it("caso neutro: sin muestras todo el peso es del plan base", () => {
+    expect(shownCoverageWeights<"drop">(undefined, "drop")).toEqual({ drop: 1 });
+    expect(shownCoverageWeights<"drop" | "cambio">({ cambio: { uses: 0, points: 0 } }, "drop")).toEqual({ drop: 1 });
+  });
+
+  it("suma 1, crece con los usos observados y K grande lo devuelve al plan base", () => {
+    const few = shownCoverageWeights<"drop" | "cambio">({ cambio: { uses: 2, points: 3 } }, "drop");
+    const many = shownCoverageWeights<"drop" | "cambio">({ cambio: { uses: 40, points: 50 }, drop: { uses: 4, points: 4 } }, "drop");
+    expect((few.drop ?? 0) + (few.cambio ?? 0)).toBeCloseTo(1, 12);
+    expect(few.cambio).toBeCloseTo(2 / (2 + OBSERVATION_PRIOR_WEIGHT_USES), 12);
+    expect(many.cambio!).toBeGreaterThan(few.cambio!);
+    expect(many.cambio!).toBeLessThan(40 / 44);
+    const huge = shownCoverageWeights<"drop" | "cambio">({ cambio: { uses: 40, points: 50 } }, "drop", 1e9);
+    expect(huge.drop).toBeCloseTo(1, 6);
+  });
+});

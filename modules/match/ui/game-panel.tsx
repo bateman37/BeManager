@@ -107,6 +107,7 @@ const SCREEN_PLACEMENT_LABELS: Record<ScreenPlacementChoice, string> = {
   auto: "Auto (elige el creador)",
   central: "Central",
   lateral: "Lateral",
+  horns: "Horns (dos interiores en los codos)",
 };
 const OFF_BALL_CALL_LABELS: Record<OffBallDefensiveCallChoice, string> = {
   auto: "Auto (elige la defensa)",

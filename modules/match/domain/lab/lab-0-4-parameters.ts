@@ -65,3 +65,39 @@ export function blendProjectionWithObservation(
   if (!observed || observed.uses <= 0) return projection;
   return (observed.points + priorWeight * projection) / (observed.uses + priorWeight);
 }
+
+/**
+ * Tendencia observada de la defensa rival ante el bloqueo directo (ME-07B v2
+ * §2.2 y §5: «auto pondera lo observable y realizable, sin conocer la tirada
+ * futura»). El ataque no sabe qué cobertura le espera en la próxima pantalla;
+ * sí ha visto cuántas veces el rival ha usado cada una en este partido. Peso
+ * de cada cobertura: `(usos_c + K · [c = plan base]) / (Σ usos + K)`, con el
+ * mismo `K` de `blendProjectionWithObservation` (usos equivalentes) y el
+ * plan base de la defensa (drop) como previa.
+ *
+ * - Unidad: probabilidad [0, 1] por cobertura; suman 1.
+ * - Caso neutro: sin muestras, todo el peso es del plan base (la proyección
+ *   anterior, solo contra drop).
+ * - Sensibilidad: `K → ∞` reproduce la proyección solo contra el plan base;
+ *   con muchos usos de una cobertura, su peso tiende a su frecuencia
+ *   (`lab-0-4-parameters.test.ts`).
+ * - No duplicación: solo pondera concesiones ya proyectadas con la geometría
+ *   real de cada cobertura; no cambia ninguna llegada, acierto ni sorteo, ni
+ *   usa ratings ni la orden interna del rival.
+ */
+export function shownCoverageWeights<C extends string>(
+  shown: Readonly<Partial<Record<C, ObservedOutcome>>> | undefined,
+  base: C,
+  priorWeight: number = OBSERVATION_PRIOR_WEIGHT_USES,
+): Partial<Record<C, number>> {
+  const raw: Partial<Record<C, number>> = { [base]: priorWeight } as Partial<Record<C, number>>;
+  let total = priorWeight;
+  for (const [c, o] of Object.entries(shown ?? {}) as [C, ObservedOutcome | undefined][]) {
+    if (!o || o.uses <= 0) continue;
+    raw[c] = (raw[c] ?? 0) + o.uses;
+    total += o.uses;
+  }
+  const out: Partial<Record<C, number>> = {};
+  for (const [c, v] of Object.entries(raw) as [C, number][]) out[c] = v / total;
+  return out;
+}

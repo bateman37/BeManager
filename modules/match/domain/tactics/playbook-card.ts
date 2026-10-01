@@ -10,18 +10,22 @@
  * pantalla, pase, lectura frente al mejor cierre real, salida segura), sin
  * guiones ni movimiento instantáneo.
  *
- * Primer paso de §3: las tres acciones organizadas que existen hoy. Horns,
- * 1-4 alto, Delay, Spain, drag, saques… siguen pendientes (ver
+ * Fichas: las tres acciones organizadas de partida y **Horns→bloqueo**
+ * (LAB-0.8, primera ficha del «libro por fase» de §4). 1-4 alto, Delay,
+ * Spain, drag, saques… siguen pendientes (ver
  * `docs/match/TACTICAL-MATRIX.md`); se añaden aquí como fichas nuevas cuando
  * tengan su mecanismo. Dos fichas con la misma primitiva solo existen si
  * difieren en orden, espacio, responsabilidad o lectura (la central y la
- * lateral difieren en espacio y en las coberturas aplicables: el ICE).
+ * lateral difieren en espacio y en las coberturas aplicables: el ICE; Horns
+ * difiere de la central en espacio —dos interiores en los codos, esquinas
+ * llenas— y en responsabilidad: ayuda al roll el defensor del segundo
+ * cuerno, que deja un tiro medio en el codo, no un triple de esquina).
  */
 import type { AuditDecisionPoint } from "../audit/audit-types";
 import type { OffensivePlan, OffensivePlanChoice } from "../lab/match-input";
 import type { ScreenPlacement, ScreenPlacementChoice } from "../lab/lab-0-7-parameters";
 
-export type PlaybookCardId = "bloqueo_directo_central" | "mano_a_mano_central" | "bloqueo_directo_lateral";
+export type PlaybookCardId = "bloqueo_directo_central" | "mano_a_mano_central" | "bloqueo_directo_lateral" | "horns_bloqueo";
 
 /** Fase del libro en que la ficha puede llamarse. Solo el ataque organizado tiene fichas hoy. */
 export type PlaybookPhase = "ataque_organizado";
@@ -34,6 +38,12 @@ export interface PlaybookCard {
   readonly allowedPlans: readonly OffensivePlanChoice[];
   /** Colocación (disposición de los diez al situarse). */
   readonly placement: ScreenPlacement;
+  /**
+   * Función de cada rol canónico del árbol en esta colocación (espacio y
+   * responsabilidad): quién bloquea, quién queda libre si su defensor ayuda
+   * al roll (O3) y quién si repara el siguiente (O4).
+   */
+  readonly structure: Readonly<Record<"O1" | "O2" | "O3" | "O4" | "O5", string>>;
   /**
    * Roles canónicos de la ficha y sus sustitutos al organizar (§2.4): el
    * creador puede ser el O1 vigente o el poseedor real; el bloqueador, O5 u
@@ -66,6 +76,15 @@ const PNR_READS: readonly AuditDecisionPoint[] = [
   "segunda_entrada",
 ];
 
+/** 4-out/1-in de la disposición de partida (ME-01): central y lateral. */
+const STRUCTURE_4_OUT: PlaybookCard["structure"] = {
+  O1: "manejador arriba",
+  O2: "esquina fuerte",
+  O3: "esquina débil: libre si su defensor ayuda al roll",
+  O4: "ala débil: libre si su defensor repara hacia la esquina",
+  O5: "bloqueador",
+};
+
 export const ORGANIZED_PLAYBOOK: readonly PlaybookCard[] = [
   {
     id: "bloqueo_directo_central",
@@ -73,6 +92,7 @@ export const ORGANIZED_PLAYBOOK: readonly PlaybookCard[] = [
     phase: "ataque_organizado",
     allowedPlans: ["auto", "bloqueo_directo"],
     placement: "central",
+    structure: STRUCTURE_4_OUT,
     roles: { creator: { role: "O1", substitutes: ["poseedor_real"] }, screener: { role: "O5", substitutes: ["O4"] } },
     firstAction: "bloqueo_directo",
     variants: ["segunda_entrada"],
@@ -86,6 +106,7 @@ export const ORGANIZED_PLAYBOOK: readonly PlaybookCard[] = [
     phase: "ataque_organizado",
     allowedPlans: ["auto", "mano_a_mano_sin_balon"],
     placement: "central",
+    structure: STRUCTURE_4_OUT,
     roles: { creator: { role: "O1", substitutes: ["poseedor_real"] }, screener: { role: "O5", substitutes: ["O4"] } },
     firstAction: "mano_a_mano_sin_balon",
     variants: [],
@@ -99,6 +120,7 @@ export const ORGANIZED_PLAYBOOK: readonly PlaybookCard[] = [
     phase: "ataque_organizado",
     allowedPlans: ["auto", "bloqueo_directo"],
     placement: "lateral",
+    structure: { ...STRUCTURE_4_OUT, O1: "manejador en el ala", O5: "bloqueador lateral" },
     roles: { creator: { role: "O1", substitutes: ["poseedor_real"] }, screener: { role: "O5", substitutes: ["O4"] } },
     firstAction: "bloqueo_directo",
     variants: ["segunda_entrada"],
@@ -106,6 +128,29 @@ export const ORGANIZED_PLAYBOOK: readonly PlaybookCard[] = [
     reads: [...PNR_READS, "lectura_ice"],
     safety: "salida_segura_y_reorganizar",
     priority: 2,
+  },
+  {
+    // Libro por fase (§4): «Organizado: Horns→bloqueo». LAB-0.8.
+    id: "horns_bloqueo",
+    label: "Horns → bloqueo directo desde el codo",
+    phase: "ataque_organizado",
+    allowedPlans: ["auto", "bloqueo_directo"],
+    placement: "horns",
+    structure: {
+      O1: "manejador arriba",
+      O2: "esquina fuerte",
+      O3: "segundo cuerno en el codo contrario (interior que no bloquea): libre si su defensor ayuda al roll",
+      O4: "esquina débil: libre si su defensor repara hacia el codo",
+      O5: "cuerno que bloquea",
+    },
+    // El bloqueador es O5 u O4 (el que no bloquea pasa a segundo cuerno).
+    roles: { creator: { role: "O1", substitutes: ["poseedor_real"] }, screener: { role: "O5", substitutes: ["O4"] } },
+    firstAction: "bloqueo_directo",
+    variants: ["segunda_entrada"],
+    // La pantalla queda dentro de la franja de la zona: sin ICE.
+    reads: PNR_READS,
+    safety: "salida_segura_y_reorganizar",
+    priority: 3,
   },
 ];
 

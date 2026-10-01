@@ -1,4 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+// Cuatro partidos completos con auditoría: más margen que el límite por defecto bajo carga paralela.
+vi.setConfig({ testTimeout: 60_000 });
 import { ORGANIZED_PLAYBOOK, cardFor, eligiblePlacements, playbookCard, type PlaybookCardId } from "./playbook-card";
 import { playFullGame } from "../game/play-full-game";
 import { buildGameInput, type GameResult } from "../game/game-model";
@@ -15,7 +18,7 @@ import type { AuditDecisionPoint } from "../audit/audit-types";
  */
 const READ_POINTS = new Set<AuditDecisionPoint>(ORGANIZED_PLAYBOOK.flatMap((c) => c.reads));
 
-function play(seed: number, sierra: { coverage: "auto" | "ice"; screenPlacement: "auto" | "lateral" }, puertoCoverage: "auto" | "ice"): GameResult {
+function play(seed: number, sierra: { coverage: "auto" | "ice"; screenPlacement: "auto" | "lateral" | "horns" }, puertoCoverage: "auto" | "ice"): GameResult {
   const common = { priority: "proteger_balance" as const, offBallDefensiveCall: "auto" as const, offensivePlan: "auto" as const, creationPriority: "equilibrado" as const };
   return playFullGame(
     buildGameInput({
@@ -38,7 +41,16 @@ describe("ME-07B v2 §3: ficha de libro", () => {
       expect(c.roles.screener.substitutes).toContain("O4");
       expect(c.reads.length).toBeGreaterThan(0);
       expect(c.safety).toBe("salida_segura_y_reorganizar");
+      expect(Object.keys(c.structure).sort()).toEqual(["O1", "O2", "O3", "O4", "O5"]);
     }
+    // Horns y la central: misma primera acción y lecturas, distinto espacio y responsabilidad (quién queda libre si ayudan).
+    const horns = playbookCard("horns_bloqueo");
+    const base = playbookCard("bloqueo_directo_central");
+    expect(horns.firstAction).toBe(base.firstAction);
+    expect(horns.placement).not.toBe(base.placement);
+    expect(horns.structure.O3).not.toBe(base.structure.O3);
+    expect(horns.reads).not.toContain("lectura_ice");
+    expect(cardFor("bloqueo_directo", "horns").id).toBe("horns_bloqueo");
     // Dos fichas con la misma primera acción difieren en espacio (colocación) y lectura (ICE).
     const central = playbookCard("bloqueo_directo_central");
     const lateral = playbookCard("bloqueo_directo_lateral");
@@ -51,8 +63,9 @@ describe("ME-07B v2 §3: ficha de libro", () => {
   });
 
   it("las colocaciones que se ofrecen al organizar salen de las fichas compatibles con el plan y la orden", () => {
-    expect(eligiblePlacements("auto", "auto")).toEqual(["central", "lateral"]);
-    expect(eligiblePlacements("bloqueo_directo", "auto")).toEqual(["central", "lateral"]);
+    expect(eligiblePlacements("auto", "auto")).toEqual(["central", "lateral", "horns"]);
+    expect(eligiblePlacements("bloqueo_directo", "auto")).toEqual(["central", "lateral", "horns"]);
+    expect(eligiblePlacements("auto", "horns")).toEqual(["horns"]);
     expect(eligiblePlacements("mano_a_mano_sin_balon", "auto")).toEqual(["central"]);
     expect(eligiblePlacements("bloqueo_directo", "lateral")).toEqual(["lateral"]);
     expect(eligiblePlacements("auto", "central")).toEqual(["central"]);
@@ -62,7 +75,7 @@ describe("ME-07B v2 §3: ficha de libro", () => {
 
   it("en partidos completos cada lectura pertenece a la ficha en vigor de su fase", () => {
     const seen = new Set<PlaybookCardId>();
-    for (const r of [play(92, { coverage: "auto", screenPlacement: "auto" }, "auto"), play(92, { coverage: "auto", screenPlacement: "lateral" }, "ice"), play(93, { coverage: "auto", screenPlacement: "auto" }, "auto")]) {
+    for (const r of [play(92, { coverage: "auto", screenPlacement: "auto" }, "auto"), play(92, { coverage: "auto", screenPlacement: "lateral" }, "ice"), play(93, { coverage: "auto", screenPlacement: "auto" }, "auto"), play(92, { coverage: "auto", screenPlacement: "horns" }, "auto")]) {
       const decisions = r.audit!.decisions;
       const cardOfPhase = new Map<string, PlaybookCardId>();
       for (const d of decisions.filter((x) => x.point === "seleccion_familia")) {
@@ -80,6 +93,6 @@ describe("ME-07B v2 §3: ficha de libro", () => {
       expect(checked).toBeGreaterThan(100);
       expect(r.stop.cause).toBe("final");
     }
-    expect(seen).toEqual(new Set(["bloqueo_directo_central", "mano_a_mano_central", "bloqueo_directo_lateral"]));
+    expect(seen).toEqual(new Set(["bloqueo_directo_central", "mano_a_mano_central", "bloqueo_directo_lateral", "horns_bloqueo"]));
   });
 });

@@ -18,7 +18,7 @@ describe("LAB-0.7: geometría del bloqueo lateral, ICE y profundidad del pívot 
   const central = Object.fromEntries(getScenario("drop_con_ayuda").offense.concat(getScenario("drop_con_ayuda").defense).map((s) => [s.playerId, s.initialPosition]));
 
   it("caso neutro: la colocación central conserva los puntos de ME-02", () => {
-    expect(pnrSetGeometry("central")).toEqual({ placement: "central", shortRoll: SHORT_ROLL_SPOT, deepContinuation: DEEP_CONTINUATION_SPOT });
+    expect(pnrSetGeometry("central")).toEqual({ placement: "central", shortRoll: SHORT_ROLL_SPOT, deepContinuation: DEEP_CONTINUATION_SPOT, helpLeftSpot: central.O3, helpLeftLabel: "en la esquina débil" });
     expect(isLateralScreenSpot(central.O5!)).toBe(false);
   });
 

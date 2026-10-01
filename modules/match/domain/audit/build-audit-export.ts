@@ -196,6 +196,8 @@ export interface AuditExportShotAttribution {
   readonly category: "familia" | "transicion" | "segunda_oportunidad" | "otra_fase";
   readonly family: string | null;
   readonly familyDecisionId: number | null;
+  /** ME-07B v2 §3: ficha de libro en vigor en esa fase (`seleccion_familia` → `cardId`), p. ej. `horns_bloqueo`. */
+  readonly cardId: string | null;
   readonly causingDecision: {
     readonly id: number;
     readonly point: string;
@@ -413,6 +415,12 @@ const SHOT_CAUSING_POINTS: ReadonlySet<string> = new Set([
   "lectura_bloqueo_o1",
   "lectura_segunda_o5",
   "lectura_trampa",
+  // ME-07B v2 §5: lecturas del manejador ante cambio, show, «a la altura» e ICE
+  // (antes faltaban: el tiro tras esas lecturas quedaba sin acción causante).
+  "lectura_cambio",
+  "lectura_show",
+  "lectura_a_la_altura",
+  "lectura_ice",
   "segunda_entrada",
   "lectura_mano_a_mano",
   "entrada_fase_transicion",
@@ -475,6 +483,7 @@ export function attributeShots(result: GameResult, decisions: readonly AuditDeci
             : "otra_fase",
       family: familyDecision?.chosenOptionId ?? null,
       familyDecisionId: familyDecision?.id ?? null,
+      cardId: (familyDecision?.options.find((o) => o.id === familyDecision!.chosenOptionId)?.values?.cardId as string | undefined) ?? null,
       causingDecision: causing
         ? { id: causing.id, point: causing.point, chosenOptionId: causing.chosenOptionId, atMs: causing.atMs, factLink: causing.factLink }
         : null,

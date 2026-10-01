@@ -44,6 +44,7 @@ import type {
 import { getScenario } from "../lab/scenario";
 import type { ObservedOutcome } from "../lab/lab-0-4-parameters";
 import { LATERAL_PNR_TARGETS, type ScreenPlacement, type ScreenPlacementChoice } from "../lab/lab-0-7-parameters";
+import { HORNS_PNR_TARGETS } from "../lab/lab-0-8-parameters";
 import { eligiblePlacements } from "../tactics/playbook-card";
 import { FIRST_READ_TIE_BAND_POINTS, contestReachMeters, evaluateContestLevel, type LAB_0_3_PARAMETERS_VERSION } from "../lab/lab-0-3-parameters";
 import {
@@ -195,6 +196,17 @@ export function buildFrameFromTeams(attacking: FrameTeam, defending: FrameTeam, 
   return { attacking, defending, dir, slotToId, idToSlot };
 }
 
+/** Intercambia las marcas de dos defensores (IDs reales) en un marco; `null` si alguno no está en él. */
+function swapDefenders(frame: Frame, x: string, y: string): Frame | null {
+  const sx = frame.idToSlot[x];
+  const sy = frame.idToSlot[y];
+  if (!sx || !sy) return null;
+  const map = { ...frame.slotToId };
+  map[sx] = y;
+  map[sy] = x;
+  return rebindFrame(frame, map);
+}
+
 /** Mismo marco con otra asignación de roles canónicos (p. ej. la segunda entrada de ME-04). */
 export function rebindFrame(frame: Frame, slotToId: Readonly<Record<string, string>>): Frame {
   const idToSlot = Object.fromEntries(Object.entries(slotToId).map(([slot, id]) => [id, slot]));
@@ -298,6 +310,8 @@ export abstract class LinkedRun {
    * bloqueador y colocación; vuelve a `central` en cuanto el núcleo la usa.
    */
   protected currentPlacement: ScreenPlacement = "central";
+  /** Defensores intercambiados por un cambio cuya acción acabó en balón suelto (IDs reales), pendientes de la recuperación. */
+  protected pendingDefensiveSwap: readonly [string, string] | null = null;
   protected pendingObservation: {
     readonly attackingId: string;
     readonly defendingId: string;
@@ -942,15 +956,13 @@ export abstract class LinkedRun {
     if (core.defensiveSwap && step && (step.kind === "organize" || step.kind === "second_chance") && step.frame.attacking.id === frame.attacking.id) {
       const x = frame.slotToId[core.defensiveSwap[0]]!;
       const y = frame.slotToId[core.defensiveSwap[1]]!;
-      const map = { ...step.frame.slotToId };
-      const sx = step.frame.idToSlot[x];
-      const sy = step.frame.idToSlot[y];
-      if (sx && sy) {
-        map[sx] = y;
-        map[sy] = x;
-        return { ...step, frame: rebindFrame(step.frame, map) };
-      }
+      const swapped = swapDefenders(step.frame, x, y);
+      if (swapped) return { ...step, frame: swapped };
     }
+    // Balón suelto tras el cambio (pase desviado): sigue vivo, así que si lo
+    // recupera el mismo ataque los emparejamientos cambiados persisten.
+    this.pendingDefensiveSwap =
+      core.defensiveSwap && step?.kind === "loose_ball" ? [frame.slotToId[core.defensiveSwap[0]]!, frame.slotToId[core.defensiveSwap[1]]!] : null;
     return step;
   }
 
@@ -1259,9 +1271,10 @@ export abstract class LinkedRun {
 
   // --- organización y acción organizada ----------------------------------------
 
-  /** Destinos de la disposición del bloqueo directo, en el marco local de quien ataca (central o lateral, LAB-0.7). */
+  /** Destinos de la disposición del bloqueo directo, en el marco local de quien ataca (central o lateral, LAB-0.7; Horns, LAB-0.8). */
   protected dispositionTargets(placement: ScreenPlacement = "central"): Record<string, Point2D> {
     if (placement === "lateral") return { ...LATERAL_PNR_TARGETS };
+    if (placement === "horns") return { ...HORNS_PNR_TARGETS };
     const scenario = getScenario(this.settings.dispositionScenarioId);
     const targets: Record<string, Point2D> = {};
     for (const slot of [...scenario.offense, ...scenario.defense]) targets[slot.playerId] = slot.initialPosition;
@@ -1354,7 +1367,15 @@ export abstract class LinkedRun {
     for (const placement of placements) {
       const targets = this.dispositionTargets(placement);
       for (const handlerMap of handlerMaps) {
-        for (const map of [handlerMap, swapRoles(handlerMap, "4", "5")]) {
+        // Horns (LAB-0.8): los dos cuernos son siempre los dos interiores del
+        // quinteto en pista (por su orden de roles; el marco de una posesión
+        // que continúa puede venir ya reasignado por otra ficha): uno bloquea
+        // (O5) y el otro es el segundo cuerno (O3, el que deja libre la
+        // ayuda); los dos exteriores restantes ocupan las esquinas (O2, O4).
+        // Si el poseedor es un interior, en Horns no crea él: devuelve el
+        // balón al manejador. Los defensores siguen a su marca.
+        const maps = placement === "horns" ? this.hornsRoleMaps(frame, handlerMap) : [handlerMap, swapRoles(handlerMap, "4", "5")];
+        for (const map of maps) {
           const handlerId = map.O1!;
           let tAllSet = t0;
           for (const slot of OFFENSE_SLOTS) {
@@ -1376,6 +1397,11 @@ export abstract class LinkedRun {
               gameClockMs: this.game.ms,
               attackingPriority: frame.attacking.priority,
               rules: this.coreRules(),
+              // ME-07B v2 §2.2/§5: lo que el ataque ha visto de la defensa rival en este partido.
+              observations: {
+                offenseByFamily: { ...(this.observations.get(frame.attacking.id)?.offenseByFamily ?? {}) },
+                defenseByCoverage: { ...(this.observations.get(frame.defending.id)?.defenseByCoverage ?? {}) },
+              },
             },
           );
           candidates.push({ map, handlerId, screenerId: map.O5!, tReadyMs, value: projection.value, plan: projection.plan, read: projection.bestReadOption, placement, targets });
@@ -1434,12 +1460,45 @@ export abstract class LinkedRun {
       return { id: placement, status: isChosen ? ("elegida" as const) : ("descartada_por_condicion" as const), reasonCode, values };
     });
     return {
-      frame: chosen.map === candidates[0]!.map ? frame : rebindFrame(frame, chosen.map),
+      // Sin cambio de roles se conserva el marco; Horns siempre reasigna el segundo cuerno (O3↔O4).
+      frame: Object.entries(chosen.map).every(([slot, id]) => frame.slotToId[slot] === id) ? frame : rebindFrame(frame, chosen.map),
       options,
       placement: chosen.placement,
       placementOptions,
       targets: chosen.targets,
     };
+  }
+
+  /**
+   * Asignaciones Horns desde una asignación con su creador ya fijado: cada
+   * interior puede bloquear y el otro es el segundo cuerno; los exteriores que
+   * no crean van a las esquinas (O2 conserva a quien ya era O2 si es
+   * exterior). Cada atacante conserva a su defensor.
+   */
+  private hornsRoleMaps(frame: Frame, handlerMap: Readonly<Record<string, string>>): Record<string, string>[] {
+    const lineupFrame = this.frameFor(frame.attacking.id);
+    const interiors = [lineupFrame.slotToId.O4!, lineupFrame.slotToId.O5!];
+    // Un interior no crea en Horns: crea el base del quinteto (rol 1) o, si
+    // no lo es, el primer exterior.
+    const five = OFFENSE_SLOTS.map((slot) => handlerMap[slot]!);
+    const handler = !interiors.includes(handlerMap.O1!)
+      ? handlerMap.O1!
+      : !interiors.includes(lineupFrame.slotToId.O1!)
+        ? lineupFrame.slotToId.O1!
+        : five.find((id) => !interiors.includes(id))!;
+    const slotOf = (id: string) => OFFENSE_SLOTS.find((slot) => handlerMap[slot] === id)!;
+    const guardOf = (id: string) => handlerMap[`D${slotOf(id).slice(1)}`]!;
+    const perimeter = OFFENSE_SLOTS.map((slot) => handlerMap[slot]!).filter((id) => id !== handler && !interiors.includes(id));
+    perimeter.sort((a, b) => (a === handlerMap.O2 ? -1 : b === handlerMap.O2 ? 1 : 0));
+    const out: Record<string, string>[] = [];
+    for (const screener of interiors) {
+      const second = interiors.find((id) => id !== screener)!;
+      const attackers: Record<string, string> = { O1: handler, O2: perimeter[0]!, O3: second, O4: perimeter[1]!, O5: screener };
+      const map: Record<string, string> = { ...attackers };
+      for (const [slot, id] of Object.entries(attackers)) map[`D${slot.slice(1)}`] = guardOf(id);
+      out.push(map);
+    }
+    return out;
   }
 
   private slotOf(map: Readonly<Record<string, string>>, id: string): string {
@@ -1575,7 +1634,9 @@ export abstract class LinkedRun {
         actors: [frame.slotToId.O1!, frame.slotToId.O5!],
         text:
           entryText ??
-          `Los cinco atacantes están situados: ${frame.slotToId.O1} y ${frame.slotToId.O5} inician el bloqueo directo ${this.currentPlacement} (${coverageText[coverage] ?? coverage}) con ${(remaining / 1000).toFixed(1)} s de lanzamiento.${lateText}`,
+          (this.currentPlacement === "horns"
+            ? `Los cinco atacantes están situados en Horns: ${frame.slotToId.O5} y ${frame.slotToId.O3} en los codos, ${frame.slotToId.O2} y ${frame.slotToId.O4} en las esquinas; ${frame.slotToId.O1} usa el bloqueo de ${frame.slotToId.O5} (${coverageText[coverage] ?? coverage}) con ${(remaining / 1000).toFixed(1)} s de lanzamiento.${lateText}`
+            : `Los cinco atacantes están situados: ${frame.slotToId.O1} y ${frame.slotToId.O5} inician el bloqueo directo ${this.currentPlacement} (${coverageText[coverage] ?? coverage}) con ${(remaining / 1000).toFixed(1)} s de lanzamiento.${lateText}`),
         detail: { shotClockMs: remaining, lateDefenders: late, roles: { ...frame.slotToId }, placement: this.currentPlacement },
         ball: { status: "held", holderId: frame.slotToId.O1!, fixed: null },
       })
@@ -2071,7 +2132,10 @@ export abstract class LinkedRun {
     )
       return null;
 
-    const frame = this.frameFor(possessionTeam);
+    const pendingSwap = this.pendingDefensiveSwap;
+    this.pendingDefensiveSwap = null;
+    const fresh = this.frameFor(possessionTeam);
+    const frame = sameTeam && pendingSwap ? (swapDefenders(fresh, pendingSwap[0], pendingSwap[1]) ?? fresh) : fresh;
     if (sameTeam) {
       // Sin toque de aro no hay reinicio de 14 s: se conserva el reloj restante.
       const remaining = this.shotRemainingAt(tControl);

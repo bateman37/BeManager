@@ -38,7 +38,8 @@ describe("ME-07B v2 §2.2: selección de familia sobre la misma frontera que su 
     let matched = 0;
     // La colocación lateral (LAB-0.7) solo se juega en bloqueo directo: su
     // comparación con la central es `colocacion_bloqueo`, no esta.
-    const central = (d: (typeof decisions)[number]) => d.options.every((o) => o.values?.placement !== "lateral");
+    // Lo mismo para Horns (LAB-0.8): ambas fuerzan el bloqueo directo.
+    const central = (d: (typeof decisions)[number]) => d.options.every((o) => o.values?.placement === undefined || o.values.placement === "central");
     for (const fam of decisions.filter((d) => d.point === "seleccion_familia" && d.chosenOptionId === "bloqueo_directo" && central(d))) {
       const read = decisions.find(
         (d) => d.point === "lectura_bloqueo_o1" && d.possessionIndex === fam.possessionIndex && d.phaseIndex === fam.phaseIndex,
@@ -61,7 +62,7 @@ describe("ME-07B v2 §2.2: selección de familia sobre la misma frontera que su 
   });
 
   it("la mano a mano también se proyecta hasta su lectura, con el riesgo del pase de entrada", () => {
-    const fams = decisions.filter((d) => d.point === "seleccion_familia" && d.options.every((o) => o.values?.placement !== "lateral"));
+    const fams = decisions.filter((d) => d.point === "seleccion_familia" && d.options.every((o) => o.values?.placement === undefined || o.values.placement === "central"));
     const dho = fams.map((d) => d.options.find((o) => o.id === "mano_a_mano_sin_balon")!.values!);
     expect(dho.every((v) => v.bestReadOption === null || (v.bestReadCompletion as number) < 1)).toBe(true);
   });
