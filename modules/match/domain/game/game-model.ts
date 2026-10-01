@@ -20,7 +20,7 @@ import { LAB_STARTER_IDS } from "../players/lab-roster-fixture";
 import { LAB_DECLARED_ROLES, type FunctionalRole } from "../players/functional-roles";
 import type { PhaseEntry, PossessionRecord, ResponsibilityChange, TramoEvent } from "../sequence/tramo-model";
 import { JUMP_BALL_APPROXIMATION_VERSION, type DeadBallCause, type FoulSanction, type DefensiveFoulType } from "./fiba-2026-rules";
-import { SUBSTITUTION_POLICY_VERSION, type SubstitutionReason } from "./substitution-policy";
+import { SUBSTITUTION_POLICY_VERSION, type EmergencyFill, type SubstitutionReason } from "./substitution-policy";
 import type { BoxScore } from "./box-score";
 import type { RawAuditLog } from "../audit/audit-types";
 
@@ -157,6 +157,8 @@ export interface SubstitutionRecord {
   readonly reason: SubstitutionReason;
   readonly window: DeadBallCause;
   readonly outContinuousMs: Milliseconds;
+  /** Relevo de emergencia ME-04-ROT-3: quién asume un rol no declarado y por qué. */
+  readonly emergency?: EmergencyFill;
 }
 
 export interface FoulRecord {

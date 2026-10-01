@@ -483,7 +483,7 @@ describe("ME-04 (4): sustituciones en oportunidad legal, reentrada, minutos 5× 
     expect(again.changes).toEqual([]);
   });
 
-  it("ME-04-ROT-2: sin suplente del rol del excluido, un compañero que lo declara se reajusta y entra el relevo de su rol; sin reajuste posible, queda sin resolver", () => {
+  it("ME-04-ROT-2: sin suplente del rol del excluido, un compañero que lo declara se reajusta y entra el relevo de su rol; sin reajuste posible, pasa al relevo de emergencia ME-04-ROT-3", () => {
     const p = (id: string, roles: number[], onCourt: boolean, extra: Partial<RotationPlayerState> = {}): RotationPlayerState => ({
       id,
       declaredRoles: roles as RotationPlayerState["declaredRoles"],
@@ -511,7 +511,8 @@ describe("ME-04 (4): sustituciones en oportunidad legal, reentrada, minutos 5× 
     expect(plan.changes).toEqual([
       expect.objectContaining({ outId: "A3", inId: "B2", role: 2, reason: "exclusion", reassigned: { playerId: "A2", fromRole: 2, toRole: 3 } }),
     ]);
-    // Nadie en pista ni en el banquillo declara 3: el guardián lo explicará.
+    // Nadie en pista ni en el banquillo declara 3: ya no hay guardián, sino
+    // relevo de emergencia ME-04-ROT-3 (detalle en `me04-rot3.test.ts`).
     const none = planSubstitutions({
       lineup: ["A1", "A2", "A3", "A4", "A5"],
       players: players.map((x) => (x.id === "A2" ? { ...x, declaredRoles: [2] as RotationPlayerState["declaredRoles"] } : x)),
@@ -519,8 +520,9 @@ describe("ME-04 (4): sustituciones en oportunidad legal, reentrada, minutos 5× 
       continuousThresholdMs: 300_000,
       protectedIds: [],
     });
-    expect(none.changes).toEqual([]);
-    expect(none.unresolved).toEqual([{ outId: "A3", role: 3 }]);
+    expect(none.unresolved).toEqual([]);
+    expect(none.changes).toEqual([expect.objectContaining({ outId: "A3", inId: "B2", role: 3, reason: "exclusion", emergency: expect.objectContaining({ declaredKept: 4, decidedBy: "menos_minutos" }) })]);
+    expect(none.changes[0]!.reassigned).toBeUndefined();
   });
 });
 

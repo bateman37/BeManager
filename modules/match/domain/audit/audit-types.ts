@@ -144,7 +144,12 @@ export type AuditReasonCode =
   // ME-07B v2 §2.1: disputa del rebote (llegada efectiva tras cierre).
   | "rebound_boxed_out_by_rival"
   | "rebound_arrival_in_window"
-  | "rebound_arrival_outside_window";
+  | "rebound_arrival_outside_window"
+  // ME-04-ROT-3 (ME-07B v2): relevo de emergencia tras una exclusión.
+  | "emergency_fill_chosen"
+  | "emergency_fill_fewer_declared_roles"
+  | "emergency_fill_lower_role_fit"
+  | "emergency_fill_lost_tie_break";
 
 export interface AuditOptionRecord {
   /** Identificador estable de la opción dentro de este punto (p. ej. "pase_o5", "finalizar"). */

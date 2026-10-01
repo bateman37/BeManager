@@ -284,6 +284,7 @@ function SubstitutionsList({ game }: { readonly game: LabGameView }) {
             {periodLabel(s.period)} {clock(s.gameClockMs)} · {teamName(s.teamId)}: entra <span className="font-mono">{s.inId}</span> por{" "}
             <span className="font-mono">{s.outId}</span> (rol {s.role}, {FUNCTIONAL_ROLE_LABELS[s.role]}) ·{" "}
             {s.reason === "exclusion" ? "obligatoria por exclusión" : `voluntaria, ${minutes(s.outContinuousMs)} seguidos`} · oportunidad: {WINDOW_LABELS[s.window] ?? s.window}
+            {s.emergency ? <> · relevo de emergencia ME-04-ROT-3: {s.emergency.summary}</> : null}
           </li>
         ))}
       </ul>

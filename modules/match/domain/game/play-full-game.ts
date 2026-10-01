@@ -9,7 +9,7 @@
  * `ME-04-JUMP-1`, flecha de alternancia, sentido por período, bocina,
  * reloj tras canasta, faltas personales y de equipo con bonus, exclusión
  * por cinco faltas, sustituciones en oportunidades legales (política
- * `ME-04-ROT-2`) y la segunda entrada del bloqueo directo.
+ * `ME-04-ROT-3`) y la segunda entrada del bloqueo directo.
  *
  * No hay bucle de microticks: el tiempo avanza de hecho en hecho. El
  * guardián detiene y explica una corrida anómala; nunca inventa un ganador
@@ -82,6 +82,7 @@ import {
 } from "./substitution-policy";
 import { projectBoxScore } from "./box-score";
 import { createRecordingAuditCollector, sanitizeAuditFactLinks } from "../audit/audit-collector";
+import type { AuditReasonCode } from "../audit/audit-types";
 import type {
   FoulRecord,
   GameInput,
@@ -821,6 +822,7 @@ class GameRun extends LinkedRun {
             totalMs: st.totalMs,
             disqualified: st.disqualified,
             locked: st.changedAtTick === this.clockTicks,
+            attributes: p.attributes,
           };
         }),
         voluntaryCap,
@@ -830,9 +832,14 @@ class GameRun extends LinkedRun {
       for (const change of plan.changes) this.applySubstitution(teamId, change, atMs, cause);
       if (plan.unresolved.length > 0) {
         const u = plan.unresolved[0]!;
+        // ME-04-ROT-3: con menos de cinco inscritos habilitados es otro caso
+        // reglamentario, todavía sin regla en el motor (pendiente de decisión):
+        // no se fabrica un quinto jugador ni se convierte en un final.
         this.guardianStop(
           atMs,
-          `${team.name} no tiene suplente elegible para el rol ${u.role} (${FUNCTIONAL_ROLE_LABELS[u.role]}) de ${u.outId}, excluido: no se crea un sexto jugador ni se deja actuar al excluido.`,
+          u.kind === "menos_de_cinco"
+            ? `${team.name} solo tiene ${u.eligible} inscritos habilitados tras excluir a ${u.outId}: menos de cinco jugadores es un caso reglamentario aún no modelado; no se fabrica un quinto jugador ni se deja actuar al excluido.`
+            : `${team.name} no tiene suplente elegible para el rol ${u.role} (${FUNCTIONAL_ROLE_LABELS[u.role]}) de ${u.outId}, excluido: no se crea un sexto jugador ni se deja actuar al excluido.`,
         );
         return false;
       }
@@ -850,6 +857,8 @@ class GameRun extends LinkedRun {
     lineup[index] = change.inId;
     // ME-04-ROT-2: relevo por reajuste; el compañero pasa al rol del excluido.
     if (change.reassigned) lineup[change.reassigned.toRole - 1] = change.reassigned.playerId;
+    // ME-04-ROT-3: relevo de emergencia; la asignación elegida de los cinco.
+    if (change.emergency) change.emergency.lineupAfter.forEach((id, i) => (lineup[i] = id));
     const out = this.players.get(change.outId)!;
     const inn = this.players.get(change.inId)!;
     out.onCourt = false;
@@ -871,6 +880,7 @@ class GameRun extends LinkedRun {
       reason: change.reason,
       window: cause,
       outContinuousMs: change.outContinuousMs,
+      ...(change.emergency ? { emergency: change.emergency } : {}),
     });
     const minutes = (ms: number) => `${Math.floor(ms / 60_000)}:${String(Math.floor((ms % 60_000) / 1000)).padStart(2, "0")}`;
     this.record({
@@ -880,7 +890,9 @@ class GameRun extends LinkedRun {
       actors: [change.inId, change.outId],
       text:
         change.reason === "exclusion"
-          ? change.reassigned
+          ? change.emergency
+            ? `Relevo de emergencia en ${this.team(teamId).name} (ME-04-ROT-3): ${change.emergency.summary}`
+            : change.reassigned
             ? `Sustitución obligatoria en ${this.team(teamId).name}: ${change.outId}, excluido por cinco faltas, no tiene relevo de su rol; ${change.reassigned.playerId} pasa de ${FUNCTIONAL_ROLE_LABELS[change.reassigned.fromRole]} a ${FUNCTIONAL_ROLE_LABELS[change.reassigned.toRole]} y entra ${change.inId} (${roleLabel}).`
             : `Sustitución obligatoria en ${this.team(teamId).name}: entra ${change.inId} (${roleLabel}) por ${change.outId}, excluido por cinco faltas.`
           : `Sustitución en ${this.team(teamId).name}: entra ${change.inId} (${roleLabel}, ${minutes(change.inTotalMs)} jugados) por ${change.outId} (${minutes(change.outContinuousMs)} seguidos en pista).`,
@@ -893,8 +905,52 @@ class GameRun extends LinkedRun {
         outContinuousMs: change.outContinuousMs,
         inTotalMs: change.inTotalMs,
         ...(change.reassigned ? { reassigned: change.reassigned } : {}),
+        ...(change.emergency
+          ? { emergency: { moves: change.emergency.moves, outOfRole: change.emergency.outOfRole, declaredKept: change.emergency.declaredKept, decidedBy: change.emergency.decidedBy } }
+          : {}),
         gameClockStopped: !this.game.running,
       },
+    });
+    if (change.emergency) this.auditEmergencyFill(atMs, teamId, change);
+  }
+
+  /**
+   * ME-04-ROT-3 en ME-07B-AUDIT-1: el relevo de emergencia registra cada
+   * suplente comparado (roles declarados conservados, capacidad pertinente en
+   * el puesto excepcional, reajustes, minutos), el elegido y el criterio que
+   * decidió. No consume RNG.
+   */
+  private auditEmergencyFill(atMs: Milliseconds, teamId: string, change: PlannedSubstitution): void {
+    const e = change.emergency!;
+    const reasonFor = (c: (typeof e.candidates)[number], chosen: boolean): AuditReasonCode =>
+      chosen
+        ? "emergency_fill_chosen"
+        : c.declaredKept < e.declaredKept
+          ? "emergency_fill_fewer_declared_roles"
+          : c.fit < e.candidates[0]!.fit
+            ? "emergency_fill_lower_role_fit"
+            : "emergency_fill_lost_tie_break";
+    this.auditDecision(atMs, {
+      point: "sustitucion",
+      holderId: null,
+      participants: [change.outId, ...e.candidates.map((c) => c.inId)],
+      options: e.candidates.map((c) => ({
+        id: c.inId,
+        status: c.inId === change.inId ? ("elegida" as const) : ("descartada_por_condicion" as const),
+        reasonCode: reasonFor(c, c.inId === change.inId),
+        reasonNote: `${c.declaredKept} roles declarados; fuera de rol: ${c.outOfRole.map((o) => `${o.playerId}→${o.role}`).join(", ") || "nadie"}`,
+        values: {
+          teamId,
+          declaredKept: c.declaredKept,
+          roleFit: c.fit,
+          moves: c.moves,
+          inTotalMs: c.inTotalMs,
+          outOfRole: c.outOfRole.map((o) => `${o.playerId}:${o.role}:[${o.declaredRoles.join(",")}]`).join(" ") || null,
+        },
+      })),
+      chosenOptionId: change.inId,
+      factLinkKind: "substitution",
+      note: `ME-04-ROT-3 (decidido por ${e.decidedBy}): ${e.summary}`,
     });
   }
 
