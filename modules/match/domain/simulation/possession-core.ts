@@ -94,6 +94,7 @@ import {
 import { shotProbability, blockDeflectionProbability, CLOSE_FINISH_BASE_PROBABILITY, THREE_POINT_BASE_PROBABILITY } from "../lab/lab-0-1-parameters";
 import { createNoopAuditCollector, type AuditCollector } from "../audit/audit-collector";
 import type { AuditDecisionPoint, AuditOptionRecord, AuditReasonCode } from "../audit/audit-types";
+import { cardFor, type PlaybookCardId } from "../tactics/playbook-card";
 
 const WEAK_CORNER_SPOT: Point2D = { x: 24.0, y: 13.9 };
 /**
@@ -164,7 +165,7 @@ export interface PossessionCoreResult {
   readonly possessionPhase: number;
   readonly ball: BallState;
   /** Familia y cobertura efectivamente aplicadas si este tramo fue un ataque organizado (ME-07B v2). */
-  readonly organizedChoice?: { readonly plan: OffensivePlan; readonly coverage: DefensiveCoverage };
+  readonly organizedChoice?: { readonly plan: OffensivePlan; readonly coverage: DefensiveCoverage; readonly card: PlaybookCardId };
   /**
    * Roles defensivos que han intercambiado su marca en este tramo (ME-07B v2
    * §5, cambio): quien llama mantiene el intercambio el resto de la posesión.
@@ -856,8 +857,8 @@ export function computePossessionCore(
       participants: ["O1", "O2", "O3", "O4", "O5"],
       chosenOptionId: resolvedPlan,
       options: [
-        { id: "bloqueo_directo", status: "elegida", reasonCode: "placement_forced_by_plan", values: { placement: "lateral" } },
-        { id: "mano_a_mano_sin_balon", status: "no_evaluada_por_cortocircuito", reasonCode: "family_not_in_lateral_placement", values: { placement: "lateral" } },
+        { id: "bloqueo_directo", status: "elegida", reasonCode: "placement_forced_by_plan", values: { placement: "lateral", cardId: "bloqueo_directo_lateral" } },
+        { id: "mano_a_mano_sin_balon", status: "no_evaluada_por_cortocircuito", reasonCode: "family_not_in_lateral_placement", values: { placement: "lateral", cardId: null } },
       ],
     });
   } else if (planChoice === "auto") {
@@ -892,6 +893,7 @@ export function computePossessionCore(
           reasonCode: resolvedPlan === "bloqueo_directo" ? "family_opportunity_higher" : "family_opportunity_lower",
           values: {
             ...familyAuditValues(bloqueoOpportunity),
+            cardId: "bloqueo_directo_central",
             projectedCoverage: "drop",
             observedUses: seenFamily?.bloqueo_directo?.uses ?? 0,
             observedPoints: seenFamily?.bloqueo_directo?.points ?? 0,
@@ -904,6 +906,7 @@ export function computePossessionCore(
           reasonCode: resolvedPlan === "mano_a_mano_sin_balon" ? "family_opportunity_higher" : "family_opportunity_lower",
           values: {
             ...familyAuditValues(handoffOpportunity),
+            cardId: "mano_a_mano_central",
             observedUses: seenFamily?.mano_a_mano_sin_balon?.uses ?? 0,
             observedPoints: seenFamily?.mano_a_mano_sin_balon?.points ?? 0,
             blendedValue: handoffBlended,
@@ -919,8 +922,8 @@ export function computePossessionCore(
       participants: ["O1", "O2", "O3", "O4", "O5"],
       chosenOptionId: resolvedPlan,
       options: [
-        { id: "bloqueo_directo", status: resolvedPlan === "bloqueo_directo" ? "elegida" : "no_evaluada_por_cortocircuito", reasonCode: resolvedPlan === "bloqueo_directo" ? "family_forced_by_plan" : "not_evaluated_short_circuit" },
-        { id: "mano_a_mano_sin_balon", status: resolvedPlan === "mano_a_mano_sin_balon" ? "elegida" : "no_evaluada_por_cortocircuito", reasonCode: resolvedPlan === "mano_a_mano_sin_balon" ? "family_forced_by_plan" : "not_evaluated_short_circuit" },
+        { id: "bloqueo_directo", status: resolvedPlan === "bloqueo_directo" ? "elegida" : "no_evaluada_por_cortocircuito", reasonCode: resolvedPlan === "bloqueo_directo" ? "family_forced_by_plan" : "not_evaluated_short_circuit", values: { cardId: "bloqueo_directo_central" } },
+        { id: "mano_a_mano_sin_balon", status: resolvedPlan === "mano_a_mano_sin_balon" ? "elegida" : "no_evaluada_por_cortocircuito", reasonCode: resolvedPlan === "mano_a_mano_sin_balon" ? "family_forced_by_plan" : "not_evaluated_short_circuit", values: { cardId: "mano_a_mano_central" } },
       ],
     });
   }
@@ -1016,7 +1019,7 @@ export function computePossessionCore(
               : ctx.resolvedCoverage === "ice"
                 ? runIcePhase(ctx, scenario)
                 : runDropPhase(ctx, scenario);
-  return { ...organized, organizedChoice: { plan: resolvedPlan, coverage: ctx.resolvedCoverage } };
+  return { ...organized, organizedChoice: { plan: resolvedPlan, coverage: ctx.resolvedCoverage, card: cardFor(resolvedPlan, ctx.set.placement).id } };
 }
 
 /**

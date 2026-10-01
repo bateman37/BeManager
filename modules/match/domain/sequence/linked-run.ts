@@ -44,6 +44,7 @@ import type {
 import { getScenario } from "../lab/scenario";
 import type { ObservedOutcome } from "../lab/lab-0-4-parameters";
 import { LATERAL_PNR_TARGETS, type ScreenPlacement, type ScreenPlacementChoice } from "../lab/lab-0-7-parameters";
+import { eligiblePlacements } from "../tactics/playbook-card";
 import { FIRST_READ_TIE_BAND_POINTS, contestReachMeters, evaluateContestLevel, type LAB_0_3_PARAMETERS_VERSION } from "../lab/lab-0-3-parameters";
 import {
   attackerMoveSpeedMps,
@@ -1335,9 +1336,9 @@ export abstract class LinkedRun {
     // a la mano a mano.
     const matchInput = this.coreMatchInput(frame);
     const placementChoice = this.screenPlacementWhenAttacking(frame.attacking.id);
-    const pnrAllowed = matchInput.offensivePlan !== "mano_a_mano_sin_balon";
-    const placements: ScreenPlacement[] =
-      placementChoice === "auto" ? (pnrAllowed ? ["central", "lateral"] : ["central"]) : [pnrAllowed ? placementChoice : "central"];
+    // Fichas de libro (§3): las colocaciones que se ofrecen son las de las
+    // fichas cuya condición admite el plan y la orden de colocación.
+    const placements = eligiblePlacements(matchInput.offensivePlan ?? "bloqueo_directo", placementChoice);
     const candidates: {
       map: Record<string, string>;
       handlerId: string;
