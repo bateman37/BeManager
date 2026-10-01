@@ -203,6 +203,27 @@ describe("ME-07B v2 §4: misma ficha Delay ante hundirse, cambiar y saltar la en
   });
 });
 
+describe("ME-07B v2 §4: el corte del ala débil no fabrica faltas tardías (regresión)", () => {
+  it("ante el salto de la entrega, el cortador rodea a su defensor y lo cierra D4 desde el aro: casi ninguna falta tardía en los cortes", () => {
+    // Antes: el corte atravesaba a D3 (que está en su línea) y solo D3 cerraba; su llegada caía siempre en
+    // la ventana de frenada y 15–22 de cada 19–36 cortes eran falta tardía (3–5 excluidos por partido).
+    const g = play(92, { coverage: "show" });
+    const recs = g.r.audit!.decisions;
+    const team = new Map(g.r.possessions.map((p) => [p.index, p.teamId]));
+    let cuts = 0;
+    let late = 0;
+    for (const d of recs.filter((x) => x.point === "lectura_poste" && x.chosenOptionId === "corte_o3" && team.get(x.possessionIndex!) === SC)) {
+      const res = recs.find((x) => x.point === "resolucion_tiro" && x.possessionIndex === d.possessionIndex && x.phaseIndex === d.phaseIndex && x.atMs >= d.atMs);
+      if (!res) continue;
+      cuts += 1;
+      if (res.chosenOptionId === "late_illegal_contact") late += 1;
+    }
+    expect(cuts).toBeGreaterThan(10);
+    expect(late / cuts).toBeLessThan(0.1);
+    assertFinalAndReconciled(g);
+  });
+});
+
 describe("ME-07B v2 §4: salidas del poste (ayuda de la esquina, corte, repostear)", () => {
   it("con el defensor de la esquina rápido, la ayuda llega antes del giro y el poste sale a la esquina; con el del fixture llega tarde o no compensa", () => {
     const normal = play(92, { coverage: "drop" });

@@ -3975,7 +3975,9 @@ function postReadOptions(ctx: CoreContext, tCatch: number, tRelease: number, swa
   const d2Recover = chaser(ctx, "D2", digPoint, tD2Dig, (p) => perimeterArrivalAdjustmentSeconds(p.attributes.T22));
   // Corte del ala débil: sale al recibir el poste (T21 adelanta la salida); D3 lo reconoce tarde (M01/M05).
   const o3CutStart = Math.max(0, tCatch - cutterStartTimeReductionSeconds(o3.attributes.T21));
-  const tO3AtCut = o3CutStart + timeToReach(ctx.positions.O3!, DELAY_WEAK_CUT_SPOT, attackerMoveSpeedMps(o3.attributes.F01));
+  // El corte pasa por detrás de D3 (lo rodea: D3 está entre O3 y el aro, en la línea del corte).
+  const cutPath = detourAround(ctx.positions.O3!, DELAY_WEAK_CUT_SPOT, ctx.positions.D3!, COMBINED_CONTACT_RADIUS_METERS);
+  const tO3AtCut = o3CutStart + cutPath.length / attackerMoveSpeedMps(o3.attributes.F01);
   const d3Chase = chaser(ctx, "D3", ctx.positions.D3!, tCatch + recognitionLatencySeconds(d3.attributes.M01, d3.attributes.M05), (p) => interiorArrivalAdjustmentSeconds(p.attributes.T23));
 
   // Dos sobre el poste (D4 a la espalda y D2 cerrando el giro) si D2 llega antes de que O4 gire:
@@ -4002,7 +4004,9 @@ function postReadOptions(ctx: CoreContext, tCatch: number, tRelease: number, swa
     const kickValue = dig && isBehindThreePointLine(corner) && tKickReady < clock ? 3 * shotProbability(THREE_POINT_BASE_PROBABILITY, o2.attributes.T04, kick.level) : -Infinity;
     const tCutArrival = Math.max(tO3AtCut, tRead + PASS_RELEASE_SECONDS + distanceSeconds(post, DELAY_WEAK_CUT_SPOT));
     const tCutReady = tCutArrival + CLOSE_FINISH_PREP_SECONDS;
-    const cut = bestContest(ctx, [d3Chase, d5Sag], DELAY_WEAK_CUT_SPOT, tCutReady, CLOSE_FINISH_PREP_SECONDS)!;
+    // D4, a la espalda del poste que pasa, se gira al cortador en cuanto sale el pase (está junto al aro).
+    const d4ToCutter = chaser(ctx, "D4", ctx.positions.D4!, tRead + PASS_RELEASE_SECONDS + recognitionLatencySeconds(player(ctx, "D4").attributes.M01, player(ctx, "D4").attributes.M05), (p) => interiorArrivalAdjustmentSeconds(p.attributes.T23));
+    const cut = bestContest(ctx, [d3Chase, d5Sag, d4ToCutter], DELAY_WEAK_CUT_SPOT, tCutReady, CLOSE_FINISH_PREP_SECONDS)!;
     const cutValue = tCutReady < clock ? 2 * shotProbability(CLOSE_FINISH_BASE_PROBABILITY, o3.attributes.T01, cut.level) : -Infinity;
     const shoot = (args: ShotAttemptArgs) => (record: (factLinkKind?: string) => void) => {
       record();
@@ -4014,7 +4018,8 @@ function postReadOptions(ctx: CoreContext, tCatch: number, tRelease: number, swa
     };
     const passTo = (receiver: "O2" | "O3", spot: Point2D, tArrival: number, deflectorId: string, shot: ShotAttemptArgs, text: string) => (record: (factLinkKind?: string) => void) => {
       if (receiver === "O3") {
-        setArrival(ctx, "O3", tO3AtCut, DELAY_WEAK_CUT_SPOT, o3CutStart);
+        if (cutPath.waypoint) setArrival(ctx, "O3", o3CutStart + distance(ctx.positions.O3!, cutPath.waypoint) / attackerMoveSpeedMps(o3.attributes.F01), cutPath.waypoint, o3CutStart);
+        setArrival(ctx, "O3", tO3AtCut, DELAY_WEAK_CUT_SPOT, cutPath.waypoint ? o3CutStart + distance(ctx.positions.O3!, cutPath.waypoint) / attackerMoveSpeedMps(o3.attributes.F01) : o3CutStart);
         event(ctx, o3CutStart, "ejecutado", "weak_side_cut", ["O3", "D3"], "O3 corta desde el ala débil por detrás de D3, que mira al poste.");
       }
       const outcome = resolvePass(o4.attributes.T09, player(ctx, receiver).attributes.T11, true, player(ctx, deflectorId).attributes.T17, 1, ctx.rng);
@@ -4248,11 +4253,14 @@ function runDelayPhase(ctx: CoreContext, response: DelayResponse): PossessionCor
     const tKeep = tHandoffReady;
     const d5Recover = chaser(ctx, "D5", jumpPoint, Math.max(tD5AtJump, tKeep) + recognitionLatencySeconds(d5.attributes.M01, d5.attributes.M05), (p) => interiorArrivalAdjustmentSeconds(p.attributes.T23));
     const d4Help = chaser(ctx, "D4", ctx.positions.D4!, tKeep + recognitionLatencySeconds(player(ctx, "D4").attributes.M01, player(ctx, "D4").attributes.M05), (p) => interiorArrivalAdjustmentSeconds(p.attributes.T23));
-    const tRim = tKeep + timeToReach(hub, ATTACKED_HOOP, attackerMoveSpeedMps(o5.attributes.F01)) + CLOSE_FINISH_PREP_SECONDS;
+    // D5 está en el punto de la entrega: el pívot y el cortador lo rodean (dos cuerpos no se cruzan).
+    const keeperPath = detourAround(hub, ATTACKED_HOOP, jumpPoint, COMBINED_CONTACT_RADIUS_METERS);
+    const tRim = tKeep + keeperPath.length / attackerMoveSpeedMps(o5.attributes.F01) + CLOSE_FINISH_PREP_SECONDS;
     const rim = bestContest(ctx, [d5Recover, d4Help], ATTACKED_HOOP, tRim, CLOSE_FINISH_PREP_SECONDS)!;
     const rimValue = tRim < clock ? 2 * shotProbability(CLOSE_FINISH_BASE_PROBABILITY, o5.attributes.T01, rim.level) : -Infinity;
     // Puerta de atrás: O1, con D5 en su camino arriba, corta al aro por detrás; D1 le persigue tarde.
-    const tO1AtRim = tKeep + timeToReach(handoffPoint, ATTACKED_HOOP, attackerMoveSpeedMps(o1.attributes.F01));
+    const backdoorPath = detourAround(handoffPoint, ATTACKED_HOOP, jumpPoint, COMBINED_CONTACT_RADIUS_METERS);
+    const tO1AtRim = tKeep + backdoorPath.length / attackerMoveSpeedMps(o1.attributes.F01);
     const tBackdoorArrival = Math.max(tO1AtRim, tKeep + PASS_RELEASE_SECONDS + distanceSeconds(hub, ATTACKED_HOOP));
     const tBackdoorReady = tBackdoorArrival + CLOSE_FINISH_PREP_SECONDS;
     const d1Chase = chaser(ctx, "D1", ctx.positions.D1!, tKeep + recognitionLatencySeconds(d1.attributes.M01, d1.attributes.M05));
