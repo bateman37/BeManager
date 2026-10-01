@@ -397,3 +397,70 @@ falta primero dar al show su profundidad propia en la trayectoria de salida
 de O1, o serían dos nombres con la misma geometría (§3); (3) la ficha de
 libro de §3 sobre las primitivas ya compartidas; (4) el empate de familia
 de Sierra +5.
+
+### Sesión v2-3 — 2026-10-01 (en curso)
+
+**Base:** continúa `claude/me-07b-v2-capitulo-tactico` desde `3ccc249`;
+**PR #11 Draft** (no se fusiona ni se marca Ready).
+
+#### Decisión de Dennis sobre la semilla 39 (literal)
+> «Decisión para la semilla 39: opción B. Continúa la siguiente ronda.
+> Mantén primero los relevos por rol declarado y el reajuste ME-04-ROT-2. Si
+> ninguno permite completar el quinteto tras una exclusión, incorpora a un
+> suplente inscrito y habilitado aunque no declare el rol vacante. Elige la
+> asignación de los cinco que conserve más roles declarados; para el puesto
+> excepcional, usa las capacidades pertinentes y un desempate reproducible.
+> Registra quién asume el rol de emergencia y por qué. No cambies sus roles
+> persistidos ni sus atributos, no apliques un malus global y no permitas
+> volver al excluido. Prueba específicamente la semilla 39 y repite las 60
+> semillas con parada final y acta conciliada. Si alguna vez quedan menos de
+> cinco jugadores realmente habilitados, trátalo como un caso reglamentario
+> distinto; no fabriques un quinto jugador ni conviertas un guardian en un
+> final.»
+
+#### Hecho y verificado (con commits)
+1. `399d8e6` — **`ME-04-ROT-3`** (`substitution-policy.ts`): orden ROT-1 →
+   ROT-2 → emergencia. La emergencia prueba cada suplente habilitado (no
+   excluido, no bloqueado en la parada) con todas las asignaciones de los
+   cinco a los roles 1–5 (los otros excluidos de la misma parada y los ya
+   reajustados conservan su ranura) y ordena: (1) más roles declarados
+   conservados, (2) mayor capacidad pertinente en el/los puesto(s) fuera de
+   rol, (3) menos reajustes en pista, (4) menos minutos, (5) ID. Sin sorteo:
+   no consume RNG y se reproduce igual. «Capacidad pertinente» = media de los
+   atributos que el motor de esta versión lee específicamente para la ranura
+   O_n/D_n de ese rol (`EMERGENCY_ROLE_TASK_ATTRIBUTES`, inventario por
+   lectura del código `o<n>.attributes.*`/`d<n>.attributes.*`); solo ordena
+   candidatos, no modifica el juego. Hecho `substitution` con el relato
+   («Relevo de emergencia… entra SC08 como rol 1… decide:
+   capacidad_pertinente»), `SubstitutionRecord.emergency` y decisión
+   auditada `sustitucion` con cada candidato, valores y código de motivo
+   (`emergency_fill_*`), enlazada al hecho. Perfiles y roles declarados no se
+   tocan; sin malus. `menos_de_cinco` (menos de cinco inscritos no
+   excluidos) queda sin resolver con explicación propia de guardián: **caso
+   reglamentario pendiente de decisión** (no hay regla de partido perdido por
+   insuficiencia en `fiba-2026-rules.ts`; no se inventa).
+2. Semilla 39 (seed): SC06 se excluye en C3 (entra O1 por ROT-1) y O1 en
+   C4 a 3:27. Antes: guardián. Ahora: entra SC08 [2,3] como base (capacidad
+   de base 9,00 frente a SC07 8,71 si entrase O2, O3/O4 8,57, O5 6,57; 4/5
+   roles declarados en todas), termina **final 110–101**, acta conciliada.
+3. Pruebas: `me04-rot3.test.ts` (4): semilla 39 pura con el estado real;
+   preferencia (ROT-1 antes; cadena 5/5 antes que fuera de rol; empate por
+   minutos e ID); `menos_de_cinco`; partido completo de la 39 (final, acta,
+   hecho y auditoría con quién/por qué, ningún excluido vuelve ni actúa,
+   entrada sin mutar). `me04.test.ts` (ROT-2): el caso «sin reajuste» pasa
+   de «sin resolver» a emergencia.
+4. Barrido `npx tsx scripts/me07b-v2-stop-sweep.ts 1 60` (seed, Sierra +3,
+   Sierra +5): **180/180 `final`, 0 actas sin conciliar**; 3 relevos de
+   emergencia (seed 39 Sierra O1→SC08 base; +3 semilla 11 y +5 semilla 8:
+   Puerto PA10 alero excluido → entra D4 [4] como alero, capacidad 9,67).
+   Ningún caso `menos_de_cinco`. Foto de las 20: las 20 `final`, actas
+   conciliadas, sin emergencias (huellas cambian solo por la versión de
+   rotación en la entrada).
+5. `npm run check` completo (lint + typecheck + 288 tests + docs:check +
+   build) en `399d8e6`.
+
+#### Pendiente de esta parte
+- Regla para **menos de cinco habilitados** (partido perdido/insuficiencia):
+  decisión de Dennis cuando haga falta; hoy guardián explicado.
+- La comparación completa de candidatos solo se audita en la emergencia; las
+  sustituciones ordinarias siguen como `coverageGaps` declarado.

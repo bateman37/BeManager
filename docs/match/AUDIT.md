@@ -222,6 +222,14 @@ usaron (ver `RULES.md`).
   minutos), pero no la comparación completa frente a todos los candidatos
   elegibles del quinteto en ese instante. `coverageGaps` indica cuántas
   sustituciones de esa corrida quedan así de parcialmente explicadas.
+  **Excepción completa (ME-04-ROT-3):** el relevo de emergencia sí registra
+  una decisión `sustitucion` con cada suplente comparado (su mejor
+  asignación: roles declarados conservados, quién queda fuera de rol y con
+  qué capacidad pertinente, reajustes, minutos), el elegido
+  (`emergency_fill_chosen`) y por qué perdió cada otro
+  (`emergency_fill_fewer_declared_roles`, `emergency_fill_lower_role_fit`,
+  `emergency_fill_lost_tie_break`); la nota indica el criterio decisivo y el
+  enlace apunta al hecho `substitution`. No consume RNG.
 
 Ninguna otra ruta de las priorizadas por el prompt (§3, puntos 1–5) queda
 sin instrumentar en este bloque; si una futura entrega añade un punto de

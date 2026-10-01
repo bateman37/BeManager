@@ -75,6 +75,16 @@ decisiones duraderas viven en `docs/decisions/`, no aquí.
   que deja; nadie juega fuera de un rol declarado. Si ni así hay relevo, el
   guardián sigue explicándolo (queda 1 de 60: los cuatro aleros declarados
   de Puerto excluidos; decisión requerida en el progreso).
+- **Rotación `ME-04-ROT-3` (decisión de Dennis, semilla 39).** Si ni el
+  relevo por rol ni el reajuste ROT-2 completan el quinteto tras una
+  exclusión, entra un suplente habilitado aunque no declare el rol vacante:
+  la asignación de los cinco que conserva más roles declarados, la mayor
+  capacidad pertinente en el puesto excepcional y desempate sin sorteo
+  (reajustes, minutos, ID). Hecho, registro de sustitución y decisión
+  auditada `sustitucion` dicen quién y por qué; sin malus ni cambios de
+  perfil; el excluido no vuelve. Con menos de cinco habilitados sigue el
+  guardián (caso reglamentario distinto, pendiente). Semillas 1–60 en las
+  tres fotos: 180/180 `final` con acta conciliada (antes la 39 seed paraba).
 - **§5 Coberturas.** `auto` compite entre drop, trampa, cambio, show, por
   debajo e ICE con la misma proyección en seco. Cambio: D5 canta y sale a
   la altura del bloqueo, D1 se queda con el bloqueador y el desajuste

@@ -217,7 +217,7 @@ ninguna tras ME-04B (ver
 actualizada); el mecanismo en sí es alcanzable de verdad con geometría
 construida a mano (`domain/game/me04b.test.ts`).
 
-**Sustituciones (art. 19, política `ME-04-ROT-2`).** Oportunidades: falta
+**Sustituciones (art. 19, política `ME-04-ROT-3`).** Oportunidades: falta
 (ambos equipos; se conserva al tirador de los libres), último libre
 anotado, balón fuera y violaciones (ambos), inicio de período (ambos) y,
 desde 2:00 en C4/prórroga, canasta **solo para el equipo que la recibe**;
@@ -230,8 +230,19 @@ por ID; sin compatible, sigue el mismo. Quien entra o sale no invierte el
 cambio hasta que corre el reloj. Si ningún suplente declara el rol de un
 excluido, un compañero en pista que sí lo declara pasa a ese rol y entra el
 suplente elegible del rol que deja (menos minutos; `ME-04-ROT-2`, ME-07B
-v2); nadie juega fuera de un rol declarado. Si tampoco hay ese reajuste,
-el guardián lo explica y no hay ganador. Interpretación documentada: el
+v2). Solo si ninguno de los dos completa el quinteto, **relevo de
+emergencia** (`ME-04-ROT-3`, decisión de Dennis del 01-10-2026, citada en
+`docs/prompts/implementation/ME-07B-PROGRESS.md`): entra un suplente
+inscrito y habilitado aunque no declare el rol vacante; se elige la
+asignación de los cinco que conserva más roles declarados y, para el puesto
+excepcional, la mayor capacidad pertinente (media de los atributos que el
+motor lee para esa ranura, `EMERGENCY_ROLE_TASK_ATTRIBUTES`); desempate
+reproducible sin sorteo: menos reajustes en pista, menos minutos, ID. El
+hecho y la auditoría dicen quién asume el rol y por qué. No se cambian roles
+persistidos ni atributos ni se aplica malus; el excluido no vuelve. Con
+**menos de cinco inscritos habilitados** es otro caso reglamentario aún sin
+regla en el motor (pendiente de decisión): el guardián lo explica, sin
+fabricar un quinto jugador ni convertirlo en final. Interpretación documentada: el
 umbral de 5:00 es condición para ser candidato voluntario (no se sustituye
 a nadie que no lo alcance).
 
