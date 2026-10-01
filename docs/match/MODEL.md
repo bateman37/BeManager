@@ -82,6 +82,8 @@ cualquier combinación de cobertura/orden (ver `ACTIONS.md`).
 `central`): la colocación del bloqueo directo de cada acción organizada,
 con su propia disposición (`LATERAL_PNR_TARGETS`) y continuación; la mano
 a mano solo desde la central. `coverage` admite además `a_la_altura`.
+Las acciones organizadas se describen como fichas de libro en
+`domain/tactics/playbook-card.ts` (§3; ver `ACTIONS.md`).
 
 **ME-07A:** `coverage` y `offBallDefensiveCall` admiten `"auto"` (ver
 `ACTIONS.md`, resuelto de forma pura antes del árbol); `GameTeamInput`

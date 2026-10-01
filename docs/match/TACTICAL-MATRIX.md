@@ -111,6 +111,15 @@ auditoría** · **Prueba** · **Estado**. «—» = no existe todavía.
 
 ## Libro por fase
 
+Primitiva común (§3, sesión v2-3): `PlaybookCard` en
+`domain/tactics/playbook-card.ts` con fase/condición, colocación, roles y
+sustitutos, primera acción, variantes, lecturas permitidas, seguridad y
+prioridad; hoy describe las tres acciones organizadas existentes (bloqueo
+central, mano a mano, bloqueo lateral) y gobierna qué colocaciones se
+ofrecen al organizar (`playbook-card.test.ts`: cada lectura de un partido
+completo pertenece a la ficha de su fase). Ninguna fila de esta tabla tiene
+todavía ficha propia.
+
 | Nombre | Capa | Config. | Entrada | Mecanismo | Fallback | Hecho/auditoría | Prueba | Estado |
 |---|---|---|---|---|---|---|---|---|
 | Organizado: Horns→bloqueo/Spain | Libro | — | — | — | — | — | — | pendiente |

@@ -179,6 +179,18 @@ conteniéndole al decidir, y D5 vuelve con el continuador
 (`lectura_a_la_altura`, `at_level_committed`, `at_level_recovery`). `auto`
 compite ahora entre siete coberturas (ICE solo ante la lateral).
 
+**ME-07B v2 §3 — ficha de libro (primer paso).** `domain/tactics/playbook-card.ts`
+declara las tres acciones organizadas que existen (bloqueo directo central,
+mano a mano central, bloqueo directo lateral) como fichas con fase y
+condición (planes que la admiten), colocación, roles y sustitutos (creador
+O1 o poseedor real; bloqueador O5 u O4), primera acción, variantes (segunda
+entrada), lecturas permitidas, seguridad (salida segura y reorganizar) y
+prioridad. Al organizar, las colocaciones ofrecidas salen de las fichas
+compatibles con el plan y la orden de colocación; el núcleo devuelve la
+ficha en vigor (`organizedChoice.card`). No cambia la conducta (foto de las
+20 idéntica); Horns, Delay, Spain, drag y los saques siguen pendientes como
+fichas nuevas con su mecanismo.
+
 **ME-07B v2 §2.4 — lecturas frente al mejor cierre real.** Cada vía de
 tiro de la primera lectura del bloqueo y de la lectura del continuador se
 valora con la oposición que resultará de verdad (`bestContest`, misma regla

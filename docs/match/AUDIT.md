@@ -139,7 +139,9 @@ llevan `halted`, `driveStartSeconds` y `d5RecoversTo`. Hechos
 `d5LowAt`), `ice_late`, `at_level_committed`/`show_committed`
 (`depthToHoop`) y `at_level_recovery`; `organized_entry` y `screen_set`
 llevan `placement`. La configuración exportada de cada equipo añade
-`screenPlacement` (entra en la huella).
+`screenPlacement` (entra en la huella). **§3:** cada opción de
+`seleccion_familia` lleva `cardId`, la ficha de libro a la que corresponde
+(`null` si la colocación no admite esa familia).
 **§2.6:** `result.summary.shots` enlaza cada FGA a la
 familia elegida antes que él en su fase y a la última decisión de
 lectura/entrada anterior (`causingDecision` con id, punto, opción,

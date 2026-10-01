@@ -75,6 +75,11 @@ decisiones duraderas viven en `docs/decisions/`, no aquí.
   que deja; nadie juega fuera de un rol declarado. Si ni así hay relevo, el
   guardián sigue explicándolo (queda 1 de 60: los cuatro aleros declarados
   de Puerto excluidos; decisión requerida en el progreso).
+- **§3 Ficha de libro (primer paso).** `PlaybookCard` une fase/condición,
+  colocación, roles y sustitutos, primera acción, variantes, lecturas
+  permitidas, seguridad y prioridad de las tres acciones organizadas
+  existentes; decide qué colocaciones se ofrecen al organizar y se audita
+  (`cardId`). Sin cambio de conducta (foto de las 20 idéntica).
 - **§4–§5 Bloqueo directo lateral, ICE ejecutable y «a la altura» (LAB-0.7).**
   Segunda colocación real del bloqueo (`screenPlacement`, selector en
   `/lab`; en `auto` el poseedor real la elige con creador y bloqueador por

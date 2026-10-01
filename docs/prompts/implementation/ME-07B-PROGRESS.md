@@ -512,6 +512,20 @@ de Sierra +5.
 8. `npm run check` completo (lint + typecheck + 300 tests + docs:check +
    build) en `ea4e50b`.
 
+9. `54c1716` — restaura `next-env.d.ts` (lo había reescrito `npm run dev` y
+   entró por error en `a05d30d`).
+10. `f819010` — **§3 ficha de libro, primer paso**: `PlaybookCard`
+    (`domain/tactics/playbook-card.ts`) con los ocho campos de §3 para las
+    tres acciones organizadas existentes; `assignOrganizedRoles` toma de las
+    fichas las colocaciones ofrecidas; el núcleo devuelve y audita la ficha
+    en vigor (`cardId`). Prueba de contrato: en tres partidos completos cada
+    lectura pertenece a la ficha de su fase (se ven las tres fichas; ICE solo
+    en la lateral). Conducta idéntica: foto de las 20 sin un solo cambio de
+    marcador ni de tiros. `npm run check` (303 tests) en `f819010`.
+    **No hecho todavía:** fichas nuevas (Horns, Delay, Spain, drag, saques),
+    variantes encadenadas, prioridad de llamada por fase/reloj y romper la
+    llamada a mitad de ficha más allá de la salida segura existente.
+
 #### `/lab` real en `ea4e50b` (PostgreSQL 16 + Chromium de Playwright)
 `walk.cjs` (fuera del repo, en el scratchpad) sobre `npm run dev`:
 restaurar ambos equipos desde el seed; semilla 92 con Sierra «Colocación
@@ -529,8 +543,9 @@ la misma configuración (la huella difiere por campos de perfil persistido).
   lift del ala débil). El ataque proyecta familia y colocación contra drop
   (no anticipa ICE/show/a la altura).
 - Descomponer la bajada de puntos de la foto seed.
-- §3: ficha de libro compartida (no iniciada en esta parte), §4–§7 resto;
-  ninguna fila de la matriz es «jugable».
+- §3: la ficha de libro existe (`f819010`) pero solo describe las tres
+  acciones ya implementadas; §4–§7 resto; ninguna fila de la matriz es
+  «jugable».
 
 #### Reanudar
 ```bash
