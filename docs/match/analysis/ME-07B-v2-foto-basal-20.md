@@ -216,7 +216,10 @@ altura» se elige sobre todo con Puerto defendiendo (135 seed, 165 +3) y
 el show deja de ser casi idéntico: frena al manejador cuando llega antes
 (semilla 92 forzada: 58/116). (4) Los puntos bajan respecto a v2-2
 (1.317–1.307 → 1.201–1.210 en seed); no se ha descompuesto qué parte es
-del ICE/lateral y qué parte del efecto mariposa de la secuencia (pendiente).
+del ICE/lateral y qué parte del efecto mariposa de la secuencia (pendiente;
+descompuesto en v2-4 en `ME-07B-v2-descomposicion-puntos-v2-3.md`: dos
+prórrogas, aciertos bajo lo esperado y la mezcla defensiva; fuera de muestra
+el total sube).
 
 Parejas: 91 seed 92–99 (Puerto 20/72) → +3 142–127 (Puerto 45/65); 102
 seed 68–120 (Puerto 92/25) → +5 159–107 (Puerto 91/10). **Limitaciones:**

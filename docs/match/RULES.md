@@ -5,7 +5,7 @@
 **Debe leerse cuando:** vayas a añadir o cambiar un estado terminal, una falta o una reanudación.
 **No cubre:** el reglamento completo (solo lo alcanzable por el escenario de ME-01); NBA/NCAA no están implementados.
 **Documentos relacionados:** `docs/match/reference/BeManager-estudio-baloncesto-v1.md` (capítulo 01 §§1.1, 1.4–1.5; capítulo 02 §§2.2–2.5), `MODEL.md` (continuidad del tramo), Official Basketball Rules 2026 v1.1, arts. 4, 8–12, 17, 19, 28, 29, 33–34, 41, 42, 44 y 50–51.
-**Última actualización:** 2026-09-29 (ME-06, adelantada antes de ME-05).
+**Última actualización:** 2026-10-01 (ME-07B v2, sesión v2-4: decisión sobre `menos_de_cinco`, sin implementar).
 
 ## Perfil de reglas
 
@@ -239,10 +239,28 @@ excepcional, la mayor capacidad pertinente (media de los atributos que el
 motor lee para esa ranura, `EMERGENCY_ROLE_TASK_ATTRIBUTES`); desempate
 reproducible sin sorteo: menos reajustes en pista, menos minutos, ID. El
 hecho y la auditoría dicen quién asume el rol y por qué. No se cambian roles
-persistidos ni atributos ni se aplica malus; el excluido no vuelve. Con
-**menos de cinco inscritos habilitados** es otro caso reglamentario aún sin
-regla en el motor (pendiente de decisión): el guardián lo explica, sin
-fabricar un quinto jugador ni convertirlo en final. Interpretación documentada: el
+persistidos ni atributos ni se aplica malus; el excluido no vuelve.
+
+**Menos de cinco inscritos habilitados (`menos_de_cinco`): decidido, no
+implementado.** Decisión de Dennis del 01-10-2026, literal:
+
+> «Decisión sobre menos_de_cinco: cuando no queden cinco inscritos
+> habilitados, continúa con cuatro, tres o dos jugadores reales; con menos de
+> dos, registra derrota por default conforme a FIBA 2026. No inventes un
+> sustituto, no reutilices excluidos y no conviertas un guardian en final.
+> Documenta esta regla ahora; su implementación puede esperar porque no
+> aparece en las 180 partidas comprobadas. Si impide cerrar una prueba o
+> entrega, deja el caso pendiente explícito en la PR Draft.»
+
+Regla resultante: el equipo sigue en pista con los 4, 3 o 2 jugadores
+reales que le queden (sin rellenar hasta cinco ni volver a usar a un
+excluido); con menos de dos, el partido termina como **derrota por
+default** (Reglas Oficiales FIBA 2026, art. 21). **Hueco del motor:** hoy no
+existe ese resultado — `GameStopCause` solo admite `final` y `guardian`, y
+`fiba-2026-rules.ts` no recoge los arts. 20–21 — ni el juego con menos de
+cinco (las ranuras O1–O5/D1–D5 suponen cinco). Mientras no se implemente, el
+caso sigue parando con guardián explicado (`menos_de_cinco` en
+`substitution-policy.ts`), nunca como final. Interpretación documentada: el
 umbral de 5:00 es condición para ser candidato voluntario (no se sustituye
 a nadie que no lo alcance).
 
