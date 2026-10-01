@@ -199,7 +199,11 @@ describe("ME-07B v2 §4: Horns no es la central con otro nombre (misma cobertura
     const left = horns.r.events.filter((e) => e.kind === "help_left_assignment" && e.possessionTeamId === SC);
     expect(left.length).toBeGreaterThan(30);
     for (const e of left) expect(e.text).toContain("en el codo");
-    for (const e of central.r.events.filter((x) => x.kind === "help_left_assignment" && x.possessionTeamId === SC)) expect(e.text).toContain("en la esquina débil");
+    // En la central nadie queda libre en el codo (sesión v2-6: la central también puede jugar la mano a mano
+    // cuando vale más, y su ayuda deja libre a otro; lo discriminante es que el codo no lo deja nadie).
+    const centralLeft = central.r.events.filter((x) => x.kind === "help_left_assignment" && x.possessionTeamId === SC);
+    expect(centralLeft.filter((e) => e.text.includes("en la esquina débil")).length).toBeGreaterThan(30);
+    for (const e of centralLeft) expect(e.text).not.toContain("en el codo");
   });
 
   it("ante drop, el receptor del roll ya no invierte a un triple de esquina sino que valora un tiro medio del codo", () => {

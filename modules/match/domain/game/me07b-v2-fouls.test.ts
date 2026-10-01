@@ -34,7 +34,9 @@ function play(seed: number, away: readonly PlayerProfile[] = PUERTO_AMBAR.player
 }
 
 describe("ME-07B v2 §2.5: faltas por contacto real en balón vivo", () => {
-  const games = [play(92), play(93)];
+  // Sesión v2-6: con la ficha y el plan elegidos por valor la trampa cerrada con falta es rara
+  // (92: 0, 93: 0, 94: 2); se juegan las tres semillas consecutivas.
+  const games = [play(92), play(93), play(94)];
 
   it("hay faltas sin tiro de trampa y de rebote, cada una con su hecho y su decisión adjudicada", () => {
     const situations = new Set<string>();

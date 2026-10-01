@@ -1509,7 +1509,12 @@ export abstract class LinkedRun {
     //    llega antes, p. ej. el poseedor que no espera el pase de vuelta). La
     //    asignación ejecutada puede valer hasta la banda menos que el mejor de
     //    su ficha, como antes en la central; se audita (`chosenAssignmentValue`).
-    const eligible = (c: (typeof candidates)[number]) => winner.value - c.value <= FIRST_READ_TIE_BAND_POINTS;
+    //    La banda tampoco cruza de plan: en la central una asignación proyecta la
+    //    mano a mano y otra el bloqueo, y desempatar entre ellas por la primera
+    //    lectura (que en la entrega llega después) elegía el bloqueo aunque la
+    //    mano a mano valiese más (sesión v2-6, segundo corte: 68 de 71 en la foto
+    //    Sierra +5). El plan se decide por valor, como la ficha.
+    const eligible = (c: (typeof candidates)[number]) => c.plan === winner.plan && winner.value - c.value <= FIRST_READ_TIE_BAND_POINTS;
     const own = candidates.filter((c) => c.placement === winner.placement && eligible(c));
     let chosen = own[0]!;
     for (const c of own) if (c.tFirstReadMs < chosen.tFirstReadMs) chosen = c;

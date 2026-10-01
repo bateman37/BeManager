@@ -49,10 +49,11 @@ function natural(seed: number, sierra: readonly PlayerProfile[]): { gi: GameInpu
 }
 
 describe("ME-07B v2 §2.2 (v2-6): la ficha se elige por valor y Delay compite en auto", () => {
-  // Foto Sierra +5, semilla 103 (de las 20): Puerto ataca contra una defensa
+  // Foto Sierra +3, semilla 86 (de las 20): Puerto ataca contra una defensa
   // mejorada que concede menos al bloqueo y Delay llega a valer más que las tres
-  // colocaciones del bloqueo (32 veces en ese partido; ninguna en la foto seed).
-  const { gi, r } = natural(103, plus(SIERRA_CLARA.players, 5));
+  // colocaciones del bloqueo (33 veces en ese partido; es el único de los 20 en
+  // que ocurre, ver `scripts/me07b-v2-placement-gap.ts`).
+  const { gi, r } = natural(86, plus(SIERRA_CLARA.players, 3));
   const team = new Map(r.possessions.map((p) => [p.index, p.teamId]));
   const placements = r.audit!.decisions.filter((d) => d.point === "colocacion_bloqueo" && d.options.length > 1);
 
@@ -123,10 +124,10 @@ describe("ME-07B v2 §2.2 (v2-6): Delay se valora frente a lo visto ante la entr
 });
 
 describe("ME-07B v2 §2.4 (v2-6): receptor del roll sin reloj", () => {
-  // Estado raro (1 de 1.200 partidos drop/drop, semillas 1–1200): la primera es la 1134.
-  it("si el reloj de lanzamiento expira antes de cualquier vía del receptor, se audita su lectura sin opción y hay violación (semilla 1134, drop/drop)", () => {
+  // Estado raro (1 de 1.200 partidos drop/drop, semillas 1–1200): era la 1134 y, con el plan elegido por valor dentro de la central, la 597.
+  it("si el reloj de lanzamiento expira antes de cualquier vía del receptor, se audita su lectura sin opción y hay violación (semilla 597, drop/drop)", () => {
     const gi = buildGameInput({
-      seed: 1134,
+      seed: 597,
       auditEnabled: true,
       home: { id: SIERRA_CLARA.id, name: SIERRA_CLARA.name, players: SIERRA_CLARA.players, priority: "proteger_balance", coverage: "drop" },
       away: { id: PUERTO_AMBAR.id, name: PUERTO_AMBAR.name, players: PUERTO_AMBAR.players, priority: "proteger_balance", coverage: "drop" },

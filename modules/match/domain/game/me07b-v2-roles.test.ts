@@ -49,7 +49,8 @@ describe("ME-07B v2 §2.4: asignación de creador y bloqueador al organizar", ()
         if (o === chosen) continue;
         // Sesión v2-6: la banda solo desempata asignaciones de la misma ficha y por la primera lectura real.
         const inBand = best - (o.values!.projectedValue as number) <= FIRST_READ_TIE_BAND_POINTS;
-        if (inBand && o.values!.placement === chosen.values!.placement) expect(o.values!.firstReadSeconds as number).toBeGreaterThanOrEqual(chosen.values!.firstReadSeconds as number);
+        // y del mismo plan proyectado (la mano a mano y el bloqueo de la central se deciden por valor).
+        if (inBand && o.values!.placement === chosen.values!.placement && o.values!.projectedPlan === chosen.values!.projectedPlan) expect(o.values!.firstReadSeconds as number).toBeGreaterThanOrEqual(chosen.values!.firstReadSeconds as number);
       }
     }
   });
