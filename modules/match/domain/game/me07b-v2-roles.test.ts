@@ -37,7 +37,7 @@ describe("ME-07B v2 §2.4: asignación de creador y bloqueador al organizar", ()
   const r = play(92);
   const decisions = r.audit!.decisions.filter((d) => d.point === "organizacion_creador");
 
-  it("elige la mejor proyección (o, dentro de la banda, la que queda lista antes), con valores auditados", () => {
+  it("elige la mejor proyección (o, dentro de la banda y de la misma ficha, la que llega antes a su primera lectura), con valores auditados", () => {
     expect(decisions.length).toBeGreaterThan(50);
     for (const d of decisions) {
       const values = d.options.map((o) => o.values!.projectedValue as number);
@@ -47,8 +47,9 @@ describe("ME-07B v2 §2.4: asignación de creador y bloqueador al organizar", ()
       expect(best - (chosen.values!.projectedValue as number)).toBeLessThanOrEqual(FIRST_READ_TIE_BAND_POINTS + 1e-12);
       for (const o of d.options) {
         if (o === chosen) continue;
+        // Sesión v2-6: la banda solo desempata asignaciones de la misma ficha y por la primera lectura real.
         const inBand = best - (o.values!.projectedValue as number) <= FIRST_READ_TIE_BAND_POINTS;
-        if (inBand) expect(o.values!.readySeconds as number).toBeGreaterThanOrEqual(chosen.values!.readySeconds as number);
+        if (inBand && o.values!.placement === chosen.values!.placement) expect(o.values!.firstReadSeconds as number).toBeGreaterThanOrEqual(chosen.values!.firstReadSeconds as number);
       }
     }
   });
@@ -74,9 +75,10 @@ describe("ME-07B v2 §2.4: asignación de creador y bloqueador al organizar", ()
       const key = String(e.possessionIndex);
       const now = { pairs: pairsOf(e.detail.roles as Record<string, string>), onCourt: e.onCourtIds.join(), atMs: e.atMs };
       const prev = seen.get(key);
-      // Un cambio defensivo (switch, ME-07B v2 §5) sí cambia las parejas a
-      // propósito; se comprueba en `me07b-v2-switch-show.test.ts`.
-      const switched = r.events.some((x) => x.kind === "switch_committed" && x.possessionIndex === e.possessionIndex && prev && x.atMs >= prev.atMs && x.atMs <= e.atMs);
+      // Un cambio defensivo (switch, ME-07B v2 §5; cambio en el bloqueo ciego de
+      // Spain, LAB-0.9) sí cambia las parejas a propósito; se comprueba en
+      // `me07b-v2-switch-show.test.ts` y `me07b-v2-spain.test.ts`.
+      const switched = r.events.some((x) => (x.kind === "switch_committed" || x.kind === "back_screen_switch") && x.possessionIndex === e.possessionIndex && prev && x.atMs >= prev.atMs && x.atMs <= e.atMs);
       if (prev && prev.onCourt === now.onCourt && !switched) {
         expect(now.pairs).toBe(prev.pairs);
         compared += 1;

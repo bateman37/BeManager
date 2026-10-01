@@ -123,6 +123,8 @@ export type AuditReasonCode =
   | "coverage_ice_late"
   | "placement_projected_value_higher"
   | "placement_projected_value_lower"
+  // ME-07B v2 §2.2 (sesión v2-6): a igual valor exacto, pierde la ficha cuya primera lectura real llega después.
+  | "placement_tied_first_read_later"
   | "placement_forced_by_plan"
   | "family_not_in_lateral_placement"
   // ME-07B v2 §4 (LAB-0.8): la colocación de la ficha (Horns) solo admite el bloqueo directo.

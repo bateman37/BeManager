@@ -83,9 +83,11 @@ describe("ME-07B v2 §4: ficha Horns→bloqueo — ejecución y cadena auditada"
     }
     // Cada organización con colocación Horns elige la ficha horns_bloqueo (la segunda entrada, variante de
     // la ficha, se juega desde el nuevo ángulo sin nueva colocación).
-    const placed = new Set(placements.map((d) => `${d.possessionIndex}:${d.phaseIndex}`));
+    // Solo las organizaciones que llegan a situarse (la bocina del período puede cortar antes de la entrada).
+    const entered = new Set(r.events.filter((e) => e.kind === "organized_entry").map((e) => `${e.possessionIndex}:${e.phaseIndex}`));
+    const placed = new Set(placements.map((d) => `${d.possessionIndex}:${d.phaseIndex}`).filter((k) => entered.has(k)));
     const fams = sierraDecisions(r, "seleccion_familia").filter((d) => placed.has(`${d.possessionIndex}:${d.phaseIndex}`));
-    expect(fams.length).toBe(placements.length);
+    expect(fams.length).toBe(placed.size);
     for (const d of fams) {
       expect(d.chosenOptionId).toBe("bloqueo_directo");
       expect(d.options.find((o) => o.id === "bloqueo_directo")!.values!.cardId).toBe("horns_bloqueo");
@@ -135,7 +137,10 @@ describe("ME-07B v2 §4: ficha Horns→bloqueo — ejecución y cadena auditada"
     for (const d of placements) {
       const horns = d.options.find((o) => o.id === "horns")!;
       expect(typeof horns.values!.projectedValue).toBe("number");
-      expect(["placement_projected_value_higher", "placement_projected_value_lower", "creator_ready_later_in_band"]).toContain(horns.reasonCode);
+      expect(["placement_projected_value_higher", "placement_projected_value_lower", "placement_tied_first_read_later"]).toContain(horns.reasonCode);
+      // Sesión v2-6: la ficha elegida es la de mayor valor proyectado (la banda ya no desempata entre fichas).
+      const chosen = d.options.find((o) => o.status === "elegida")!;
+      for (const o of d.options) expect(chosen.values!.projectedValue as number).toBeGreaterThanOrEqual(o.values!.projectedValue as number);
     }
   });
 });

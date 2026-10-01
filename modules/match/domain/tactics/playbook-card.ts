@@ -64,9 +64,10 @@ export interface PlaybookCard {
   /** Variante encadenada que **define** la ficha (Spain): `null` en las fichas base. */
   readonly chainedVariant: PlaybookChainedVariant | null;
   /**
-   * Si la colocación de la ficha compite en `auto` (colocación «Auto»). Delay
-   * (LAB-0.10) solo se juega por orden mientras sus concesiones no se
-   * contrasten con las del bloqueo (ver `docs/match/TACTICAL-MATRIX.md`).
+   * Si la colocación de la ficha compite en `auto` (colocación «Auto»). Todas
+   * compiten desde la sesión v2-6: Delay (LAB-0.10) se compara con el bloqueo
+   * por el mismo valor proyectado, frente a lo que la defensa ha hecho ante
+   * cada acción (ver `docs/match/TACTICAL-MATRIX.md`).
    */
   readonly offeredInAuto: boolean;
   /** Puntos de lectura legítimos dentro de la ficha (manejador, receptor, defensa que lee). */
@@ -228,8 +229,8 @@ export const ORGANIZED_PLAYBOOK: readonly PlaybookCard[] = [
     safety: "salida_segura_y_reorganizar",
     priority: 5,
     chainedVariant: null,
-    // Por orden («Colocación: Delay»); en `auto` no compite todavía (pendiente de contrastar sus concesiones).
-    offeredInAuto: false,
+    // Por orden («Colocación: Delay») y en `auto` (sesión v2-6): compite por valor proyectado con las demás.
+    offeredInAuto: true,
   },
 ];
 

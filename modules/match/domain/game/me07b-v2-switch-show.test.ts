@@ -69,14 +69,23 @@ describe("ME-07B v2 §5: cambio (switch)", () => {
     expect(checked).toBeGreaterThan(0);
   });
 
-  it("un pívot más lento lateralmente (solo F04 de Puerto) hace que se ataque más el cambio", () => {
+  it("un pívot más lento lateralmente (solo F04 de Puerto) hace que se ataque más el cambio", { timeout: 240_000 }, () => {
     const slowBigs = PUERTO_AMBAR.players.map((p) => (p.template === "B" ? { ...p, attributes: { ...p.attributes, F04: 1 } } : p));
-    const rate = (res: ReturnType<typeof play>) => {
-      const reads = res.audit!.decisions.filter((d) => d.point === "lectura_cambio");
-      return reads.filter((d) => d.chosenOptionId === "atacar_cambio").length / Math.max(1, reads.length);
+    // Sesión v2-6: tasa agregada sobre seis semillas (90–95, todas las medidas):
+    // con una sola, la secuencia natural decide (la 92 sola da 84/121 frente a
+    // 88/116 tras la frontera de primera lectura; las seis, 567/710 frente a 486/719).
+    const rate = (players: readonly PlayerProfile[]) => {
+      let attack = 0;
+      let total = 0;
+      for (const seed of [90, 91, 92, 93, 94, 95]) {
+        const reads = play(seed, "cambio", players).audit!.decisions.filter((d) => d.point === "lectura_cambio");
+        attack += reads.filter((d) => d.chosenOptionId === "atacar_cambio").length;
+        total += reads.length;
+      }
+      return attack / Math.max(1, total);
     };
     const fastBigs = PUERTO_AMBAR.players.map((p) => (p.template === "B" ? { ...p, attributes: { ...p.attributes, F04: 15 } } : p));
-    expect(rate(play(92, "cambio", slowBigs))).toBeGreaterThan(rate(play(92, "cambio", fastBigs)));
+    expect(rate(slowBigs)).toBeGreaterThan(rate(fastBigs));
   });
 });
 

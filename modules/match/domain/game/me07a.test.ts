@@ -118,8 +118,10 @@ describe("ME-07A §4: cobertura y orden sin balón en auto, con denominadores re
       auditEnabled: true,
       // Sin la variante Spain (LAB-0.9): la prueba es de la regla de elegibilidad de la trampa y
       // conserva la misma secuencia natural en la que se comprobó (con Spain en `auto` cambia la secuencia).
-      home: { id: SC, name: SIERRA_CLARA.name, players: slow(SIERRA_CLARA.players), priority: "proteger_balance", coverage: "auto", offBallDefensiveCall: "auto", chainedVariant: "ninguna" },
-      away: { id: PA, name: PUERTO_AMBAR.name, players: slow(PUERTO_AMBAR.players), priority: "proteger_balance", coverage: "auto", offBallDefensiveCall: "auto", chainedVariant: "ninguna" },
+      // Sesión v2-6: también con la pantalla central (la regla es la de la trampa sobre esa geometría; en
+      // `auto` la colocación se elige por valor y una pantalla lateral sí puede atraparse con margen).
+      home: { id: SC, name: SIERRA_CLARA.name, players: slow(SIERRA_CLARA.players), priority: "proteger_balance", coverage: "auto", offBallDefensiveCall: "auto", chainedVariant: "ninguna", screenPlacement: "central" },
+      away: { id: PA, name: PUERTO_AMBAR.name, players: slow(PUERTO_AMBAR.players), priority: "proteger_balance", coverage: "auto", offBallDefensiveCall: "auto", chainedVariant: "ninguna", screenPlacement: "central" },
     });
     const result = playFullGame(gameInput);
     const decisions = result.audit!.decisions.filter((d) => d.point === "seleccion_cobertura");

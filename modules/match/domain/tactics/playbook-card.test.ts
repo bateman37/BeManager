@@ -72,22 +72,22 @@ describe("ME-07B v2 §3: ficha de libro", () => {
   });
 
   it("las colocaciones que se ofrecen al organizar salen de las fichas compatibles con el plan y la orden", () => {
-    expect(eligiblePlacements("auto", "auto")).toEqual(["central", "lateral", "horns"]);
+    // Sesión v2-6: Delay compite en `auto` (por valor proyectado) con las demás colocaciones.
+    expect(eligiblePlacements("auto", "auto")).toEqual(["central", "lateral", "horns", "delay"]);
     expect(eligiblePlacements("bloqueo_directo", "auto")).toEqual(["central", "lateral", "horns"]);
     expect(eligiblePlacements("auto", "horns")).toEqual(["horns"]);
-    expect(eligiblePlacements("mano_a_mano_sin_balon", "auto")).toEqual(["central"]);
+    expect(eligiblePlacements("mano_a_mano_sin_balon", "auto")).toEqual(["central", "delay"]);
     expect(eligiblePlacements("bloqueo_directo", "lateral")).toEqual(["lateral"]);
     expect(eligiblePlacements("auto", "central")).toEqual(["central"]);
     // Sin ficha compatible (mano a mano obligada con colocación lateral): la central.
     expect(eligiblePlacements("mano_a_mano_sin_balon", "lateral")).toEqual(["central"]);
-    // Delay (LAB-0.10): solo por orden; con el bloqueo directo obligado no hay ficha y se juega la central.
+    // Delay (LAB-0.10): por orden y en `auto`; con el bloqueo directo obligado no hay ficha y se juega la central.
     expect(eligiblePlacements("auto", "delay")).toEqual(["delay"]);
     expect(eligiblePlacements("mano_a_mano_sin_balon", "delay")).toEqual(["delay"]);
-    expect(eligiblePlacements("mano_a_mano_sin_balon", "auto")).toEqual(["central"]);
     expect(eligiblePlacements("bloqueo_directo", "delay")).toEqual(["central"]);
     const delay = playbookCard("delay_mano_a_mano");
     expect(delay.firstAction).toBe("mano_a_mano_sin_balon");
-    expect(delay.offeredInAuto).toBe(false);
+    expect(delay.offeredInAuto).toBe(true);
     expect(cardFor("mano_a_mano_sin_balon", "delay").id).toBe("delay_mano_a_mano");
     expect(delay.reads).toContain("lectura_poste");
   });

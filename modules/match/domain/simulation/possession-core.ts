@@ -315,6 +315,12 @@ export interface LinkedSegmentOptions {
   readonly observations?: {
     readonly offenseByFamily: Readonly<Partial<Record<OffensivePlan, ObservedOutcome>>>;
     readonly defenseByCoverage: Readonly<Partial<Record<DefensiveCoverage, ObservedOutcome>>>;
+    /**
+     * Respuestas a la entrega de Delay vistas en este partido, con la etiqueta
+     * de cobertura con que se registran (`DELAY_RESPONSE_COVERAGE`), separadas
+     * de las coberturas de pantalla (sesión v2-6).
+     */
+    readonly defenseByHandoffResponse?: Readonly<Partial<Record<DefensiveCoverage, ObservedOutcome>>>;
   };
 }
 
@@ -747,6 +753,14 @@ function familyAuditValues(o: FamilyOpportunity): Record<string, number | string
 interface BloqueoOverCoverages {
   readonly drop: FamilyOpportunity;
   readonly expectedValue: number;
+  /**
+   * Instante esperado de la primera lectura real desde que los cinco están
+   * situados (s), con los mismos pesos que el valor: la frontera temporal con
+   * la que se comparan fichas distintas (ME-07B v2 §2.2). La trampa, sin
+   * lectura propia proyectada, usa la de drop.
+   */
+  readonly decisionSeconds: number;
+  readonly decisionByCoverage: Readonly<Partial<Record<DefensiveCoverage, number>>>;
   readonly weights: Readonly<Partial<Record<DefensiveCoverage, number>>>;
   readonly valueByCoverage: Readonly<Partial<Record<DefensiveCoverage, number>>>;
 }
@@ -760,40 +774,48 @@ function projectBloqueoOverShownCoverages(
   const dropValue = drop.viable ? drop.value : 0;
   const weights = shownCoverageWeights<DefensiveCoverage>(shown, "drop");
   const lateral = isLateralScreenSpot(ctx.positions.O5!);
-  const valueOf = (o: FamilyOpportunity) => (o.viable ? o.value : 0);
+  const dropDecision = drop.tDecisionSeconds ?? 0;
   const valueByCoverage: Partial<Record<DefensiveCoverage, number>> = {};
   let expectedValue = 0;
+  let decisionSeconds = 0;
+  const decisionByCoverage: Partial<Record<DefensiveCoverage, number>> = {};
   for (const [c, w] of Object.entries(weights) as [DefensiveCoverage, number][]) {
+    let o: FamilyOpportunity | null = null;
     let v: number;
     switch (c) {
       case "drop":
-        v = dropValue;
+        o = drop;
         break;
       case "por_debajo":
-        v = valueOf(familyOpportunity(projectFamilyRead(ctx, (dry) => runDropPhase(dry, scenario, "por_debajo"))));
+        o = familyOpportunity(projectFamilyRead(ctx, (dry) => runDropPhase(dry, scenario, "por_debajo")));
         break;
       case "cambio":
-        v = valueOf(familyOpportunity(projectFamilyRead(ctx, (dry) => runSwitchPhase(dry))));
+        o = familyOpportunity(projectFamilyRead(ctx, (dry) => runSwitchPhase(dry)));
         break;
       case "show":
-        v = valueOf(familyOpportunity(projectFamilyRead(ctx, (dry) => runShowPhase(dry, scenario))));
+        o = familyOpportunity(projectFamilyRead(ctx, (dry) => runShowPhase(dry, scenario)));
         break;
       case "a_la_altura":
-        v = valueOf(familyOpportunity(projectFamilyRead(ctx, (dry) => runShowPhase(dry, scenario, "a_la_altura"))));
+        o = familyOpportunity(projectFamilyRead(ctx, (dry) => runShowPhase(dry, scenario, "a_la_altura")));
         break;
       case "ice":
-        v = lateral ? valueOf(familyOpportunity(projectFamilyRead(ctx, (dry) => runIcePhase(dry, scenario)))) : dropValue;
+        o = lateral ? familyOpportunity(projectFamilyRead(ctx, (dry) => runIcePhase(dry, scenario))) : drop;
         break;
-      case "trampa": {
-        const trap = projectTrapConcession(ctx);
-        v = trap ? Math.max(0, trap.concession) : dropValue;
+      case "trampa":
         break;
-      }
+    }
+    if (c === "trampa") {
+      const trap = projectTrapConcession(ctx);
+      v = trap ? Math.max(0, trap.concession) : dropValue;
+    } else {
+      v = o!.viable ? o!.value : 0;
     }
     valueByCoverage[c] = v;
     expectedValue += w * v;
+    decisionByCoverage[c] = o?.tDecisionSeconds ?? dropDecision;
+    decisionSeconds += w * decisionByCoverage[c]!;
   }
-  return { drop, expectedValue, weights, valueByCoverage };
+  return { drop, expectedValue, decisionSeconds, decisionByCoverage, weights, valueByCoverage };
 }
 
 /**
@@ -805,9 +827,11 @@ function projectBloqueoOverShownCoverages(
  * mismo que la base frente a esa cobertura. Misma ponderación por frecuencia
  * observada que `projectBloqueoOverShownCoverages`.
  */
-function projectSpainOverShownCoverages(ctx: CoreContext, scenario: ScenarioDefinition, plain: BloqueoOverCoverages): { readonly expectedValue: number; readonly valueByCoverage: Readonly<Partial<Record<DefensiveCoverage, number>>> } {
+function projectSpainOverShownCoverages(ctx: CoreContext, scenario: ScenarioDefinition, plain: BloqueoOverCoverages): { readonly expectedValue: number; readonly decisionSeconds: number; readonly valueByCoverage: Readonly<Partial<Record<DefensiveCoverage, number>>> } {
   const valueByCoverage: Partial<Record<DefensiveCoverage, number>> = {};
   let expectedValue = 0;
+  // Fuera de drop/por debajo se juega Horns: su lectura llega cuando la de la base.
+  let decisionSeconds = plain.decisionSeconds;
   for (const [c, w] of Object.entries(plain.weights) as [DefensiveCoverage, number][]) {
     let v = plain.valueByCoverage[c] ?? 0;
     if (c === "drop" || c === "por_debajo") {
@@ -820,11 +844,13 @@ function projectSpainOverShownCoverages(ctx: CoreContext, scenario: ScenarioDefi
         }),
       );
       v = o.viable ? o.value : 0;
+      const base = plain.decisionByCoverage[c] ?? 0;
+      decisionSeconds += w * ((o.tDecisionSeconds ?? base) - base);
     }
     valueByCoverage[c] = v;
     expectedValue += w * v;
   }
-  return { expectedValue, valueByCoverage };
+  return { expectedValue, decisionSeconds, valueByCoverage };
 }
 
 /**
@@ -833,19 +859,24 @@ function projectSpainOverShownCoverages(ctx: CoreContext, scenario: ScenarioDefi
  * cambiar o saltar) y se proyecta en seco hasta la primera lectura, con la
  * misma ponderación por frecuencia (`shownCoverageWeights`, previa drop).
  */
-function projectDelayOverShownCoverages(ctx: CoreContext, shown: Readonly<Partial<Record<DefensiveCoverage, ObservedOutcome>>> | undefined): number {
+function projectDelayOverShownCoverages(
+  ctx: CoreContext,
+  shown: Readonly<Partial<Record<DefensiveCoverage, ObservedOutcome>>> | undefined,
+): { readonly expectedValue: number; readonly decisionSeconds: number; readonly valueByResponse: Readonly<Partial<Record<DelayResponse, number>>>; readonly weights: Readonly<Partial<Record<DefensiveCoverage, number>>>; readonly base: FamilyOpportunity } {
   const weights = shownCoverageWeights<DefensiveCoverage>(shown, "drop");
-  const byResponse = new Map<DelayResponse, number>();
-  let expected = 0;
+  const byResponse = new Map<DelayResponse, FamilyOpportunity>();
+  let expectedValue = 0;
+  let decisionSeconds = 0;
   for (const [c, w] of Object.entries(weights) as [DefensiveCoverage, number][]) {
     const r = delayResponseFor(c);
-    if (!byResponse.has(r)) {
-      const o = familyOpportunity(projectFamilyRead(ctx, (dry) => runDelayPhase(dry, r)));
-      byResponse.set(r, o.viable ? o.value : 0);
-    }
-    expected += w * byResponse.get(r)!;
+    if (!byResponse.has(r)) byResponse.set(r, familyOpportunity(projectFamilyRead(ctx, (dry) => runDelayPhase(dry, r))));
+    const o = byResponse.get(r)!;
+    expectedValue += w * (o.viable ? o.value : 0);
+    decisionSeconds += w * (o.tDecisionSeconds ?? 0);
   }
-  return expected;
+  const valueByResponse: Partial<Record<DelayResponse, number>> = {};
+  for (const [r, o] of byResponse) valueByResponse[r] = o.viable ? o.value : 0;
+  return { expectedValue, decisionSeconds, valueByResponse, weights, base: byResponse.get("hundirse")! };
 }
 
 /**
@@ -912,6 +943,32 @@ export interface OrganizedProjection {
   readonly value: number;
   readonly plan: OffensivePlan;
   readonly bestReadOption: string | null;
+  /**
+   * Segundos desde que los cinco están situados hasta la primera lectura real
+   * de la ficha (esperados con los mismos pesos que el valor). Es la frontera
+   * con la que se desempata entre fichas (sesión v2-6, §2.2): Delay necesita
+   * pase de entrada y entrega antes de leer; el bloqueo, solo la pantalla.
+   */
+  readonly decisionSeconds: number;
+  /** Desglose auditable (valor frente a cada cobertura/respuesta vista, su peso y la mejor vía ante el plan base). */
+  readonly breakdown: Readonly<Record<string, number | string | null>>;
+}
+
+function breakdownOf(
+  valueBy: Readonly<Partial<Record<string, number>>>,
+  weights: Readonly<Partial<Record<string, number>>>,
+  base: FamilyOpportunity | null,
+): Record<string, number | string | null> {
+  const out: Record<string, number | string | null> = {};
+  for (const [c, v] of Object.entries(valueBy)) out[`valueAgainst_${c}`] = v ?? null;
+  for (const [c, w] of Object.entries(weights)) out[`coverageWeight_${c}`] = w ?? null;
+  if (base) {
+    out.baseBestRead = base.bestOptionId;
+    out.baseBestReadRawValue = base.bestRawValue;
+    out.baseBestReadCompletion = base.bestCompletion;
+    out.baseDecisionSeconds = base.tDecisionSeconds;
+  }
+  return out;
 }
 
 export function projectOrganizedOpportunity(
@@ -954,7 +1011,8 @@ export function projectOrganizedOpportunity(
   const planChoice: OffensivePlanChoice = input.offensivePlan ?? "bloqueo_directo";
   if (ctx.set.placement === "delay") {
     // LAB-0.10: Delay se proyecta frente a cada respuesta a la entrega que el rival ha mostrado.
-    return { value: Math.max(0, projectDelayOverShownCoverages(ctx, linked.observations?.defenseByCoverage)), plan: "mano_a_mano_sin_balon", bestReadOption: null };
+    const delay = projectDelayOverShownCoverages(ctx, linked.observations?.defenseByHandoffResponse);
+    return { value: Math.max(0, delay.expectedValue), plan: "mano_a_mano_sin_balon", bestReadOption: delay.base.bestOptionId, decisionSeconds: delay.decisionSeconds, breakdown: breakdownOf(delay.valueByResponse, delay.weights, delay.base) };
   }
   // ME-07B v2 §2.2/§5: el bloqueo se valora frente a la defensa observada, no solo contra drop.
   const bloqueo =
@@ -962,16 +1020,23 @@ export function projectOrganizedOpportunity(
   const handoff =
     planChoice === "bloqueo_directo" || ctx.set.placement !== "central" ? null : familyOpportunity(projectFamilyRead(ctx, (dry) => runHandoffPhase(dry)));
   if (handoff && (!bloqueo || handoff.value > bloqueo.expectedValue)) {
-    return { value: handoff.viable ? handoff.value : 0, plan: "mano_a_mano_sin_balon", bestReadOption: handoff.bestOptionId };
+    return { value: handoff.viable ? handoff.value : 0, plan: "mano_a_mano_sin_balon", bestReadOption: handoff.bestOptionId, decisionSeconds: handoff.tDecisionSeconds ?? 0, breakdown: breakdownOf({}, {}, handoff) };
   }
   // ME-07B v2 §4 (LAB-0.9): en Horns, la variante Spain compite (o se impone) con la misma proyección.
   const variant = input.chainedVariant ?? "ninguna";
   if (ctx.set.placement === "horns" && variant !== "ninguna") {
     const spain = projectSpainOverShownCoverages(ctx, scenario, bloqueo!);
-    const value = variant === "spain" ? spain.expectedValue : Math.max(spain.expectedValue, bloqueo!.expectedValue);
-    return { value: Math.max(0, value), plan: "bloqueo_directo", bestReadOption: bloqueo!.drop.bestOptionId };
+    const spainWins = variant === "spain" || spain.expectedValue > bloqueo!.expectedValue;
+    const value = spainWins ? spain.expectedValue : bloqueo!.expectedValue;
+    return {
+      value: Math.max(0, value),
+      plan: "bloqueo_directo",
+      bestReadOption: bloqueo!.drop.bestOptionId,
+      decisionSeconds: spainWins ? spain.decisionSeconds : bloqueo!.decisionSeconds,
+      breakdown: { ...breakdownOf(spainWins ? spain.valueByCoverage : bloqueo!.valueByCoverage, bloqueo!.weights, bloqueo!.drop), spainCalled: spainWins ? "si" : "no" },
+    };
   }
-  return { value: Math.max(0, bloqueo!.expectedValue), plan: "bloqueo_directo", bestReadOption: bloqueo!.drop.bestOptionId };
+  return { value: Math.max(0, bloqueo!.expectedValue), plan: "bloqueo_directo", bestReadOption: bloqueo!.drop.bestOptionId, decisionSeconds: bloqueo!.decisionSeconds, breakdown: breakdownOf(bloqueo!.valueByCoverage, bloqueo!.weights, bloqueo!.drop) };
 }
 
 export function computePossessionCore(
@@ -1157,7 +1222,8 @@ export function computePossessionCore(
     // cambiar o saltar la entrega); en `auto`, la de menor concesión proyectada.
     const responses: readonly DelayResponse[] = ["hundirse", "cambiar_entrega", "saltar_entrega"];
     if (coverageChoice === "auto") {
-      const seenCoverage = linked?.observations?.defenseByCoverage;
+      // Sesión v2-6: lo que esta defensa ha concedido ante la entrega de Delay, no ante pantallas.
+      const seenCoverage = linked?.observations?.defenseByHandoffResponse;
       const projected = responses.map((r) => familyOpportunity(projectFamilyRead(ctx, (dry) => runDelayPhase(dry, r))));
       const blended = projected.map((o, i) => blendProjectionWithObservation(o.viable ? o.value : 0, seenCoverage?.[DELAY_RESPONSE_COVERAGE[responses[i]!]]));
       let best = 0;
@@ -1559,6 +1625,32 @@ function readRollReceiver(ctx: CoreContext, env: RollReceiverEnv, tAct: number):
 }
 
 /** Elección del receptor: mayor valor; en la banda de empate decide su tendencia de tiro (ME-07A §2). */
+/**
+ * El receptor del roll no tiene ninguna vía viable porque el reloj de
+ * lanzamiento expira antes de que cualquiera quede lista (sesión v2-6: un
+ * pase al roll con menos de ~2 s, alcanzado en partido natural con la
+ * pantalla lateral): se audita su lectura sin opción y la posesión termina
+ * en violación de 24/14 s al expirar, como en el resto de ramas. Cualquier
+ * otra lectura sin vía viable es un estado no modelado y se señala.
+ */
+function rollReceiverOutOfClock(ctx: CoreContext, tAct: number, options: readonly ReceiverOption[]): PossessionCoreResult | null {
+  if (options.some((o) => Number.isFinite(o.value))) return null;
+  const readies = options.map((o) => o.values?.readySeconds).filter((v): v is number => typeof v === "number");
+  const clock = ctx.shotClockMs / 1000;
+  if (readies.length === 0 || clock >= Math.min(...readies)) {
+    throw new Error(`Lectura del receptor del roll sin vía viable con ${clock.toFixed(2)} s de reloj: estado no modelado.`);
+  }
+  auditDecision(ctx, tAct, {
+    point: "lectura_segunda_o5",
+    holderId: "O5",
+    participants: ["O5"],
+    chosenOptionId: null,
+    options: options.map((o) => ({ id: o.id, status: "descartada_por_condicion", reasonCode: "receiver_option_not_viable", values: { ...o.values, shotClockSeconds: clock } })),
+  });
+  if (ctx.linked) return linkedShotClockViolation(ctx, "O5");
+  return finalize(ctx, { kind: "shot_clock_violation" }, { status: "held", holderId: "O5", position: ctx.positions.O5! });
+}
+
 function chooseRollReceiverOption(ctx: CoreContext, receiverId: string, options: readonly ReceiverOption[]): { chosen: ReceiverOption; byTendency: boolean } {
   const viable = options.filter((o) => Number.isFinite(o.value)).sort((a, b) => b.value - a.value);
   let chosen = viable[0]!;
@@ -2216,6 +2308,8 @@ function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition, d1Route: S
     // salida de segunda entrada de ME-04 (reorganizar sin reiniciar el reloj)
     // antes de forzar un tiro contenido.
     const read = rollReceiverRead(tAct, helpPlan);
+    const outOfClock = rollReceiverOutOfClock(ctx, tAct, read.options);
+    if (outOfClock) return outOfClock;
     const { chosen: receiverChoice, byTendency } = chooseReceiverOption(read.options);
     const receiverRecords = (chosenId: string, extra: AuditOptionRecord[] = []): AuditOptionRecord[] => [
       ...read.options.map((o): AuditOptionRecord => {
@@ -3175,6 +3269,8 @@ function executeRollPass(
   event(ctx, args.tPassArrival, "concedido", "pass_received", ["O5"], "O5 recibe el balón en el roll.");
   const env = args.envAt(tAct);
   const options = readRollReceiver(ctx, env, tAct);
+  const outOfClock = rollReceiverOutOfClock(ctx, tAct, options);
+  if (outOfClock) return outOfClock;
   const { chosen, byTendency } = chooseRollReceiverOption(ctx, "O5", options);
   const records: AuditOptionRecord[] = options.map((o) =>
     o === chosen

@@ -48,7 +48,7 @@ import type { ObservedOutcome } from "../lab/lab-0-4-parameters";
 import { LATERAL_PNR_TARGETS, type ScreenPlacement, type ScreenPlacementChoice } from "../lab/lab-0-7-parameters";
 import { HORNS_PNR_TARGETS } from "../lab/lab-0-8-parameters";
 import { DELAY_TARGETS } from "../lab/lab-0-10-parameters";
-import { eligiblePlacements } from "../tactics/playbook-card";
+import { eligiblePlacements, type PlaybookCardId } from "../tactics/playbook-card";
 import { FIRST_READ_TIE_BAND_POINTS, contestReachMeters, evaluateContestLevel, type LAB_0_3_PARAMETERS_VERSION } from "../lab/lab-0-3-parameters";
 import {
   attackerMoveSpeedMps,
@@ -210,6 +210,23 @@ function swapDefenders(frame: Frame, x: string, y: string): Frame | null {
   return rebindFrame(frame, map);
 }
 
+/**
+ * Marco `fresh` (roles del quinteto) con las parejas atacante-defensor vivas de
+ * `live`: cada atacante conserva al defensor que lo marcaba en ese instante
+ * (ME-07B v2 §5, sesión v2-6: un balón suelto recuperado por el ataque no
+ * deshace un cambio defensivo anterior de la misma posesión).
+ */
+function withLivePairs(fresh: Frame, live: Frame): Frame {
+  const map = { ...fresh.slotToId };
+  for (let k = 1; k <= 5; k++) {
+    const attacker = fresh.slotToId[`O${k}`]!;
+    const liveSlot = live.idToSlot[attacker];
+    if (!liveSlot) return fresh;
+    map[`D${k}`] = live.slotToId[`D${liveSlot.slice(1)}`]!;
+  }
+  return rebindFrame(fresh, map);
+}
+
 /** Mismo marco con otra asignación de roles canónicos (p. ej. la segunda entrada de ME-04). */
 export function rebindFrame(frame: Frame, slotToId: Readonly<Record<string, string>>): Frame {
   const idToSlot = Object.fromEntries(Object.entries(slotToId).map(([slot, id]) => [id, slot]));
@@ -301,11 +318,19 @@ export abstract class LinkedRun {
    * ME-07B v2 §2.3/§5: muestras visibles de este partido. Por equipo, usos y
    * puntos (del atacante, desde la decisión hasta el fin de la posesión o la
    * siguiente decisión organizada) por familia al atacar y por cobertura al
-   * defender. Solo resultados ya ocurridos.
+   * defender. Solo resultados ya ocurridos. ME-07B v2 §2.2 (sesión v2-6): la
+   * respuesta a la entrega de Delay se guarda aparte (`defenseByHandoffResponse`)
+   * y Delay no cuenta como mano a mano central: son otra acción, y mezclarlas
+   * hacía que el ataque valorase el bloqueo con lo que la defensa hizo ante
+   * una entrega (y al revés).
    */
   protected readonly observations = new Map<
     string,
-    { offenseByFamily: Partial<Record<OffensivePlan, ObservedOutcome>>; defenseByCoverage: Partial<Record<DefensiveCoverage, ObservedOutcome>> }
+    {
+      offenseByFamily: Partial<Record<OffensivePlan, ObservedOutcome>>;
+      defenseByCoverage: Partial<Record<DefensiveCoverage, ObservedOutcome>>;
+      defenseByHandoffResponse: Partial<Record<DefensiveCoverage, ObservedOutcome>>;
+    }
   >();
   /**
    * Colocación del bloqueo directo de la acción organizada en curso
@@ -313,13 +338,18 @@ export abstract class LinkedRun {
    * bloqueador y colocación; vuelve a `central` en cuanto el núcleo la usa.
    */
   protected currentPlacement: ScreenPlacement = "central";
-  /** Defensores intercambiados por un cambio cuya acción acabó en balón suelto (IDs reales), pendientes de la recuperación. */
-  protected pendingDefensiveSwap: readonly [string, string] | null = null;
+  /**
+   * Marco vivo (parejas atacante-defensor, con el cambio de esta acción ya
+   * aplicado) de una acción que acabó en balón suelto, pendiente de la
+   * recuperación: si la recupera el mismo ataque, las parejas persisten.
+   */
+  protected pendingLooseBallFrame: Frame | null = null;
   protected pendingObservation: {
     readonly attackingId: string;
     readonly defendingId: string;
     readonly plan: OffensivePlan;
     readonly coverage: DefensiveCoverage;
+    readonly card: PlaybookCardId;
     readonly scoreAtDecision: number;
   } | null = null;
 
@@ -910,6 +940,7 @@ export abstract class LinkedRun {
         observations: {
           offenseByFamily: { ...(this.observations.get(frame.attacking.id)?.offenseByFamily ?? {}) },
           defenseByCoverage: { ...(this.observations.get(frame.defending.id)?.defenseByCoverage ?? {}) },
+          defenseByHandoffResponse: { ...(this.observations.get(frame.defending.id)?.defenseByHandoffResponse ?? {}) },
         },
       },
     });
@@ -922,11 +953,14 @@ export abstract class LinkedRun {
     this.pendingObservation = null;
     const points = (this.score[pending.attackingId] ?? 0) - pending.scoreAtDecision;
     const add = (o: ObservedOutcome | undefined): ObservedOutcome => ({ uses: (o?.uses ?? 0) + 1, points: (o?.points ?? 0) + points });
-    const off = this.observations.get(pending.attackingId) ?? { offenseByFamily: {}, defenseByCoverage: {} };
-    off.offenseByFamily[pending.plan] = add(off.offenseByFamily[pending.plan]);
+    const empty = (): { offenseByFamily: Partial<Record<OffensivePlan, ObservedOutcome>>; defenseByCoverage: Partial<Record<DefensiveCoverage, ObservedOutcome>>; defenseByHandoffResponse: Partial<Record<DefensiveCoverage, ObservedOutcome>> } => ({ offenseByFamily: {}, defenseByCoverage: {}, defenseByHandoffResponse: {} });
+    const handoffCard = pending.card === "delay_mano_a_mano";
+    const off = this.observations.get(pending.attackingId) ?? empty();
+    if (!handoffCard) off.offenseByFamily[pending.plan] = add(off.offenseByFamily[pending.plan]);
     this.observations.set(pending.attackingId, off);
-    const def = this.observations.get(pending.defendingId) ?? { offenseByFamily: {}, defenseByCoverage: {} };
-    def.defenseByCoverage[pending.coverage] = add(def.defenseByCoverage[pending.coverage]);
+    const def = this.observations.get(pending.defendingId) ?? empty();
+    const byCoverage = handoffCard ? def.defenseByHandoffResponse : def.defenseByCoverage;
+    byCoverage[pending.coverage] = add(byCoverage[pending.coverage]);
     this.observations.set(pending.defendingId, def);
   }
 
@@ -940,6 +974,7 @@ export abstract class LinkedRun {
         defendingId: frame.defending.id,
         plan: core.organizedChoice.plan,
         coverage: core.organizedChoice.coverage,
+        card: core.organizedChoice.card,
         scoreAtDecision: this.score[frame.attacking.id] ?? 0,
       };
     }
@@ -978,10 +1013,17 @@ export abstract class LinkedRun {
       const swapped = swapDefenders(step.frame, x, y);
       if (swapped) return { ...step, frame: swapped };
     }
-    // Balón suelto tras el cambio (pase desviado): sigue vivo, así que si lo
-    // recupera el mismo ataque los emparejamientos cambiados persisten.
-    this.pendingDefensiveSwap =
-      core.defensiveSwap && step?.kind === "loose_ball" ? [frame.slotToId[core.defensiveSwap[0]]!, frame.slotToId[core.defensiveSwap[1]]!] : null;
+    // Balón suelto (pase desviado, tapón): sigue vivo, así que si lo recupera
+    // el mismo ataque los emparejamientos vivos persisten, incluido el cambio
+    // de esta acción y el de una anterior de la misma posesión (sesión v2-6:
+    // antes se aplicaba el cambio sobre las parejas del quinteto, y un segundo
+    // cambio en la posesión las dejaba al revés).
+    this.pendingLooseBallFrame =
+      step?.kind === "loose_ball"
+        ? core.defensiveSwap
+          ? (swapDefenders(frame, frame.slotToId[core.defensiveSwap[0]]!, frame.slotToId[core.defensiveSwap[1]]!) ?? frame)
+          : frame
+        : null;
     return step;
   }
 
@@ -1336,8 +1378,16 @@ export abstract class LinkedRun {
    * falta). Los defensores **siguen a su marca**: si un atacante cambia de
    * rol, su defensor cambia con él (D1 es quien defiende al creador, D5 quien
    * defiende al bloqueador), sin cambios de emparejamiento instantáneos.
-   * Gana el mayor valor proyectado; dentro de `FIRST_READ_TIE_BAND_POINTS`,
-   * la asignación que queda lista antes; en empate exacto, la vigente.
+   * La colocación (ficha) se elige por su mejor valor proyectado; dentro de
+   * ella, gana el mayor valor y, dentro de `FIRST_READ_TIE_BAND_POINTS`, la
+   * asignación cuya **primera lectura real** llega antes (situarse, pase de
+   * vuelta y preparación de la ficha hasta la lectura); en empate exacto, la
+   * vigente. ME-07B v2 §2.2, sesión v2-6: antes la banda (que LAB-0.3 define
+   * para la primera lectura de un jugador) se aplicaba también entre fichas y
+   * desempataba por el instante en que los cinco quedaban situados: decidía el
+   * 82 % de las colocaciones de la foto de las 20 a favor de una ficha que
+   * valía menos (la central, situada antes y primera de la lista), y Delay,
+   * que nunca valía más, ganaba por estar situada antes aunque leyera después.
    */
   protected assignOrganizedRoles(
     frame: Frame,
@@ -1377,9 +1427,12 @@ export abstract class LinkedRun {
       handlerId: string;
       screenerId: string;
       tReadyMs: number;
+      /** Instante de la primera lectura real proyectada (situados + preparación de la ficha). */
+      tFirstReadMs: number;
       value: number;
       plan: string;
       read: string | null;
+      breakdown: Readonly<Record<string, number | string | null>>;
       placement: ScreenPlacement;
       targets: Record<string, Point2D>;
     }[] = [];
@@ -1427,19 +1480,39 @@ export abstract class LinkedRun {
               observations: {
                 offenseByFamily: { ...(this.observations.get(frame.attacking.id)?.offenseByFamily ?? {}) },
                 defenseByCoverage: { ...(this.observations.get(frame.defending.id)?.defenseByCoverage ?? {}) },
+                defenseByHandoffResponse: { ...(this.observations.get(frame.defending.id)?.defenseByHandoffResponse ?? {}) },
               },
             },
           );
-          candidates.push({ map, handlerId, screenerId: map.O5!, tReadyMs, value: projection.value, plan: projection.plan, read: projection.bestReadOption, placement, targets });
+          const tFirstReadMs = tReadyMs + secondsToMs(projection.decisionSeconds);
+          candidates.push({ map, handlerId, screenerId: map.O5!, tReadyMs, tFirstReadMs, value: projection.value, plan: projection.plan, read: projection.bestReadOption, breakdown: projection.breakdown, placement, targets });
         }
       }
     }
-    const best = Math.max(...candidates.map((c) => c.value));
-    let chosen = candidates[0]!;
+    // 1) La ficha (colocación) se elige por su mejor valor proyectado: cada
+    //    proyección ya descuenta el reloj que consume (sale con el reloj que
+    //    queda tras situarse) y los riesgos de sus pases. Empate exacto: la
+    //    primera lectura que llega antes; después, el orden de prioridad.
+    const topOf = new Map<ScreenPlacement, (typeof candidates)[number]>();
     for (const c of candidates) {
-      if (best - c.value > FIRST_READ_TIE_BAND_POINTS) continue;
-      if (best - chosen.value > FIRST_READ_TIE_BAND_POINTS || c.tReadyMs < chosen.tReadyMs) chosen = c;
+      const prev = topOf.get(c.placement);
+      if (!prev || c.value > prev.value || (c.value === prev.value && c.tFirstReadMs < prev.tFirstReadMs)) topOf.set(c.placement, c);
     }
+    let winner = topOf.get(placements[0]!)!;
+    for (const placement of placements) {
+      const top = topOf.get(placement)!;
+      if (top.value > winner.value || (top.value === winner.value && top.tFirstReadMs < winner.tFirstReadMs)) winner = top;
+    }
+    // 2) Dentro de esa ficha, quién crea y quién bloquea: la regla de §2.4 sin
+    //    cambios salvo la frontera (mayor valor y, dentro de
+    //    `FIRST_READ_TIE_BAND_POINTS`, la asignación cuya primera lectura real
+    //    llega antes, p. ej. el poseedor que no espera el pase de vuelta). La
+    //    asignación ejecutada puede valer hasta la banda menos que el mejor de
+    //    su ficha, como antes en la central; se audita (`chosenAssignmentValue`).
+    const eligible = (c: (typeof candidates)[number]) => winner.value - c.value <= FIRST_READ_TIE_BAND_POINTS;
+    const own = candidates.filter((c) => c.placement === winner.placement && eligible(c));
+    let chosen = own[0]!;
+    for (const c of own) if (c.tFirstReadMs < chosen.tFirstReadMs) chosen = c;
     // Una opción por creador candidato (su mejor bloqueador y colocación),
     // para que el motivo quede legible por jugador real.
     const byHandler = new Map<string, (typeof candidates)[number]>();
@@ -1454,14 +1527,15 @@ export abstract class LinkedRun {
         projectedPlan: c.plan,
         projectedBestRead: c.read,
         readySeconds: (c.tReadyMs - t0) / 1000,
+        firstReadSeconds: (c.tFirstReadMs - t0) / 1000,
         placement: c.placement,
       };
       if (c === chosen) {
         const reasonCode = c.handlerId === holderId && holderId !== originalHandlerId ? "creator_kept_by_real_holder" : "creator_projected_value_higher";
-        const note = `${c.handlerId} crea con ${c.screenerId} de bloqueador (${c.placement}): valor proyectado ${c.value.toFixed(3)}, listo en ${((c.tReadyMs - t0) / 1000).toFixed(2)} s.`;
+        const note = `${c.handlerId} crea con ${c.screenerId} de bloqueador (${c.placement}): valor proyectado ${c.value.toFixed(3)}, listo en ${((c.tReadyMs - t0) / 1000).toFixed(2)} s, primera lectura a ${((c.tFirstReadMs - t0) / 1000).toFixed(2)} s.`;
         return { id: c.handlerId, status: "elegida" as const, reasonCode: reasonCode as import("../audit/audit-types").AuditReasonCode, reasonNote: note, values };
       }
-      const lostByTime = best - c.value <= FIRST_READ_TIE_BAND_POINTS;
+      const lostByTime = c.placement === chosen.placement && eligible(c);
       return {
         id: c.handlerId,
         status: "descartada_por_condicion" as const,
@@ -1471,17 +1545,29 @@ export abstract class LinkedRun {
     });
     // Mejor candidato de cada colocación evaluada (ME-07B v2 §4).
     const placementOptions = placements.map((placement) => {
-      const own = candidates.filter((c) => c.placement === placement);
-      const top = own.includes(chosen) ? chosen : own.reduce((a, b) => (b.value > a.value ? b : a));
-      const values = { projectedValue: top.value, handlerId: top.handlerId, screenerId: top.screenerId, projectedPlan: top.plan, projectedBestRead: top.read, readySeconds: (top.tReadyMs - t0) / 1000 };
+      // El valor comparado de cada ficha es el de su mejor asignación (`topOf`); la
+      // elegida informa además de la asignación que se ejecuta.
+      const top = topOf.get(placement)!;
       const isChosen = placement === chosen.placement;
+      const values = {
+        projectedValue: top.value,
+        handlerId: top.handlerId,
+        screenerId: top.screenerId,
+        projectedPlan: top.plan,
+        projectedBestRead: top.read,
+        readySeconds: (top.tReadyMs - t0) / 1000,
+        firstReadSeconds: (top.tFirstReadMs - t0) / 1000,
+        ...top.breakdown,
+        ...(isChosen ? { chosenAssignmentValue: chosen.value, chosenHandlerId: chosen.handlerId, chosenScreenerId: chosen.screenerId, chosenFirstReadSeconds: (chosen.tFirstReadMs - t0) / 1000 } : {}),
+      };
+      // La elegida es siempre la de mayor valor; a igual valor exacto pierde la que lee después.
       const reasonCode: import("../audit/audit-types").AuditReasonCode =
         placements.length === 1
           ? "placement_forced_by_plan"
           : isChosen
             ? "placement_projected_value_higher"
-            : best - top.value <= FIRST_READ_TIE_BAND_POINTS
-              ? "creator_ready_later_in_band"
+            : top.value === winner.value
+              ? "placement_tied_first_read_later"
               : "placement_projected_value_lower";
       return { id: placement, status: isChosen ? ("elegida" as const) : ("descartada_por_condicion" as const), reasonCode, values };
     });
@@ -2175,10 +2261,10 @@ export abstract class LinkedRun {
     )
       return null;
 
-    const pendingSwap = this.pendingDefensiveSwap;
-    this.pendingDefensiveSwap = null;
+    const live = this.pendingLooseBallFrame;
+    this.pendingLooseBallFrame = null;
     const fresh = this.frameFor(possessionTeam);
-    const frame = sameTeam && pendingSwap ? (swapDefenders(fresh, pendingSwap[0], pendingSwap[1]) ?? fresh) : fresh;
+    const frame = sameTeam && live && live.attacking.id === possessionTeam ? withLivePairs(fresh, live) : fresh;
     if (sameTeam) {
       // Sin toque de aro no hay reinicio de 14 s: se conserva el reloj restante.
       const remaining = this.shotRemainingAt(tControl);

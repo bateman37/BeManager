@@ -129,7 +129,9 @@ describe("ME-07B v2 §5: ICE ante el bloqueo lateral", () => {
     const chosen = (r: GameResult, point: string) => bySierra(r, point).map((d) => d.chosenOptionId);
     expect(chosen(ice, "lectura_ice").filter((c) => c === "pase_o5").length).toBeGreaterThan(chosen(ice, "lectura_ice").length / 2);
     const popReceipts = ice.events.filter((e) => e.kind === "roll_continuation" && e.possessionTeamId === SC && e.text.includes("se abre al centro"));
-    expect(popReceipts.length).toBe(bySierra(ice, "lectura_ice").length);
+    // Una lectura a la que la bocina del período corta antes de que el bloqueador se abra no tiene apertura.
+    const cutByBuzzer = (d: ReturnType<typeof bySierra>[number]) => ice.events.some((e) => e.kind === "buzzer" && e.possessionIndex === d.possessionIndex && e.atMs >= d.atMs);
+    expect(popReceipts.length).toBe(bySierra(ice, "lectura_ice").filter((d) => !cutByBuzzer(d)).length);
   });
 
   it("un ICE tardío (D1 lento en leer y desplazarse) no niega la pantalla: se registra y se juega drop", () => {

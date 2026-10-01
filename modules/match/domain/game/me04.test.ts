@@ -196,8 +196,10 @@ describe("ME-04 (2): bocina, tiro en el aire, reset del reloj de lanzamiento y r
     // (asignación de creador/bloqueador por proyección) a la 179 y la lectura
     // del receptor del roll a la 316; §2.5 (faltas por contacto real) a la 110;
     // el bloqueo lateral, el ICE y «a la altura» (LAB-0.7) a la 325; la ficha
-    // Horns (LAB-0.8) y la proyección frente a la defensa observada (v2-4) a la 787.
-    const r = game(787);
+    // Horns (LAB-0.8) y la proyección frente a la defensa observada (v2-4) a la 787;
+    // la elección de ficha por valor (sesión v2-6: la banda ya no desempata entre
+    // fichas, primera lectura como frontera, Delay en `auto`) a la 560.
+    const r = game(560);
     const i = r.events.findIndex((e) => e.kind === "buzzer" && e.detail.shotInFlight === true);
     expect(i).toBeGreaterThan(0);
     const buzzer = r.events[i]!;
@@ -217,8 +219,8 @@ describe("ME-04 (2): bocina, tiro en el aire, reset del reloj de lanzamiento y r
     // soltado a tiempo sin rebote inventado tras la bocina final.
     // ME-07B v2 §2.1 (cierre de rebote y caída del tirador) desplaza ese
     // caso a la semilla 53, y §2.3 (defensa auto con trampa en competencia)
-    // a la 14, y §2.4 (asignación de creador/bloqueador y lectura del receptor) a la 60; §2.5 (faltas por contacto) a la 49; LAB-0.7 (bloqueo lateral, ICE) a la 69; la ficha Horns (LAB-0.8) y la proyección frente a la defensa observada (v2-4) a la 86.
-    const r = game(86);
+    // a la 14, y §2.4 (asignación de creador/bloqueador y lectura del receptor) a la 60; §2.5 (faltas por contacto) a la 49; LAB-0.7 (bloqueo lateral, ICE) a la 69; la ficha Horns (LAB-0.8) y la proyección frente a la defensa observada (v2-4) a la 86; la elección de ficha por valor (sesión v2-6) a la 41.
+    const r = game(41);
     const i = r.events.findIndex((e) => e.kind === "buzzer" && e.detail.shotInFlight === true);
     const next = r.events.slice(i + 1, i + 4).map((e) => e.kind);
     expect(next).toEqual(["field_goal_attempt", "possession_ended", "period_ended"]);
@@ -400,8 +402,9 @@ describe("ME-04 (4): sustituciones en oportunidad legal, reentrada, minutos 5× 
 
   it("canasta tardía en C4: solo sustituye el equipo que la recibe; también tras último libre y entre períodos", () => {
     // LAB-0.7 (bloqueo lateral, ICE): la semilla publicada ya no tiene una
-    // canasta recibida en los dos últimos minutos con relevo; la 1 sí.
-    const r = game(1);
+    // canasta recibida en los dos últimos minutos con relevo; la 1 sí, hasta la
+    // sesión v2-6 (elección de ficha por valor): ahora la 2.
+    const r = game(2);
     const late = r.substitutions.filter((s) => s.window === "canasta");
     expect(late.length).toBeGreaterThan(0);
     for (const s of late) {
@@ -616,8 +619,9 @@ describe("ME-04 (6): empate → prórroga, empate en prórroga → otra; guardi�
     // proyección y lectura del receptor) la desplaza a la semilla 667, §2.5
     // (faltas por contacto real) a la 232, LAB-0.7 (bloqueo lateral, ICE) a la 246 y
     // la ficha Horns (LAB-0.8) con la proyección frente a la defensa observada (v2-4) a la 984 y
-    // la variante Horns→Spain en `auto` (LAB-0.9, v2-5) a la 1718 (ninguna en 1–1717).
-    const r = game(1718);
+    // la variante Horns→Spain en `auto` (LAB-0.9, v2-5) a la 1718 (ninguna en 1–1717) y la
+    // elección de ficha por valor con Delay en `auto` (sesión v2-6) a la 376 (ninguna en 1–375).
+    const r = game(376);
     expect(r.periods.map((p) => p.label)).toEqual(["C1", "C2", "C3", "C4", "Prórroga 1", "Prórroga 2"]);
     const endOf = (period: number) => r.events.find((e) => e.kind === "period_ended" && e.period === period)!;
     expect(endOf(4).score[SC]).toBe(endOf(4).score[PA]);
@@ -635,7 +639,7 @@ describe("ME-04 (6): empate → prórroga, empate en prórroga → otra; guardi�
   });
 
   it("el guardián de prórrogas señala la anomalía sin cerrar el empate ni inventar ganador", () => {
-    const r = game(1718, BASE, { maxOvertimes: 1 });
+    const r = game(376, BASE, { maxOvertimes: 1 });
     expect(r.stop.cause).toBe("guardian");
     expect(r.winnerTeamId).toBeNull();
     expect(r.finalScore[SC]).toBe(r.finalScore[PA]);
@@ -681,7 +685,11 @@ describe("ME-04 (7): regresión de ME-01/02/03 y segunda entrada del bloqueo", (
         );
         out.push([t.events.map((e) => [e.kind, e.atMs, e.actors, e.text, e.positions, e.gameClockMs, e.shotClockMs, e.score]), t.stop, t.box]);
       }
-    // Huella recalculada en ME-07B v2 sesión v2-4: el ataque proyecta el
+    // Huella recalculada en ME-07B v2 sesión v2-6: dentro de una misma ficha, la
+    // banda de empate entre asignaciones de creador/bloqueador desempata por la
+    // primera lectura real proyectada, no por el instante en que los cinco están
+    // situados (con el desempate antiguo la huella es idéntica a la de v2-4).
+    // Antes: recalculada en la sesión v2-4: el ataque proyecta el
     // bloqueo frente a la cobertura que ha visto (la trampa fija del tramo
     // pesa en la asignación de creador y bloqueador; LAB-0.4). Antes:
     // recalculada en ME-07B v2 §2.4 (creador y bloqueador se asignan
@@ -779,4 +787,4 @@ describe("ME-04 (7): regresión de ME-01/02/03 y segunda entrada del bloqueo", (
 // intencional de la mecánica deportiva del rebote, no una regresión. Otra
 // vez en §2.3: la trampa sale al preparar la pantalla (el tramo incluye
 // posesiones con trampa).
-const TRAMO_FINGERPRINT = "2ff2398c8307dc33ebf6014459475fc9517ebf4515633aa8f066c0a9d187fe37";
+const TRAMO_FINGERPRINT = "e09989547e1805f631bac577985e77d40d9959a96c5a1e2adccdfc1ee9c07a00";

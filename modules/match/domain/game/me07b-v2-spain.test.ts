@@ -221,7 +221,9 @@ describe("ME-07B v2 §4: misma ficha Spain ante «seguir» y «cambiar» el bloq
     const team = new Map(cambiar.r.possessions.map((p) => [p.index, p.teamId]));
     const switches = cambiar.r.events.filter((e) => e.kind === "back_screen_switch" && team.get(e.possessionIndex!) === SC);
     expect(switches.length).toBeGreaterThan(80);
-    expect(seguir.r.events.some((e) => e.kind === "back_screen_switch")).toBe(false);
+    // Solo cuando ataca Sierra: Puerto (colocación `auto`) también puede jugar Spain y Sierra defiende en `auto`.
+    const seguirTeam = new Map(seguir.r.possessions.map((p) => [p.index, p.teamId]));
+    expect(seguir.r.events.some((e) => e.kind === "back_screen_switch" && seguirTeam.get(e.possessionIndex!) === SC)).toBe(false);
   });
 });
 
