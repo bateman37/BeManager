@@ -5,7 +5,7 @@
 **Debe leerse cuando:** vayas a modificar `possession-core.ts` o a añadir una tercera acción táctica, otra cobertura u otra orden defensiva.
 **No cubre:** ninguna otra familia táctica (poste, zonas, todas las variantes de mano a mano) ni otras coberturas de bloqueo (switch, ICE/veer...): llegan en entregas posteriores (ver `docs/match/roadmap.md`). La transición de ME-03 no es una táctica nueva: solo decide si existe ventana y reutiliza las ejecuciones ya existentes (sección final).
 **Documentos relacionados:** `docs/match/reference/BeManager-capitulo-tacticas-integradas-al-motor-v1.md`, `CAPABILITIES.md`, `RULES.md`.
-**Última actualización:** 2026-09-30 (ME-07B v2, §2.4–§2.5).
+**Última actualización:** 2026-10-01 (ME-07B v2, sesión v2-4: ficha Horns→bloqueo, LAB-0.8; proyección del ataque frente a la defensa observada).
 
 ## Disposición y roles fijos
 
@@ -190,6 +190,47 @@ compatibles con el plan y la orden de colocación; el núcleo devuelve la
 ficha en vigor (`organizedChoice.card`). No cambia la conducta (foto de las
 20 idéntica); Horns, Delay, Spain, drag y los saques siguen pendientes como
 fichas nuevas con su mecanismo.
+
+**ME-07B v2 §4 (sesión v2-4, LAB-0.8) — ficha `horns_bloqueo`
+(«Organizado: Horns→bloqueo»).** *Colocación* (`HORNS_PNR_TARGETS`):
+manejador arriba, los dos interiores del quinteto en los codos —uno es el
+bloqueador (O5, mismo punto de pantalla que la central) y el otro el
+**segundo cuerno** (rol canónico O3, en el codo contrario, zona de tiro
+medio)—, los dos exteriores en las esquinas (O2, O4) y el ala débil vacía;
+cada defensor sigue a su marca (D3 entre el segundo cuerno y el aro). Los
+cuernos son siempre los dos interiores por el orden de roles del quinteto en
+pista; si el poseedor es uno de ellos, devuelve el balón al manejador.
+*Entrada*: orden del entrenador (`screenPlacement=horns`, `/lab` «Colocación
+del bloqueo: Horns») o, en `auto`, la misma proyección en seco que compara
+creador, bloqueador y colocación (`colocacion_bloqueo`). *Acción*: el mismo
+árbol de coberturas del bloqueo (drop, por debajo, show, a la altura,
+cambio, trampa; ICE no aplicable: pantalla dentro de la franja de la zona),
+con otra **responsabilidad**: el jugador que deja libre la ayuda al roll es
+el segundo cuerno en el codo (tiro medio T03 de recepción, `helpLeftSpot`)
+y la reparación sale del defensor de la esquina débil, que deja la esquina.
+Ante la trampa, el low man (defensor del codo) llega a tiempo más a menudo y
+la inversión va al codo (tiro medio); en la central nunca se invierte. Ante
+drop, el receptor del roll valora un tiro medio del codo en lugar de un
+triple de esquina. *Negación y salida*: la ayuda contiene al continuador y
+su lectura reevalúa (aro, floater, codo, segunda entrada con motivo); la
+trampa puede robar; sin opción, salida segura y reorganizar. Técnico y
+local: el defensor que ayuda no se mete en el mismo punto del short roll si
+llegaría mientras el continuador aún corre (contiene a contacto, en su línea
+de llegada) y el solape corporal de la contención es estrictamente menor que
+la suma de radios; sin esto, el defensor del codo (a 2 m) chocaba de frente
+en carrera y cada ayuda era falta. Pruebas: `me07b-v2-horns.test.ts`,
+`lab-0-8-parameters.test.ts`, `playbook-card.test.ts`.
+
+**ME-07B v2 §2.2/§5 (sesión v2-4) — el ataque proyecta contra la defensa
+observada.** Antes el selector de familia y `assignOrganizedRoles`
+proyectaban el bloqueo directo **solo contra drop**. Ahora proyectan en seco
+la concesión de cada cobertura que el rival ha usado en el partido y la
+ponderan por su frecuencia observada (`shownCoverageWeights`, LAB-0.4: peso
+`(usos_c + K·[c=drop]) / (Σusos + K)`, mismo K = 6 usos); sin muestras es la
+proyección de siempre. ICE ante pantalla no lateral pesa como drop.
+Auditoría en `seleccion_familia`: `coverageWeight_*`, `valueAgainst_*`,
+`expectedValueOverShownCoverages` (`situationalValue` sigue siendo la
+proyección contra drop). Prueba: `me07b-v2-coverage-projection.test.ts`.
 
 **ME-07B v2 §2.4 — lecturas frente al mejor cierre real.** Cada vía de
 tiro de la primera lectura del bloqueo y de la lectura del continuador se

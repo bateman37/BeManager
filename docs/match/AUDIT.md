@@ -11,8 +11,9 @@ hechos (ver `MODEL.md`) ni el acta (ver `BOXSCORE.md`): este documento solo
 describe cómo se observa y se exporta lo que esos documentos ya definen.
 **Documentos relacionados:** `MODEL.md`, `ACTIONS.md`, `BOXSCORE.md`,
 `docs/decisions/DECISION-REQUERIDA-ME-04-alcance-natural-faltas-y-segunda-entrada.md`.
-**Última actualización:** 2026-09-30 (ME-07B v2: esquema `ME-07B-AUDIT-1`,
-punto `disputa_rebote`, lecturas y faltas de §2.4–§2.5).
+**Última actualización:** 2026-10-01 (ME-07B v2, sesión v2-4: ficha Horns,
+`cardId` por tiro, acción causante de cambio/show/a la altura/ICE y
+proyección frente a la defensa observada).
 
 ## Qué es y qué no es
 
@@ -142,6 +143,17 @@ llevan `placement`. La configuración exportada de cada equipo añade
 `screenPlacement` (entra en la huella). **§3:** cada opción de
 `seleccion_familia` lleva `cardId`, la ficha de libro a la que corresponde
 (`null` si la colocación no admite esa familia).
+**v2-4 (LAB-0.8, Horns):** `colocacion_bloqueo` admite `horns`; ante Horns
+la mano a mano se marca `family_not_in_card_placement`; `organized_entry`
+lleva `placement: "horns"` y los roles (O3 = segundo cuerno); el texto de
+`help_left_assignment` dice dónde queda libre el jugador («en el codo» /
+«en la esquina débil») y `invertir_o3`/`pase_o3` llevan `shotType`. Cada tiro
+de `result.summary.shots` añade `cardId` (ficha en vigor de su fase) y la
+acción causante incluye ahora `lectura_cambio`, `lectura_show`,
+`lectura_a_la_altura` y `lectura_ice` (antes faltaban). La opción
+`bloqueo_directo` de `seleccion_familia` pasa a `projectedCoverage:
+"observada"` con `coverageWeight_<cobertura>`, `valueAgainst_<cobertura>` y
+`expectedValueOverShownCoverages` (tendencia observada del rival, LAB-0.4).
 **§2.6:** `result.summary.shots` enlaza cada FGA a la
 familia elegida antes que él en su fase y a la última decisión de
 lectura/entrada anterior (`causingDecision` con id, punto, opción,

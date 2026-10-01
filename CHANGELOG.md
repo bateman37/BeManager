@@ -80,6 +80,31 @@ decisiones duraderas viven en `docs/decisions/`, no aquí.
   permitidas, seguridad y prioridad de las tres acciones organizadas
   existentes; decide qué colocaciones se ofrecen al organizar y se audita
   (`cardId`). Sin cambio de conducta (foto de las 20 idéntica).
+- **§4 Ficha Horns→bloqueo (LAB-0.8), primera ficha «jugable».** Los dos
+  interiores del quinteto en los codos (bloqueador y segundo cuerno), las
+  esquinas llenas y el ala débil vacía; entrada por orden
+  (`screenPlacement=horns`, «Colocación del bloqueo: Horns» en `/lab`) o por
+  proyección en `auto`. Mismo árbol de coberturas con otra responsabilidad:
+  ayuda al roll el defensor del segundo cuerno y deja un tiro medio en el
+  codo (no un triple de esquina); la reparación sale de la esquina débil.
+  Misma ficha ante drop/cambio/trampa → tres desenlaces distintos;
+  ejecución, negación y continuidad en `me07b-v2-horns.test.ts`; `/lab`
+  recorrido. Arreglos técnicos al construirla: la ayuda no se mete en el
+  mismo punto que un continuador en carrera (antes, cada ayuda desde el
+  codo era falta y un partido llegaba a `menos_de_cinco`), el cambio
+  persiste tras un pase desviado recuperado, el marco se reasigna aunque
+  gane el primer candidato, los tiros tras lecturas de cambio/show/a la
+  altura/ICE tienen acción causante y cada tiro lleva `cardId`.
+- **§2.2/§5 El ataque proyecta contra la defensa observada.** Selector de
+  familia y asignación de roles ponderan la concesión de cada cobertura que
+  el rival ha mostrado por su frecuencia (`shownCoverageWeights`, LAB-0.4;
+  sin muestras, drop como antes). Coste: ≈1,7 s por partido con auditoría
+  (antes ≈0,65 s).
+- **Diagnóstico de la bajada de puntos de v2-3** en
+  `docs/match/analysis/ME-07B-v2-descomposicion-puntos-v2-3.md`: dos
+  prórrogas, aciertos bajo lo esperado y mezcla defensiva; fuera de muestra
+  sube. Decisión de Dennis sobre `menos_de_cinco` registrada en `RULES.md`
+  (sin implementar).
 - **§4–§5 Bloqueo directo lateral, ICE ejecutable y «a la altura» (LAB-0.7).**
   Segunda colocación real del bloqueo (`screenPlacement`, selector en
   `/lab`; en `auto` el poseedor real la elige con creador y bloqueador por

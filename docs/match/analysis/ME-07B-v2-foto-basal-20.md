@@ -226,3 +226,32 @@ seed 68–120 (Puerto 92/25) → +5 159–107 (Puerto 91/10). **Limitaciones:**
 un solo lado lateral (izquierdo) y el resto del espaciado igual que en la
 central; el ataque proyecta la familia y la colocación contra drop (no
 anticipa ICE ni las demás coberturas); sin `/lab` recorrido en v2-3.
+
+## Tras la ficha Horns y la proyección frente a la defensa observada (sesión v2-4, LAB-0.8)
+
+Mismas 20 semillas y fotos sobre `d3ca201`. Las 20 terminan `final` con
+actas conciliadas; barrido 1–60 × 3 fotos: 180/180 `final`, 0 actas sin
+conciliar, 2 relevos de emergencia (seed 14 y +5 semilla 3, Puerto),
+ningún `menos_de_cinco`.
+
+| Métrica | seed Sierra | seed Puerto | +3 Sierra | +3 Puerto | +5 Sierra | +5 Puerto |
+|---|---:|---:|---:|---:|---:|---:|
+| Puntos · posesiones | 1.335 · 1.179 | 1.388 · 1.180 | 890 · 638 | 649 · 633 | 445 · 322 | 311 · 322 |
+| 2FGM/2FGA · 3FGM/3FGA | 368/738 · 158/508 | 417/815 · 147/434 | 317/544 · 51/180 | 198/460 · 67/220 | 113/183 · 57/204 | 63/150 · 54/158 |
+| FTM/FTA · PF | 125/172 · 122 | 113/153 · 141 | 103/128 · 52 | 52/66 · 88 | 48/57 · 23 | 23/29 · 37 |
+| OREB tras fallo de campo vivo | 238/541 | 183/562 | 141/259 | 92/306 | 98/166 | 46/140 |
+| Familias PnR / DHO | 1.207 / 59 | 1.188 / 71 | 573 / 134 | 708 / 11 | 117 / 212 | 327 / 32 |
+| Colocación central / lateral / Horns | 1.218 / 45 / 7 | 1.116 / 64 / 86 | 644 / 46 / 22 | 695 / 19 / 9 | 309 / 21 / 1 | 341 / 18 / 3 |
+| Cobertura como defensa: drop / trampa / under / cambio / show / a la altura / ICE | 497/296/161/30/105/129/41 | 793/239/96/43/37/34/24 | 275/109/106/60/157/3/9 | 241/75/22/105/201/40/23 | 139/120/34/3/9/53/1 | 190/38/19/23/1/49/9 |
+
+**Lectura.** (1) Horns entra en `auto` por proyección, sin cuota: 7 y 86
+organizaciones en seed, 1–22 en las demás fotos. (2) La proyección del
+ataque frente a la defensa observada pesa otras coberturas en 2.291 de
+2.323 selecciones de familia de la foto seed, pero solo cambia la familia
+frente a la proyección solo contra drop en 5 (4 hacia el bloqueo, 1 hacia la
+mano a mano); su efecto principal está en creador, bloqueador y colocación
+(`colocacion_bloqueo`). (3) Coste: 11 partidos seed con auditoría 7,0 s →
+18,6 s (≈1,7 s por partido): cada candidato de la organización proyecta en
+seco cada cobertura vista y una colocación más. (4) Los puntos vuelven a
+subir (1.201–1.210 → 1.335–1.388); no se calibra nada con ello (ver
+`ME-07B-v2-descomposicion-puntos-v2-3.md` sobre el sorteo en 11 partidos).

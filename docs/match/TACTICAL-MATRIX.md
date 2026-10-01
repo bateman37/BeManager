@@ -5,14 +5,14 @@
 **Debe leerse cuando:** vayas a implementar, probar o declarar jugable cualquier táctica de ME-07B.
 **No cubre:** el diseño de cada táctica (ver `reference/BeManager-capitulo-tacticas-integradas-al-motor-v1.md`) ni el detalle del árbol ya implementado (ver `ACTIONS.md`).
 **Documentos relacionados:** `ACTIONS.md`, `AUDIT.md`, `docs/prompts/implementation/ME-07B-v2-capitulo-tactico-y-20-auditorias.md`, `docs/prompts/implementation/ME-07B-PROGRESS.md`.
-**Última actualización:** 2026-10-01 (ME-07B v2, sesión v2-3: bloqueo lateral, ICE ejecutable, «a la altura» frente a show; LAB-0.7).
+**Última actualización:** 2026-10-01 (ME-07B v2, sesión v2-4: ficha Horns→bloqueo jugable, LAB-0.8; el ataque proyecta contra la defensa observada).
 
 ## Reglas de estado
 
 - **jugable**: un partido completo puede ejecutarla, negarla y continuar con
   reloj, balón y participantes coherentes; tiene prueba de ejecución y de
-  negación/respuesta rival y se ha visto en `/lab`. Hoy **ninguna fila**
-  cumple las cuatro condiciones (sin recorrido de `/lab` en v2).
+  negación/respuesta rival y se ha visto en `/lab`. Desde v2-4 solo la
+  ficha **Horns→bloqueo** (y su colocación) cumple las cuatro condiciones.
 - **parcial**: existe mecanismo real en el motor pero falta configuración,
   negación, auditoría o recorrido de `/lab`; la columna «estado» dice qué.
 - **pendiente**: sin mecanismo. Ningún nombre pendiente se oculta ni se
@@ -44,7 +44,7 @@ auditoría** · **Prueba** · **Estado**. «—» = no existe todavía.
 | 4-out/1-in | Espaciado | — (fijo) | Todo ataque organizado | Disposición única de `scenario.ts` | — | — | varias | parcial: única estructura, sin rellenos |
 | 5-out | Espaciado | — | — | — | — | — | — | pendiente |
 | 3-out/2-in | Espaciado | — | — | — | — | — | — | pendiente |
-| Horns | Colocación | — | — | — | — | — | — | pendiente |
+| Horns | Colocación | `screenPlacement=horns` («Colocación del bloqueo: Horns» en `/lab`) | Ataque organizado con bloqueo permitido | Disposición LAB-0.8: los dos interiores en los codos, esquinas llenas, ala débil vacía; ficha `horns_bloqueo` (ver «Libro por fase») | Central (la mano a mano no se juega desde Horns) | `colocacion_bloqueo` (`horns`), `organized_entry.detail.placement` | `lab-0-8-parameters.test.ts`, `me07b-v2-horns.test.ts` | jugable como colocación de la ficha Horns→bloqueo (ver «Libro por fase») |
 | 1-4 alto | Colocación | — | — | — | — | — | — | pendiente |
 | Delay | Colocación | — | — | — | — | — | — | pendiente |
 | Empty side | Ocupación | — | — | — | — | — | — | pendiente |
@@ -114,15 +114,28 @@ auditoría** · **Prueba** · **Estado**. «—» = no existe todavía.
 Primitiva común (§3, sesión v2-3): `PlaybookCard` en
 `domain/tactics/playbook-card.ts` con fase/condición, colocación, roles y
 sustitutos, primera acción, variantes, lecturas permitidas, seguridad y
-prioridad; hoy describe las tres acciones organizadas existentes (bloqueo
-central, mano a mano, bloqueo lateral) y gobierna qué colocaciones se
-ofrecen al organizar (`playbook-card.test.ts`: cada lectura de un partido
-completo pertenece a la ficha de su fase). Ninguna fila de esta tabla tiene
-todavía ficha propia.
+prioridad; describe las tres acciones organizadas de partida (bloqueo
+central, mano a mano, bloqueo lateral) y, desde v2-4, **Horns→bloqueo**
+(`horns_bloqueo`, LAB-0.8), y gobierna qué colocaciones se ofrecen al
+organizar (`playbook-card.test.ts`: cada lectura de un partido completo
+pertenece a la ficha de su fase).
+
+**Nota v2-4 (Horns→bloqueo jugable).** Ejecución: colocación real de los
+cinco, entrada por orden o por proyección y cadena ficha → entrada →
+lectura → tiro en ME-07B-AUDIT-1. Negación: misma ficha ante drop (pase al
+roll y remate), cambio (O1 ataca al pívot) y trampa (pase al roll y de él a
+la esquina débil o al codo; robo posible) → tres desenlaces físicos
+distintos; la ayuda del segundo cuerno contiene al continuador. Continuidad:
+partidos completos `final` con acta conciliada. Recorrido `/lab` en la
+sección de progreso v2-4. Limitaciones: Spain y otras variantes
+encadenadas pendientes; la segunda entrada (variante) se juega desde el
+nuevo ángulo con la geometría central; el defensor del codo no ayuda sobre
+la penetración de O1 (solo sobre el roll).
 
 | Nombre | Capa | Config. | Entrada | Mecanismo | Fallback | Hecho/auditoría | Prueba | Estado |
 |---|---|---|---|---|---|---|---|---|
-| Organizado: Horns→bloqueo/Spain | Libro | — | — | — | — | — | — | pendiente |
+| Organizado: Horns→bloqueo | Libro | `screenPlacement=horns` (orden) o `auto` (proyección) | Ataque organizado sin superioridad; los dos cuernos son los dos interiores en pista (si el poseedor es interior, devuelve al manejador) | Ficha `horns_bloqueo`: el bloqueo del cuerno (O5) con el árbol de coberturas real (drop, por debajo, show, a la altura, cambio, trampa); ayuda al roll el defensor del segundo cuerno, que deja un tiro medio en el codo (T03); la reparación sale de la esquina débil | Lectura del receptor (aro, floater, codo, segunda entrada con motivo), salida segura y reorganizar; trampa puede robar | `colocacion_bloqueo`, `seleccion_familia.cardId=horns_bloqueo`, `organized_entry` (roles), `help_left_assignment` («en el codo»), lecturas, `summary.shots[].cardId` + `causingDecision` | `me07b-v2-horns.test.ts` (ejecución, cadena auditada, drop/cambio/trampa → tres desenlaces, Horns ≠ central, negación y continuidad), `playbook-card.test.ts` | **jugable** (ver nota v2-4) |
+| Organizado: Horns→Spain | Libro | — | — | — | — | — | — | pendiente: falta el tercer bloqueador (Spain) |
 | Organizado: Delay→DHO/corte | Libro | — | — | — | — | — | — | pendiente |
 | Organizado: entrada a poste con salidas | Libro | — | — | — | — | — | — | pendiente |
 | Temprano: drag / double drag / pistol | Libro | — | — | — | — | — | — | pendiente |
@@ -170,7 +183,7 @@ todavía ficha propia.
 | Trap | Cobertura | `coverage=trampa` | Bloqueo directo | D1+D5 al balón, D3 low man, D4 rota; contacto de la trampa cerrada puede ser falta sin tiro (M07, §2.5) | Recuperar | `lectura_trampa`, `seleccion_cobertura`, `puerta_falta_sin_tiro` | `me02`, `me07b-v2-coverage.test.ts`, `me07b-v2-fouls.test.ts` | parcial: elegible y elegida en `auto` desde la preparación (§2.3); sin lugar/disparador configurable |
 | Switch | Cobertura | `coverage=cambio` | Bloqueo directo | D5 canta y sale a la altura del bloqueo (M01/M05, T22), D1 se queda con el bloqueador (M09, T23); O1 lee frente al pívot; emparejamiento cambiado persiste en la posesión | Salida segura | `switch_committed`, `lectura_cambio`, `seleccion_cobertura` | `me07b-v2-switch-show.test.ts` | parcial: elegido en `auto` (foto seed 40/61); sin scram/recuperar tras el desajuste ni `/lab` |
 | ICE lateral | Cobertura | `coverage=ice` | Solo pantalla lateral (`isLateralScreenSpot`) | D1 reconoce la pantalla (M01/M05) y se pone de su lado, a contacto del manejador (F04): si llega antes del uso, la niega y empuja a fondo; D5 baja a la ayuda baja (M01/M05, T23); el bloqueador se abre al codo; O1 lee penetrar por fondo, tiro medio tras rechazar (T03), pase al bloqueador (la línea pasa por D1, T17), esquina fuerte (D2 en casa) o salida | ICE tardío (`ice_late`) o bloqueo central (`coverage_not_applicable`): drop | `ice_committed`, `ice_late`, `lectura_ice`, `seleccion_cobertura` (concesión proyectada solo ante lateral; `coverage_ice_central_not_eligible` ante central) | `me07b-v2-lateral-ice.test.ts`, `me07b-v2-switch-show.test.ts` (negación central) | parcial: ejecutable y elegido en `auto` ante el lateral (foto seed 9 / 38); semilla 92 forzada: 235 ICE puestos, concede sobre todo el bloqueador abierto; un D1 lento llega tarde; sin `/lab` recorrido en v2-3 |
-| Under | Cobertura | `coverage=por_debajo` | Bloqueo directo | D1 pasa entre el bloqueador y su defensor sin retraso: niega el dos contra uno del roll y contesta la entrada; el cierre del triple rodea al bloqueador y no contesta si aún no lo ha rodeado al soltar | — | `screen_navigated.route`, `lectura_bloqueo_o1` (`d1CloseoutMarginSeconds`, `d1WallsDrive`) | `me07b-v2-switch-show.test.ts` | parcial: elegido en `auto` (foto seed 125/55); `/lab` semilla 92 recorrida en `85725d6`; el ataque aún no lo anticipa al elegir familia |
+| Under | Cobertura | `coverage=por_debajo` | Bloqueo directo | D1 pasa entre el bloqueador y su defensor sin retraso: niega el dos contra uno del roll y contesta la entrada; el cierre del triple rodea al bloqueador y no contesta si aún no lo ha rodeado al soltar | — | `screen_navigated.route`, `lectura_bloqueo_o1` (`d1CloseoutMarginSeconds`, `d1WallsDrive`) | `me07b-v2-switch-show.test.ts` | parcial: elegido en `auto` (foto seed 125/55); `/lab` semilla 92 recorrida en `85725d6`; desde v2-4 el ataque lo pondera por la frecuencia con que el rival lo ha mostrado (`me07b-v2-coverage-projection.test.ts`) |
 | Respuesta de zona al bloqueo | Cobertura | — | — | — | — | — | — | pendiente |
 
 ## Defensa — ayudas, reparación y tras tiro

@@ -554,3 +554,111 @@ npm ci && npm run check
 npx tsx scripts/me07b-v2-stop-sweep.ts 1 60     # 60 semillas × 3 fotos: parada y acta
 npx tsx scripts/me07b-v2-baseline-20.ts          # foto de las 20
 ```
+
+### Sesión v2-4 — 2026-10-01
+
+**Base:** `ed1960a`; rama `claude/me-07b-v2-capitulo-tactico`, **PR #11 Draft**
+(no se fusiona ni se marca Ready).
+
+#### Decisión de Dennis sobre `menos_de_cinco` (literal, decidida y sin implementar)
+> «Decisión sobre menos_de_cinco: cuando no queden cinco inscritos
+> habilitados, continúa con cuatro, tres o dos jugadores reales; con menos de
+> dos, registra derrota por default conforme a FIBA 2026. No inventes un
+> sustituto, no reutilices excluidos y no conviertas un guardian en final.
+> Documenta esta regla ahora; su implementación puede esperar porque no
+> aparece en las 180 partidas comprobadas. Si impide cerrar una prueba o
+> entrega, deja el caso pendiente explícito en la PR Draft.»
+
+Registrada también en `docs/match/RULES.md`. Hueco del motor: no hay
+resultado de derrota por default (`GameStopCause` = `final | guardian`;
+`fiba-2026-rules.ts` no recoge los arts. 20–21) ni juego con menos de cinco.
+Sigue **pendiente**: guardián explicado. Durante la sesión apareció una vez
+(Horns forzado, semilla 92) por un defecto de la ayuda (abajo, punto 3), no
+por la regla; corregido el defecto, no reaparece en 180 partidas.
+
+#### Hecho y verificado (con commits)
+1. `75b5d0f` — **bajada de puntos de v2-3 descompuesta**
+   (`docs/match/analysis/ME-07B-v2-descomposicion-puntos-v2-3.md`,
+   `scripts/me07b-v2-points-breakdown.ts`): de −213 combinados, −65 son dos
+   prórrogas que dejan de jugarse (98 y 99), −101 aciertos por debajo de la
+   probabilidad usada (triples de Sierra 141 frente a 160,7 esperados,
+   −1,9 σ) y −47 calidad esperada y libres (mezcla defensiva de Sierra:
+   menos show/cambio/under, Puerto pierde 37 dobles). En semillas 1–60 el
+   total **sube** +347 (13.449 → 13.796). Nada calibrado.
+2. `d3ca201` — **ficha `horns_bloqueo` (LAB-0.8)** y **proyección frente a la
+   defensa observada** (detalle en `ACTIONS.md`, `AUDIT.md`). Defectos
+   encontrados y corregidos al construirla: (a) la ayuda corría al mismo
+   punto del short roll que el continuador: desde el codo (2 m) chocaba en
+   carrera y cada ayuda era falta (37 en un partido → 8 excluidos de Puerto
+   → `menos_de_cinco`); ahora contiene a contacto si llegaría mientras el
+   continuador corre y el solape es estrictamente menor que la suma de
+   radios; (b) el cambio se perdía tras un pase desviado recuperado por el
+   ataque; (c) `assignOrganizedRoles` no reasignaba el marco si ganaba el
+   primer candidato (en Horns el primero ya está reasignado); (d) tiros tras
+   `lectura_cambio/show/a_la_altura/ice` sin acción causante. La central y
+   el laboratorio ME-01–03 conservan sus huellas; cambian la del tramo de
+   ME-03 (por la proyección) y las semillas naturales (787, 86, 984, 146).
+3. Pruebas: `npm run check` completo (lint + typecheck + **320 tests** +
+   docs:check + build) en `d3ca201`. Nuevas: `me07b-v2-horns.test.ts` (9),
+   `me07b-v2-coverage-projection.test.ts` (2), `lab-0-8-parameters.test.ts`
+   (4), LAB-0.4 `shownCoverageWeights`.
+4. Barrido `scripts/me07b-v2-stop-sweep.ts 1 60`: **180/180 `final`**, 0 actas
+   sin conciliar, 2 emergencias ROT-3, ningún `menos_de_cinco`. Foto de las
+   20: 20 `final`, conciliadas (sección v2-4 de la foto).
+
+#### Horns→bloqueo: evidencia de «jugable»
+- Ejecución: semilla 92, Sierra «Horns», Puerto drop: 111/111 entradas en
+  Horns con los dos interiores en los codos (distancias de la disposición
+  comprobadas), `seleccion_familia.cardId = horns_bloqueo`, 94/94 tiros con
+  `cardId` y acción causante de la ficha.
+- Contrafactual (misma ficha, semilla 92): drop → `pase_o5` y remate del
+  continuador (85 finalizaciones, 8 triples); cambio → `lectura_cambio`
+  (`atacar_cambio` 49, `pase_o5` 57; 99 finalizaciones); trampa →
+  `lectura_trampa` (`trap_broken_o4` 78, `invertir_o3` al codo 17, 8 robos;
+  78 triples y 17 tiros medios, ninguna finalización).
+- Frente a la central (misma trampa): Horns invierte al codo con tiro medio;
+  la central nunca invierte. Ante drop, el receptor del roll valora un tiro
+  medio del codo en lugar de un triple de esquina.
+- Negación: la ayuda del segundo cuerno contiene al continuador; la lectura
+  reevalúa con alternativas y la segunda entrada se evalúa con motivo (en
+  Horns casi nunca es viable: el defensor que repara cubre las líneas, y el
+  continuador remata contenido); la trampa roba y cambia la posesión.
+- `/lab` real (PostgreSQL 16 + Chromium, `walk-horns.cjs` en el scratchpad,
+  sobre el árbol de `d3ca201`): restaurar ambos equipos; semilla 92 con
+  Sierra «Colocación del bloqueo: Horns» y Puerto drop → 109–126; trampa →
+  130–133; cambio → 118–106; auto/auto → 133–136 (Horns elegido 1 vez por
+  proyección). Las cuatro exportaciones `ME-07B-AUDIT-1` (~1 MB) abiertas:
+  `stop=final`, actas conciliadas, `screenPlacement=horns`, todas las
+  entradas en Horns y todos los tiros de la ficha enlazados. Repetidas con
+  el dominio desde la configuración exportada: mismo marcador y mismo
+  número de hechos. El panel muestra «bloqueo Horns (dos interiores en los
+  codos)».
+
+#### Proyección del ataque frente a la defensa observada (evidencia)
+Antes: `projectedCoverage: "drop"` siempre. Ahora, prueba pura con la misma
+geometría y muestras propias: sin muestras del rival gana la mano a mano
+(0,981 frente a 0,883); con 20 cambios vistos gana el bloqueo (1,049); 20
+drops o 20 ICE ante pantalla central dejan la proyección exacta de antes.
+En partido (semilla 92): contra drop el peso de drop es 1 y nada cambia;
+contra cambio el peso del cambio crece hasta >0,9 y la familia elegida se
+aparta de la proyección solo contra drop. Foto seed: 2.291/2.323 selecciones
+pesan otras coberturas, 5 cambian de familia por ello.
+
+#### No verificado / pendiente
+- Spain, Delay, saques y el resto del libro; Horns sin variantes encadenadas
+  propias (la segunda entrada se juega con geometría central) y sin ayuda
+  del codo sobre la penetración de O1.
+- La tendencia observada no distingue colocación (el ICE visto ante la
+  lateral pesa igual en la central, donde se pliega a drop).
+- Coste ≈1,7 s por partido con auditoría (antes ≈0,65 s).
+- `menos_de_cinco` (arriba). Ninguna otra fila de la matriz es «jugable».
+
+#### Reanudar
+```bash
+cd BeManager && git fetch origin && git checkout claude/me-07b-v2-capitulo-tactico && git pull
+npm ci && npm run check
+npx tsx scripts/me07b-v2-stop-sweep.ts 1 60
+npx tsx scripts/me07b-v2-baseline-20.ts
+```
+Siguiente paso: segunda ficha (Delay→DHO/corte o Horns→Spain con tercer
+bloqueador) sobre la misma gramática; abaratar la proyección por coberturas.
