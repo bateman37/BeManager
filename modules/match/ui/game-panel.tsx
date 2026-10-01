@@ -11,6 +11,8 @@ import type {
   OffensivePlanChoice,
   OffBallDefensiveCallChoice,
   OffensiveCreationPriority,
+  ChainedVariantChoice,
+  BackScreenCallChoice,
 } from "@match/domain/lab/match-input";
 import type { PhaseEntry, ReboundPriority, TramoEvent } from "@match/domain/sequence/tramo-model";
 import { LAB_DECLARED_ROLES, FUNCTIONAL_ROLE_LABELS, type FunctionalRole } from "@match/domain/players/functional-roles";
@@ -40,6 +42,10 @@ export interface GameTeamSettings {
   readonly creationPriority: OffensiveCreationPriority;
   /** ME-07B v2 §4 (LAB-0.7): colocación del bloqueo directo (auto, central o lateral). */
   readonly screenPlacement?: ScreenPlacementChoice;
+  /** ME-07B v2 §4 (LAB-0.9): variante encadenada al atacar (auto, ninguna o Spain). */
+  readonly chainedVariant?: ChainedVariantChoice;
+  /** ME-07B v2 §4 (LAB-0.9): respuesta al bloqueo ciego de Spain al defender. */
+  readonly backScreenCall?: BackScreenCallChoice;
 }
 
 export interface GameSettings {
@@ -63,6 +69,8 @@ const DEFAULT_TEAM_SETTINGS: GameTeamSettings = {
   offBallDefensiveCall: "auto",
   creationPriority: "equilibrado",
   screenPlacement: "auto",
+  chainedVariant: "auto",
+  backScreenCall: "auto",
 };
 
 export function teamSettings(settings: GameSettings, teamId: string): GameTeamSettings {
@@ -81,6 +89,8 @@ export function toGameTeam(team: LabTeamRecord, s: GameTeamSettings): BuildGameT
     offBallDefensiveCall: s.offBallDefensiveCall,
     creationPriority: s.creationPriority,
     screenPlacement: s.screenPlacement ?? "auto",
+    chainedVariant: s.chainedVariant ?? "auto",
+    backScreenCall: s.backScreenCall ?? "auto",
   };
 }
 
@@ -108,6 +118,16 @@ const SCREEN_PLACEMENT_LABELS: Record<ScreenPlacementChoice, string> = {
   central: "Central",
   lateral: "Lateral",
   horns: "Horns (dos interiores en los codos)",
+};
+const CHAINED_VARIANT_LABELS: Record<ChainedVariantChoice, string> = {
+  auto: "Auto (compara la ficha base y sus variantes)",
+  ninguna: "Ninguna (ficha base)",
+  spain: "Spain (desde Horns: bloqueo ciego al protector del roll)",
+};
+const BACK_SCREEN_CALL_LABELS: Record<BackScreenCallChoice, string> = {
+  auto: "Auto (elige la defensa)",
+  seguir: "Seguir al bloqueador (y leer la ayuda)",
+  cambiar: "Cambiar en el bloqueo ciego",
 };
 const OFF_BALL_CALL_LABELS: Record<OffBallDefensiveCallChoice, string> = {
   auto: "Auto (elige la defensa)",
@@ -212,8 +232,8 @@ function Scoreboard({ game }: { readonly game: LabGameView }) {
         {game.possessions.length} posesiones · {game.events.length} hechos
       </p>
       <p className="text-xs text-slate-500 dark:text-slate-400">
-        Plan ofensivo (ME-06): {home.name} ataca con {OFFENSIVE_PLAN_LABELS[home.offensivePlan]} (bloqueo {SCREEN_PLACEMENT_LABELS[home.screenPlacement ?? "auto"]}), prioridad {CREATION_PRIORITY_LABELS[home.creationPriority]},
-        defiende la mano a mano con {OFF_BALL_CALL_LABELS[home.offBallDefensiveCall]} · {away.name} ataca con {OFFENSIVE_PLAN_LABELS[away.offensivePlan]} (bloqueo {SCREEN_PLACEMENT_LABELS[away.screenPlacement ?? "auto"]}),
+        Plan ofensivo (ME-06): {home.name} ataca con {OFFENSIVE_PLAN_LABELS[home.offensivePlan]} (bloqueo {SCREEN_PLACEMENT_LABELS[home.screenPlacement ?? "auto"]}, variante {CHAINED_VARIANT_LABELS[home.chainedVariant ?? "auto"]}), prioridad {CREATION_PRIORITY_LABELS[home.creationPriority]},
+        defiende la mano a mano con {OFF_BALL_CALL_LABELS[home.offBallDefensiveCall]} · {away.name} ataca con {OFFENSIVE_PLAN_LABELS[away.offensivePlan]} (bloqueo {SCREEN_PLACEMENT_LABELS[away.screenPlacement ?? "auto"]}, variante {CHAINED_VARIANT_LABELS[away.chainedVariant ?? "auto"]}),
         prioridad {CREATION_PRIORITY_LABELS[away.creationPriority]}, defiende la mano a mano con {OFF_BALL_CALL_LABELS[away.offBallDefensiveCall]}.
       </p>
       <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -835,6 +855,34 @@ export function GameSection(props: GameSectionProps) {
                       {(Object.keys(SCREEN_PLACEMENT_LABELS) as ScreenPlacementChoice[]).map((p) => (
                         <option key={p} value={p}>
                           {SCREEN_PLACEMENT_LABELS[p]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex items-center gap-1">
+                    Variante encadenada
+                    <select
+                      className="rounded border border-slate-300 bg-transparent px-1 py-0.5 dark:border-slate-700"
+                      value={teamSettings(props.settings, team.id).chainedVariant ?? "auto"}
+                      onChange={(e) => setTeam(team.id, { chainedVariant: e.target.value as ChainedVariantChoice })}
+                    >
+                      {(Object.keys(CHAINED_VARIANT_LABELS) as ChainedVariantChoice[]).map((v) => (
+                        <option key={v} value={v}>
+                          {CHAINED_VARIANT_LABELS[v]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex items-center gap-1">
+                    Bloqueo ciego (Spain)
+                    <select
+                      className="rounded border border-slate-300 bg-transparent px-1 py-0.5 dark:border-slate-700"
+                      value={teamSettings(props.settings, team.id).backScreenCall ?? "auto"}
+                      onChange={(e) => setTeam(team.id, { backScreenCall: e.target.value as BackScreenCallChoice })}
+                    >
+                      {(Object.keys(BACK_SCREEN_CALL_LABELS) as BackScreenCallChoice[]).map((v) => (
+                        <option key={v} value={v}>
+                          {BACK_SCREEN_CALL_LABELS[v]}
                         </option>
                       ))}
                     </select>

@@ -615,8 +615,9 @@ describe("ME-04 (6): empate → prórroga, empate en prórroga → otra; guardi�
     // natural con dos prórrogas. §2.4 (asignación de creador/bloqueador por
     // proyección y lectura del receptor) la desplaza a la semilla 667, §2.5
     // (faltas por contacto real) a la 232, LAB-0.7 (bloqueo lateral, ICE) a la 246 y
-    // la ficha Horns (LAB-0.8) con la proyección frente a la defensa observada (v2-4) a la 984.
-    const r = game(984);
+    // la ficha Horns (LAB-0.8) con la proyección frente a la defensa observada (v2-4) a la 984 y
+    // la variante Horns→Spain en `auto` (LAB-0.9, v2-5) a la 1718 (ninguna en 1–1717).
+    const r = game(1718);
     expect(r.periods.map((p) => p.label)).toEqual(["C1", "C2", "C3", "C4", "Prórroga 1", "Prórroga 2"]);
     const endOf = (period: number) => r.events.find((e) => e.kind === "period_ended" && e.period === period)!;
     expect(endOf(4).score[SC]).toBe(endOf(4).score[PA]);
@@ -634,7 +635,7 @@ describe("ME-04 (6): empate → prórroga, empate en prórroga → otra; guardi�
   });
 
   it("el guardián de prórrogas señala la anomalía sin cerrar el empate ni inventar ganador", () => {
-    const r = game(984, BASE, { maxOvertimes: 1 });
+    const r = game(1718, BASE, { maxOvertimes: 1 });
     expect(r.stop.cause).toBe("guardian");
     expect(r.winnerTeamId).toBeNull();
     expect(r.finalScore[SC]).toBe(r.finalScore[PA]);

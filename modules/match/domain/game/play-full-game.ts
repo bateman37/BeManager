@@ -31,6 +31,8 @@ import type {
   DefensiveCoverageChoice,
   OffBallDefensiveCallChoice,
   OffensiveCreationPriority,
+  ChainedVariantChoice,
+  BackScreenCallChoice,
 } from "../lab/match-input";
 import { PASS_FLIGHT_SPEED_MPS } from "../lab/lab-0-1-parameters";
 import type { PlayerProfile } from "../players/player-profile";
@@ -244,6 +246,14 @@ class GameRun extends LinkedRun {
 
   protected offBallCallWhenDefending(teamId: string): OffBallDefensiveCallChoice {
     return this.teamInputs.get(teamId)!.offBallDefensiveCall;
+  }
+
+  protected chainedVariantWhenAttacking(teamId: string): ChainedVariantChoice {
+    return this.teamInputs.get(teamId)!.chainedVariant ?? "auto";
+  }
+
+  protected backScreenCallWhenDefending(teamId: string): BackScreenCallChoice {
+    return this.teamInputs.get(teamId)!.backScreenCall ?? "auto";
   }
 
   protected creationPriorityWhenAttacking(teamId: string): OffensiveCreationPriority {

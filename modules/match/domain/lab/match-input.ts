@@ -100,6 +100,28 @@ export type OffensiveCreationPriority = "equilibrado" | "buscar_aro" | "buscar_t
 export type RollHelpCall = "auto" | "siempre";
 
 /**
+ * Variante encadenada que el ataque puede llamar sobre la ficha en vigor
+ * (ME-07B v2 §4, «variantes encadenadas»; LAB-0.9): `spain` añade, desde
+ * Horns, el bloqueo ciego del segundo cuerno sobre el defensor que protege
+ * el roll; `ninguna` juega la ficha base; `auto` (por defecto) compara la
+ * ficha base y cada variante aplicable con la misma proyección en seco
+ * frente a la defensa observada. Sin efecto fuera de una colocación que la
+ * admita (Spain solo desde Horns).
+ */
+export type ChainedVariantChoice = "auto" | "ninguna" | "spain";
+
+/**
+ * Respuesta de la defensa al bloqueo ciego de Spain (ME-07B v2 §4–§5,
+ * LAB-0.9): `seguir` — el defensor del bloqueador ciego (D3) va con él y
+ * decide si ayuda al roll o sigue al pop; `cambiar` — D3 y D5 cambian en el
+ * bloqueo ciego (D3 toma al continuador, D5 sale al pop), solo si D3 lo
+ * reconoce (M01/M05) y lo canta (M09) antes de que el bloqueo llegue; `auto`
+ * (por defecto) compara la concesión de ambas desde la misma geometría.
+ */
+export type BackScreenCall = "seguir" | "cambiar";
+export type BackScreenCallChoice = "auto" | BackScreenCall;
+
+/**
  * Entrada compartida por el motor detallado y el motor rápido (estudio de
  * referencia §13.2): una copia estable de perfiles y versiones. Modificar un
  * jugador en otra pantalla no altera una corrida ya iniciada, porque cada
@@ -149,6 +171,10 @@ export interface MatchInput {
    * bloqueo directo (la mano a mano se juega desde la central).
    */
   readonly screenPlacement?: ScreenPlacement;
+  /** Variante encadenada pedida por el ataque (ME-07B v2 §4, LAB-0.9). Por defecto `ninguna` en el núcleo. */
+  readonly chainedVariant?: ChainedVariantChoice;
+  /** Respuesta del equipo que defiende al bloqueo ciego de Spain (LAB-0.9). Por defecto `auto`. */
+  readonly backScreenCall?: BackScreenCallChoice;
 }
 
 export function findPlayerInInput(input: MatchInput, playerId: string): PlayerProfile {

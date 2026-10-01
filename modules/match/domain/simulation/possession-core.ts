@@ -25,6 +25,7 @@ import type {
   DefensiveCoverage,
   DefensiveCoverageChoice,
   OffensiveCreationPriority,
+  BackScreenCallChoice,
 } from "../lab/match-input";
 import { findPlayerInInput } from "../lab/match-input";
 import { getScenario, type ScenarioDefinition } from "../lab/scenario";
@@ -95,6 +96,7 @@ import { shotProbability, blockDeflectionProbability, CLOSE_FINISH_BASE_PROBABIL
 import { createNoopAuditCollector, type AuditCollector } from "../audit/audit-collector";
 import type { AuditDecisionPoint, AuditOptionRecord, AuditReasonCode } from "../audit/audit-types";
 import { cardFor, type PlaybookCardId } from "../tactics/playbook-card";
+import { SPAIN_POP_SPOT, SPAIN_ROLL_SPOT, isBackScreenTarget, spainBackScreenPoint } from "../lab/lab-0-9-parameters";
 
 /**
  * Tiro de recepción de O3 en el punto que deja libre la ayuda al roll
@@ -373,8 +375,13 @@ interface CoreContext {
    * costes que su ejecución real.
    */
   readonly projecting?: boolean;
-  /** Puntos de la disposición del bloqueo directo de esta acción (central o lateral, LAB-0.7). */
-  readonly set: PnrSetGeometry;
+  /**
+   * Puntos de la disposición del bloqueo directo de esta acción (central o
+   * lateral, LAB-0.7; Horns, LAB-0.8). Mutable solo para que Horns→Spain
+   * (LAB-0.9) cambie, al ejecutarse, el punto del roll (profundo) y el del
+   * jugador que deja libre la ayuda (el pop) sobre el mismo contexto.
+   */
+  set: PnrSetGeometry;
 }
 
 /**
@@ -788,6 +795,81 @@ function projectBloqueoOverShownCoverages(
   return { drop, expectedValue, weights, valueByCoverage };
 }
 
+/**
+ * Valor esperado de Horns→Spain frente a la defensa observada (ME-07B v2 §4,
+ * LAB-0.9): ante drop y por debajo, la propia ejecución de Spain en seco
+ * hasta la lectura del manejador (suponiendo la mejor respuesta del rival al
+ * bloqueo ciego: el ataque no conoce su orden); ante el resto de coberturas
+ * no hay a quién bloquear y la ficha se juega como Horns, así que vale lo
+ * mismo que la base frente a esa cobertura. Misma ponderación por frecuencia
+ * observada que `projectBloqueoOverShownCoverages`.
+ */
+function projectSpainOverShownCoverages(ctx: CoreContext, scenario: ScenarioDefinition, plain: BloqueoOverCoverages): { readonly expectedValue: number; readonly valueByCoverage: Readonly<Partial<Record<DefensiveCoverage, number>>> } {
+  const valueByCoverage: Partial<Record<DefensiveCoverage, number>> = {};
+  let expectedValue = 0;
+  for (const [c, w] of Object.entries(plain.weights) as [DefensiveCoverage, number][]) {
+    let v = plain.valueByCoverage[c] ?? 0;
+    if (c === "drop" || c === "por_debajo") {
+      const route: ScreenRoute = c === "por_debajo" ? "por_debajo" : "por_encima";
+      const o = familyOpportunity(
+        projectFamilyRead(ctx, (dry) => {
+          dry.resolvedCoverage = c;
+          const read = readSpainBackScreen(dry);
+          return read.timing ? runSpainPhase(dry, route, read.timing, "auto") : runDropPhase(dry, scenario, route);
+        }),
+      );
+      v = o.viable ? o.value : 0;
+    }
+    valueByCoverage[c] = v;
+    expectedValue += w * v;
+  }
+  return { expectedValue, valueByCoverage };
+}
+
+/**
+ * Variante encadenada que llama el ataque en Horns (`seleccion_variante`,
+ * LAB-0.9): `ninguna` o `spain` por orden; `auto` compara la ficha base y
+ * Spain con la misma proyección frente a la defensa observada (empate: la
+ * base). Se decide antes de ver la cobertura: es la llamada de la jugada.
+ */
+function resolveChainedVariant(ctx: CoreContext, scenario: ScenarioDefinition, shown: Readonly<Partial<Record<DefensiveCoverage, ObservedOutcome>>> | undefined): boolean {
+  const choice = ctx.input.chainedVariant ?? "ninguna";
+  if (choice !== "auto") {
+    const spain = choice === "spain";
+    auditDecision(ctx, 0, {
+      point: "seleccion_variante",
+      holderId: "O1",
+      participants: ["O1", "O3", "O5"],
+      chosenOptionId: spain ? "horns_spain" : "horns_bloqueo",
+      options: [
+        { id: "horns_bloqueo", status: spain ? "no_evaluada_por_cortocircuito" : "elegida", reasonCode: spain ? "not_evaluated_short_circuit" : "variant_forced_by_plan", values: { choice } },
+        { id: "horns_spain", status: spain ? "elegida" : "no_evaluada_por_cortocircuito", reasonCode: spain ? "variant_forced_by_plan" : "not_evaluated_short_circuit", values: { choice } },
+      ],
+    });
+    return spain;
+  }
+  const plain = projectBloqueoOverShownCoverages(ctx, scenario, shown);
+  const spain = projectSpainOverShownCoverages(ctx, scenario, plain);
+  const spainChosen = spain.expectedValue > plain.expectedValue;
+  const values = (v: Readonly<Partial<Record<DefensiveCoverage, number>>>, ev: number): Record<string, number | string | boolean | null> => {
+    const out: Record<string, number | string | boolean | null> = { choice, expectedValueOverShownCoverages: ev };
+    for (const [c, x] of Object.entries(v)) out[`valueAgainst_${c}`] = x ?? null;
+    for (const [c, w] of Object.entries(plain.weights)) out[`coverageWeight_${c}`] = w ?? null;
+    return out;
+  };
+  auditDecision(ctx, 0, {
+    point: "seleccion_variante",
+    holderId: "O1",
+    participants: ["O1", "O3", "O5"],
+    chosenOptionId: spainChosen ? "horns_spain" : "horns_bloqueo",
+    options: [
+      { id: "horns_bloqueo", status: spainChosen ? "descartada_por_condicion" : "elegida", reasonCode: spainChosen ? "variant_projected_value_lower" : "variant_projected_value_higher", values: values(plain.valueByCoverage, plain.expectedValue) },
+      { id: "horns_spain", status: spainChosen ? "elegida" : "descartada_por_condicion", reasonCode: spainChosen ? "variant_projected_value_higher" : "variant_projected_value_lower", values: values(spain.valueByCoverage, spain.expectedValue) },
+    ],
+  });
+  return spainChosen;
+}
+
 function coverageExpectationAuditValues(p: BloqueoOverCoverages): Record<string, number | string | boolean | null> {
   const out: Record<string, number | string | boolean | null> = { expectedValueOverShownCoverages: p.expectedValue };
   for (const [c, w] of Object.entries(p.weights)) out[`coverageWeight_${c}`] = w ?? null;
@@ -855,6 +937,13 @@ export function projectOrganizedOpportunity(
     planChoice === "bloqueo_directo" || ctx.set.placement !== "central" ? null : familyOpportunity(projectFamilyRead(ctx, (dry) => runHandoffPhase(dry)));
   if (handoff && (!bloqueo || handoff.value > bloqueo.expectedValue)) {
     return { value: handoff.viable ? handoff.value : 0, plan: "mano_a_mano_sin_balon", bestReadOption: handoff.bestOptionId };
+  }
+  // ME-07B v2 §4 (LAB-0.9): en Horns, la variante Spain compite (o se impone) con la misma proyección.
+  const variant = input.chainedVariant ?? "ninguna";
+  if (ctx.set.placement === "horns" && variant !== "ninguna") {
+    const spain = projectSpainOverShownCoverages(ctx, scenario, bloqueo!);
+    const value = variant === "spain" ? spain.expectedValue : Math.max(spain.expectedValue, bloqueo!.expectedValue);
+    return { value: Math.max(0, value), plan: "bloqueo_directo", bestReadOption: bloqueo!.drop.bestOptionId };
   }
   return { value: Math.max(0, bloqueo!.expectedValue), plan: "bloqueo_directo", bestReadOption: bloqueo!.drop.bestOptionId };
 }
@@ -934,19 +1023,22 @@ export function computePossessionCore(
 
   const planChoice: OffensivePlanChoice = ctx.input.offensivePlan ?? "bloqueo_directo";
   let resolvedPlan: OffensivePlan;
+  let spainCalled = false;
   if (ctx.set.placement !== "central") {
     // LAB-0.7/LAB-0.8: las colocaciones lateral y Horns son del bloqueo
     // directo; quien la eligió (`colocacion_bloqueo`, al organizar) ya la
     // comparó con la central, que es donde se juega la mano a mano.
     resolvedPlan = "bloqueo_directo";
     const placement = ctx.set.placement;
+    // ME-07B v2 §4 (LAB-0.9): desde Horns, el ataque llama o no la variante Spain.
+    spainCalled = placement === "horns" && resolveChainedVariant(ctx, scenario, linked?.observations?.defenseByCoverage);
     auditDecision(ctx, 0, {
       point: "seleccion_familia",
       holderId: "O1",
       participants: ["O1", "O2", "O3", "O4", "O5"],
       chosenOptionId: resolvedPlan,
       options: [
-        { id: "bloqueo_directo", status: "elegida", reasonCode: "placement_forced_by_plan", values: { placement, cardId: cardFor("bloqueo_directo", placement).id } },
+        { id: "bloqueo_directo", status: "elegida", reasonCode: "placement_forced_by_plan", values: { placement, cardId: cardFor("bloqueo_directo", placement, spainCalled ? "spain" : null).id } },
         { id: "mano_a_mano_sin_balon", status: "no_evaluada_por_cortocircuito", reasonCode: placement === "lateral" ? "family_not_in_lateral_placement" : "family_not_in_card_placement", values: { placement, cardId: null } },
       ],
     });
@@ -1100,8 +1192,27 @@ export function computePossessionCore(
     ctx.resolvedCoverage = coverageChoice;
   }
 
+  const placementAtEntry = ctx.set.placement;
+  let spainRead: ReturnType<typeof readSpainBackScreen> | null = null;
+  if (spainCalled) {
+    // Lectura del bloqueador ciego (LAB-0.9): ¿hay a quién bloquear?
+    spainRead = readSpainBackScreen(ctx);
+    const goes = spainRead.timing !== null;
+    auditDecision(ctx, 0, {
+      point: "lectura_spain_bloqueador",
+      holderId: "O1",
+      participants: ["O3", "D5"],
+      chosenOptionId: goes ? "bloqueo_ciego" : "quedarse_en_codo",
+      options: [
+        { id: "bloqueo_ciego", status: goes ? "elegida" : "descartada_por_condicion", reasonCode: spainRead.reason, values: spainRead.values },
+        { id: "quedarse_en_codo", status: goes ? "descartada_por_condicion" : "elegida", reasonCode: goes ? "back_screen_target_present" : spainRead.reason, values: spainRead.values },
+      ],
+    });
+  }
   const organized =
-    resolvedPlan === "mano_a_mano_sin_balon"
+    spainRead?.timing
+      ? runSpainPhase(ctx, ctx.resolvedCoverage === "por_debajo" ? "por_debajo" : "por_encima", spainRead.timing)
+      : resolvedPlan === "mano_a_mano_sin_balon"
       ? runHandoffPhase(ctx)
       : ctx.resolvedCoverage === "trampa"
         ? runTrapPhase(ctx)
@@ -1116,7 +1227,7 @@ export function computePossessionCore(
               : ctx.resolvedCoverage === "ice"
                 ? runIcePhase(ctx, scenario)
                 : runDropPhase(ctx, scenario);
-  return { ...organized, organizedChoice: { plan: resolvedPlan, coverage: ctx.resolvedCoverage, card: cardFor(resolvedPlan, ctx.set.placement).id } };
+  return { ...organized, organizedChoice: { plan: resolvedPlan, coverage: ctx.resolvedCoverage, card: cardFor(resolvedPlan, placementAtEntry, spainCalled ? "spain" : null).id } };
 }
 
 /**
@@ -1304,7 +1415,17 @@ interface RollReceiverEnv {
   readonly rimCandidates: readonly ContestCandidate[];
   readonly floaterCandidates: readonly ContestCandidate[];
   /** Inversión a la esquina débil, solo si el ayudador dejó a O3: quién puede desviar y quién cierra. */
-  readonly invert: { readonly deflectorId: string; readonly closerId: string; readonly closerGeometry: ContestGeometry; readonly closerArrival: number } | null;
+  readonly invert: {
+    readonly deflectorId: string;
+    readonly closerId: string;
+    readonly closerGeometry: ContestGeometry;
+    readonly closerArrival: number;
+    /**
+     * Instante en que O3 llega al punto de la inversión (ME-07B v2 §4, Spain:
+     * el bloqueador ciego aún se está abriendo al pop). Sin valor, ya está ahí.
+     */
+    readonly targetReadySeconds?: number;
+  } | null;
 }
 
 function readRollReceiver(ctx: CoreContext, env: RollReceiverEnv, tAct: number): ReceiverOption[] {
@@ -1351,8 +1472,8 @@ function readRollReceiver(ctx: CoreContext, env: RollReceiverEnv, tAct: number):
     },
     values: { situationalValue: floaterValue, contesterId: realId(ctx, floater.id), opposition: floater.level, readySeconds: tFloatReady },
   });
-  const tInvertReady = tAct + PASS_RELEASE_SECONDS + distanceSeconds(pos, ctx.set.helpLeftSpot) + CATCH_AND_SHOOT_PREP_SECONDS;
   const inv = env.invert;
+  const tInvertReady = Math.max(tAct + PASS_RELEASE_SECONDS + distanceSeconds(pos, ctx.set.helpLeftSpot), inv?.targetReadySeconds ?? 0) + CATCH_AND_SHOOT_PREP_SECONDS;
   const invertLevel = inv ? estimateContestLevel(ctx, inv.closerId, inv.closerGeometry, inv.closerArrival, ctx.set.helpLeftSpot, tInvertReady, CATCH_AND_SHOOT_PREP_SECONDS) : 1;
   const invertCompletion = inv ? 1 - deflectionProbability(player(ctx, inv.deflectorId).attributes.T17, receiver.attributes.T09) : 0;
   const invertValue = inv && tInvertReady < clock ? invertCompletion * helpLeftShotValue(ctx, invertLevel) : -Infinity;
@@ -2988,7 +3109,7 @@ function executeRollPass(
   );
   if (chosen.id === "invertir_o3" && env.invert) {
     const o3 = player(ctx, "O3");
-    const tPassArrivalO3 = tAct + PASS_RELEASE_SECONDS + distanceSeconds(env.receiverPos, ctx.set.helpLeftSpot);
+    const tPassArrivalO3 = Math.max(tAct + PASS_RELEASE_SECONDS + distanceSeconds(env.receiverPos, ctx.set.helpLeftSpot), env.invert.targetReadySeconds ?? 0);
     const invertOutcome = resolvePass(o5.attributes.T09, o3.attributes.T11, true, player(ctx, env.invert.deflectorId).attributes.T17, 1, ctx.rng);
     event(ctx, tPassArrivalO3, "ejecutado", "pass_released", ["O5", "O3"], `O5 invierte hacia O3 ${ctx.set.helpLeftLabel}.`);
     auditDecision(ctx, tAct, { point: "lectura_segunda_o5", holderId: "O5", participants: ["O5", "O3", env.invert.closerId], chosenOptionId: chosen.id, factLinkKind: "pass_released", options: records });
@@ -3335,6 +3456,361 @@ function runShowPhase(ctx: CoreContext, scenario: ScenarioDefinition, depth: Big
     { id: "salida_segura", value: 0, completion: 1, kind: "salida", values: {}, execute: (record) => executeSafeOutlet(ctx, tDecision, record) },
   ];
   return decideHandlerRead(ctx, atLevel ? "lectura_a_la_altura" : "lectura_show", tDecision, ["O1", "O5", "D1", "D5"], options);
+}
+
+/**
+ * Horns→Spain (ME-07B v2 §4, «Libro por fase»; LAB-0.9). Desde la colocación
+ * Horns, el segundo cuerno (O3) baja del codo a poner un **bloqueo ciego** a
+ * D5, el defensor que protege el roll en drop, a contacto suyo en su línea de
+ * retroceso al aro; el manejador **sincroniza** el uso de la pantalla de O5
+ * con ese bloqueo (espera en el punto de uso: cuesta reloj), de modo que el
+ * roll arranca con el bloqueo ciego ya puesto. D5 queda retenido el retraso
+ * real de esa pantalla (T13/F05 de O3 frente a T16 de D5, peso) y después
+ * rodea al bloqueador; O5 rueda **profundo** al poste bajo débil por fuera del
+ * bloqueo y O3 se abre (**pop**) por encima del arco al soltar a D5.
+ *
+ * Respuesta de la defensa (orden `backScreenCall`, LAB-0.9), decidida por el
+ * defensor del bloqueador ciego (D3), que reconoce su corte (M01/M05):
+ * - `seguir`: D3 va con O3 hasta el pop; el roll solo lo protege D5, retenido.
+ * - `ayudar` (lectura dentro de `seguir`/`auto`): D3 se hunde sobre el roll
+ *   desde la pintura (contención real) y deja libre el pop; lo cierra él al
+ *   recuperar.
+ * - `cambiar`: D3 toma al continuador y D5, al soltarse, sale al pop (aviso
+ *   M09). Solo si D3 reconoce el corte y lo canta antes de que el roll
+ *   arranque; tarde, no hay cambio.
+ * En `auto`, la menor concesión proyectada de las aplicables (misma geometría
+ * y mismos costes que la lectura del manejador). Quien puede ayudar al roll
+ * cambia frente a Horns→bloqueo (allí, el defensor del segundo cuerno desde
+ * el codo y deja un tiro medio; aquí, el defensor del bloqueador ciego desde
+ * la pintura y deja un triple de pop; o D5 si cambian).
+ *
+ * O1 lee (`lectura_spain`): atacar el aro, pase al roll profundo (el receptor
+ * lee aro/floater/pase al pop), pase al pop, triple tras la pantalla o salida
+ * segura. El cambio persiste el resto de la posesión (`defensiveSwap`).
+ */
+type BackScreenResponse = "seguir" | "ayudar" | "cambiar";
+
+function runSpainPhase(ctx: CoreContext, d1Route: ScreenRoute, timing: SpainTiming, callOverride?: BackScreenCallChoice): PossessionCoreResult {
+  const o1 = player(ctx, "O1");
+  const o3 = player(ctx, "O3");
+  const o5 = player(ctx, "O5");
+  const d1 = player(ctx, "D1");
+  const d3 = player(ctx, "D3");
+  const d5 = player(ctx, "D5");
+  const { bsPoint, tO3AtScreen, tBackScreenSet } = timing;
+  // Geometría propia de Spain sobre el mismo contexto: roll profundo y pop.
+  ctx.set = { ...ctx.set, shortRoll: SPAIN_ROLL_SPOT, helpLeftSpot: SPAIN_POP_SPOT, helpLeftLabel: "en el pop por encima del arco" };
+
+  const o3Start = ctx.positions.O3!;
+  const d3Start = ctx.positions.D3!;
+  const d5Start = ctx.positions.D5!;
+  const screenPoint = ctx.positions.O5!;
+  const o1UsePoint = pointShortOfTarget(ctx.positions.O1!, screenPoint, COMBINED_CONTACT_RADIUS_METERS);
+  const o3Speed = attackerMoveSpeedMps(o3.attributes.F01);
+  const o5Speed = attackerMoveSpeedMps(o5.attributes.F01);
+  const d3Speed = defenderLateralSpeedMps(d3.attributes.F04);
+  const d5Speed = defenderLateralSpeedMps(d5.attributes.F04);
+
+  // --- Bloqueo ciego y sincronización del bloqueo directo -------------------
+  // O3 rodea a su propio defensor si le queda en el camino (dos cuerpos no se cruzan).
+  const o3Detour = detourAround(o3Start, bsPoint, d3Start, COMBINED_CONTACT_RADIUS_METERS);
+  if (o3Detour.waypoint) setArrival(ctx, "O3", distance(o3Start, o3Detour.waypoint) / o3Speed, o3Detour.waypoint, 0);
+  setArrival(ctx, "O3", tO3AtScreen, bsPoint, o3Detour.waypoint ? distance(o3Start, o3Detour.waypoint) / o3Speed : 0);
+  const continuationShift = screenCoordinationShiftSeconds(o5.attributes.M04);
+  const tHandlerArrival = timeToReach(ctx.positions.O1!, o1UsePoint, attackerMoveSpeedMps(o1.attributes.F01));
+  // El manejador espera en el punto de uso a que el bloqueo ciego esté puesto:
+  // el roll arranca (uso − ajuste M04) no antes que el bloqueo ciego.
+  const tUseScreen = Math.max(SCREEN_SET_AFTER_ARRIVAL_SECONDS, tHandlerArrival, tBackScreenSet + continuationShift);
+  const tRollStart = tUseScreen - continuationShift;
+  event(ctx, SCREEN_SET_AFTER_ARRIVAL_SECONDS, "ejecutado", "screen_set", ["O5"], "O5 llega y coloca su pantalla horns.", { placement: "horns" });
+  const backScreenDelay =
+    screenInterceptDelaySeconds(o3.attributes.T13, o3.attributes.F05, d5.attributes.T16) + screenContactAdjustmentSeconds(o3.measures.weightKg - d5.measures.weightKg);
+  const tD5Release = tRollStart + backScreenDelay;
+  event(ctx, tBackScreenSet, "ejecutado", "back_screen_set", ["O3", "D5"], `O3 baja del codo y pone un bloqueo ciego a D5 en su retroceso al aro; O1 espera a que esté puesto (${(tUseScreen - Math.max(SCREEN_SET_AFTER_ARRIVAL_SECONDS, tHandlerArrival)).toFixed(2)} s).`, {
+    screenPoint: bsPoint,
+    backScreenDelay,
+    d5ReleaseAt: tD5Release,
+    handlerWaitSeconds: tUseScreen - Math.max(SCREEN_SET_AFTER_ARRIVAL_SECONDS, tHandlerArrival),
+  });
+  setArrival(ctx, "O1", tHandlerArrival, o1UsePoint, 0);
+
+  // D1 y la pantalla del cuerno (misma regla que en drop; por debajo, sin retraso).
+  const underRoute = d1Route === "por_debajo";
+  const screenDelay = screenInterceptDelaySeconds(o5.attributes.T13, o5.attributes.F05, d1.attributes.T16) + screenContactAdjustmentSeconds(o5.measures.weightKg - d1.measures.weightKg);
+  const underPoint =
+    distance(screenPoint, d5Start) >= 2 * COMBINED_CONTACT_RADIUS_METERS
+      ? { x: (screenPoint.x + d5Start.x) / 2, y: (screenPoint.y + d5Start.y) / 2 }
+      : moveToward(screenPoint, ATTACKED_HOOP, 1, COMBINED_CONTACT_RADIUS_METERS);
+  const d1SetPoint = underRoute ? underPoint : o1UsePoint;
+  const tD1Set = underRoute
+    ? recognitionLatencySeconds(d1.attributes.M01, d1.attributes.M05) + distance(ctx.positions.D1!, underPoint) / defenderLateralSpeedMps(d1.attributes.F04)
+    : tUseScreen + screenDelay;
+  event(
+    ctx,
+    tUseScreen,
+    "ejecutado",
+    "screen_navigated",
+    ["O1", "D1"],
+    underRoute ? "O1 usa la pantalla de O5; D1 pasa por debajo del bloqueo." : `O1 usa la pantalla de O5; D1 navega con un retraso de ${screenDelay.toFixed(2)} s.`,
+    underRoute ? { screenDelay: 0, route: "por_debajo", underPoint } : { screenDelay },
+  );
+  setArrival(ctx, "D1", tD1Set, d1SetPoint, underRoute ? 0 : tUseScreen);
+
+  // Roll profundo de O5 por fuera del bloqueo ciego.
+  const rollTravel = timeToReach(screenPoint, SPAIN_ROLL_SPOT, o5Speed);
+  const tRollReady = tRollStart + rollTravel;
+  setArrival(ctx, "O5", tRollReady, SPAIN_ROLL_SPOT, tRollStart);
+  // Hecho al arrancar el roll (no al llegar): un tiro rápido del manejador puede llegar antes y el relato no adelanta lo que aún no ocurrió.
+  event(ctx, tRollStart, "ejecutado", "roll_continuation", ["O5"], "O5 arranca su roll profundo al poste bajo débil, por fuera del bloqueo ciego.", { rollSpot: SPAIN_ROLL_SPOT, deep: true, arrivesAt: tRollReady });
+
+  // Pop de O3 al soltar a D5.
+  const tPopReady = tD5Release + timeToReach(bsPoint, SPAIN_POP_SPOT, o3Speed);
+
+  // D5 retenido hasta soltarse; después rodea al bloqueador hacia el aro.
+  const rimDetour = detourAround(d5Start, ATTACKED_HOOP, bsPoint, COMBINED_CONTACT_RADIUS_METERS);
+  const tD5AtRim = Math.max(tD5Release, tD5Release + rimDetour.length / d5Speed - interiorArrivalAdjustmentSeconds(d5.attributes.T23));
+  const d5RimRetreat: ContestCandidate = {
+    id: "D5",
+    geometryTo: () => ({
+      geometry: { originPos: rimDetour.waypoint ?? d5Start, destinationPos: ATTACKED_HOOP, speedMps: d5Speed, brakingExtraSeconds: closeoutBrakingExtraSeconds(d5.attributes.F03) },
+      arrivalSeconds: tD5AtRim,
+    }),
+  };
+
+  // --- D3: reconoce el corte de O3 y le sigue hasta el bloqueo -------------
+  const tD3Recognize = recognitionLatencySeconds(d3.attributes.M01, d3.attributes.M05);
+  const trailPoint = pointShortOfTarget(d3Start, bsPoint, COMBINED_CONTACT_RADIUS_METERS);
+  const tD3Trail = tD3Recognize + timeToReach(d3Start, trailPoint, d3Speed);
+  // Cambio: D3 lo canta a D5 (M09); solo vale si llega antes de que D5 empiece a retroceder.
+  const tSwitchCall = tD3Recognize + m09CoordinationLatencySeconds(d3.attributes.M09, d5.attributes.M09);
+  const switchInTime = tSwitchCall <= tRollStart;
+
+  const roll = { tRollReady, speedMps: o5Speed };
+  const tD3RollDepart = Math.max(tD3Trail, tRollStart);
+  // Hacia el roll, D3 rodea al bloqueador ciego (lo tiene delante) y contiene a contacto.
+  const d3Detour = detourAround(trailPoint, SPAIN_ROLL_SPOT, bsPoint, COMBINED_CONTACT_RADIUS_METERS);
+  const d3RollOrigin = d3Detour.waypoint ?? trailPoint;
+  const tD3AtWaypoint = tD3RollDepart + distance(trailPoint, d3RollOrigin) / d3Speed;
+  const d3RollPoint = containmentPoint(d3RollOrigin, SPAIN_ROLL_SPOT, tD3AtWaypoint, d3Speed, closeoutBrakingExtraSeconds(d3.attributes.F03), d3.attributes.T23, roll);
+  const tD3OnRoll = Math.max(tD3RollDepart, tD3AtWaypoint + timeToReach(d3RollOrigin, d3RollPoint, d3Speed) - interiorArrivalAdjustmentSeconds(d3.attributes.T23));
+  const d3OnRollGeometry: ContestGeometry = { originPos: d3RollOrigin, destinationPos: d3RollPoint, speedMps: d3Speed, brakingExtraSeconds: closeoutBrakingExtraSeconds(d3.attributes.F03) };
+
+  const tDecision = tUseScreen + recognitionLatencySeconds(o1.attributes.M01, o1.attributes.M05);
+  const clock = ctx.shotClockMs / 1000;
+
+  /** Defensores que cierran cada recurso según la respuesta de D3/D5. */
+  function responseEnv(response: BackScreenResponse): {
+    readonly rimProtectors: ContestCandidate[];
+    readonly floaterContesters: ContestCandidate[];
+    readonly popCloser: ContestCandidate;
+    readonly popCloserArrival: (spot: Point2D) => { geometry: ContestGeometry; arrivalSeconds: number };
+    readonly popDeflectorId: string;
+  } {
+    const d3FromRoll = chaser(ctx, "D3", d3RollPoint, tD3OnRoll, (p) => interiorArrivalAdjustmentSeconds(p.attributes.T23));
+    const d3ToPop = chaser(ctx, "D3", trailPoint, Math.max(tD3Trail, tD5Release), (p) => perimeterArrivalAdjustmentSeconds(p.attributes.T22));
+    // Tras contener el roll, D3 reconoce el pop libre (M01/M05) y sale a cerrarlo.
+    const d3RecoverToPop = chaser(ctx, "D3", d3RollPoint, tD3OnRoll + recognitionLatencySeconds(d3.attributes.M01, d3.attributes.M05), (p) => perimeterArrivalAdjustmentSeconds(p.attributes.T22));
+    const d5ToPop = chaser(ctx, "D5", d5Start, Math.max(tD5Release, tSwitchCall), (p) => perimeterArrivalAdjustmentSeconds(p.attributes.T22));
+    const d3OnRoller: ContestCandidate = { id: "D3", geometryTo: () => ({ geometry: d3OnRollGeometry, arrivalSeconds: tD3OnRoll }) };
+    if (response === "seguir") return { rimProtectors: [d5RimRetreat], floaterContesters: [d5RimRetreat], popCloser: d3ToPop, popCloserArrival: d3ToPop.geometryTo, popDeflectorId: "D3" };
+    if (response === "ayudar") return { rimProtectors: [d5RimRetreat, d3FromRoll], floaterContesters: [d5RimRetreat, d3OnRoller], popCloser: d3RecoverToPop, popCloserArrival: d3RecoverToPop.geometryTo, popDeflectorId: "D3" };
+    return { rimProtectors: [d3FromRoll], floaterContesters: [d3OnRoller], popCloser: d5ToPop, popCloserArrival: d5ToPop.geometryTo, popDeflectorId: "D5" };
+  }
+
+  const d1Trail = chaser(ctx, "D1", d1SetPoint, tD1Set);
+  function handlerOptions(response: BackScreenResponse): HandlerReadOption[] {
+    const env = responseEnv(response);
+    const swap: Partial<PossessionCoreResult> = response === "cambiar" ? { defensiveSwap: ["D3", "D5"] } : {};
+    // Atacar el aro desde el punto de uso.
+    const tRimReady = tDecision + timeToReach(o1UsePoint, ATTACKED_HOOP, attackerMoveSpeedMps(o1.attributes.F01)) + CLOSE_FINISH_PREP_SECONDS;
+    const rim = bestContest(ctx, [...env.rimProtectors, d1Trail], ATTACKED_HOOP, tRimReady, CLOSE_FINISH_PREP_SECONDS)!;
+    const rimValue = tRimReady < clock ? 2 * shotProbability(CLOSE_FINISH_BASE_PROBABILITY, o1.attributes.T01, rim.level) : -Infinity;
+    // Triple tras la pantalla: le cierra D1 desde su navegación.
+    const tTripleReady = tDecision + movingShotPrepSeconds(o1.attributes.T06);
+    const triple = bestContest(ctx, [d1Trail], o1UsePoint, tTripleReady, movingShotPrepSeconds(o1.attributes.T06))!;
+    const tripleValue = isBehindThreePointLine(o1UsePoint) && tTripleReady < clock ? 3 * shotProbability(THREE_POINT_BASE_PROBABILITY, o1.attributes.T04, triple.level) : -Infinity;
+    // Pase al roll profundo y lectura del receptor (aro, floater o pase al pop).
+    const tPassArrivalRoll = Math.max(tRollReady, tDecision + PASS_RELEASE_SECONDS + distanceSeconds(o1UsePoint, SPAIN_ROLL_SPOT));
+    const popGeometry = env.popCloserArrival(SPAIN_POP_SPOT);
+    const envAt = (): RollReceiverEnv => ({
+      receiverId: "O5",
+      receiverPos: SPAIN_ROLL_SPOT,
+      rimCandidates: env.rimProtectors,
+      floaterCandidates: env.floaterContesters,
+      invert: { deflectorId: env.popDeflectorId, closerId: env.popCloser.id, closerGeometry: popGeometry.geometry, closerArrival: popGeometry.arrivalSeconds, targetReadySeconds: tPopReady },
+    });
+    const projectedReceiver = readRollReceiver(ctx, envAt(), tPassArrivalRoll);
+    const rollPassValue = Math.max(-Infinity, ...projectedReceiver.map((o) => o.value));
+    // El pase al roll sale por encima de D5 retenido (o de D3 si está en el roll).
+    const rollDeflectorId = response === "seguir" ? "D5" : "D3";
+    const rollCompletion = 1 - deflectionProbability(player(ctx, rollDeflectorId).attributes.T17, o1.attributes.T09);
+    // Pase al pop.
+    const tPassArrivalPop = Math.max(tPopReady, tDecision + PASS_RELEASE_SECONDS + distanceSeconds(o1UsePoint, SPAIN_POP_SPOT));
+    const tPopShotReady = tPassArrivalPop + CATCH_AND_SHOOT_PREP_SECONDS;
+    const popLevel = estimateContestLevel(ctx, env.popCloser.id, popGeometry.geometry, popGeometry.arrivalSeconds, SPAIN_POP_SPOT, tPopShotReady, CATCH_AND_SHOOT_PREP_SECONDS);
+    const popValue = tPopShotReady < clock ? helpLeftShotValue(ctx, popLevel) : -Infinity;
+    const popCompletion = 1 - deflectionProbability(player(ctx, env.popCloser.id).attributes.T17, o1.attributes.T09);
+    return [
+      {
+        id: "finalizar",
+        value: rimValue,
+        completion: 1,
+        kind: "tiro",
+        values: { contesterId: realId(ctx, rim.id), opposition: rim.level, readySeconds: tRimReady, d5RimArrivalSeconds: tD5AtRim, response },
+        execute: (record) => {
+          record();
+          return { ...resolveShotAttempt(ctx, { shooterId: "O1", shooterSkill: o1.attributes.T01, shotType: "close_finish", shooterPos: ATTACKED_HOOP, tReady: tRimReady, prepSeconds: CLOSE_FINISH_PREP_SECONDS, contesterId: rim.id, contesterArrival: rim.arrival, contesterGeometry: rim.geometry }), ...swap };
+        },
+      },
+      {
+        id: "pase_o5",
+        value: rollPassValue,
+        completion: rollCompletion,
+        kind: "pase",
+        values: { receiverBestOption: [...projectedReceiver].sort((a, b) => b.value - a.value)[0]?.id ?? null, rollSpot: "poste_bajo_debil", d5ReleaseSeconds: tD5Release, response },
+        execute: (record) => ({ ...executeRollPass(ctx, { tPassArrival: tPassArrivalRoll, deflectorId: rollDeflectorId, envAt, record, note: "O1 pasa al continuador O5 en su roll profundo tras el bloqueo ciego." }), ...swap }),
+      },
+      {
+        id: "pase_pop_o3",
+        value: popValue,
+        completion: popCompletion,
+        kind: "pase",
+        values: { closerId: realId(ctx, env.popCloser.id), opposition: popLevel, popReadySeconds: tPopReady, marginSeconds: popGeometry.arrivalSeconds - tPopShotReady, shotType: helpLeftShotType(ctx), response },
+        execute: (record) => {
+          const outcome = resolvePass(o1.attributes.T09, o3.attributes.T11, true, player(ctx, env.popCloser.id).attributes.T17, 1, ctx.rng);
+          event(ctx, tPassArrivalPop, "ejecutado", "pass_released", ["O1", "O3"], "O1 encuentra a O3 en el pop por encima del arco.");
+          record("pass_released");
+          if (outcome.kind === "deflected_loose_ball") return { ...resolveLooseBallAfterPass(ctx, tPassArrivalPop, "O1", env.popCloser.id), ...swap };
+          const delay = outcome.kind === "awkward_control" ? outcome.extraDelaySeconds : 0;
+          event(ctx, tPassArrivalPop, "concedido", "pass_received", ["O3"], "O3 recibe en el pop.");
+          return {
+            ...resolveShotAttempt(ctx, {
+              shooterId: "O3",
+              shooterSkill: shotSkill(o3, helpLeftShotType(ctx)),
+              shotType: helpLeftShotType(ctx),
+              shooterPos: SPAIN_POP_SPOT,
+              tReady: tPopShotReady + delay,
+              prepSeconds: CATCH_AND_SHOOT_PREP_SECONDS + delay,
+              contesterId: env.popCloser.id,
+              contesterArrival: popGeometry.arrivalSeconds,
+              contesterGeometry: popGeometry.geometry,
+            }),
+            ...swap,
+          };
+        },
+      },
+      {
+        id: "triple_o1",
+        value: tripleValue,
+        completion: 1,
+        kind: "tiro",
+        values: { contesterId: realId(ctx, triple.id), opposition: triple.level, behindLine: isBehindThreePointLine(o1UsePoint) },
+        execute: (record) => {
+          record();
+          return { ...resolveShotAttempt(ctx, { shooterId: "O1", shooterSkill: o1.attributes.T04, shotType: "three_point", shooterPos: o1UsePoint, tReady: tTripleReady, prepSeconds: movingShotPrepSeconds(o1.attributes.T06), contesterId: triple.id, contesterArrival: triple.arrival, contesterGeometry: triple.geometry }), ...swap };
+        },
+      },
+      { id: "salida_segura", value: 0, completion: 1, kind: "salida", values: {}, execute: (record) => executeSafeOutlet(ctx, tDecision, record, swap) },
+    ];
+  }
+  const concession = (response: BackScreenResponse) => Math.max(0, ...handlerOptions(response).map((o) => (Number.isFinite(o.value) ? o.value * o.completion : 0)));
+
+  // --- Respuesta de D3/D5 al bloqueo ciego ----------------------------------
+  // La proyección del ataque no conoce la orden del rival: supone su mejor respuesta (`auto`).
+  const call: BackScreenCallChoice = callOverride ?? ctx.input.backScreenCall ?? "auto";
+  const applicable: BackScreenResponse[] = call === "cambiar" && switchInTime ? ["cambiar"] : call === "seguir" || (call === "cambiar" && !switchInTime) ? ["seguir", "ayudar"] : switchInTime ? ["seguir", "ayudar", "cambiar"] : ["seguir", "ayudar"];
+  const concessions = new Map<BackScreenResponse, number>((["seguir", "ayudar", "cambiar"] as const).map((r) => [r, concession(r)]));
+  let response = applicable[0]!;
+  for (const r of applicable) if (concessions.get(r)! < concessions.get(response)!) response = r;
+  const tResponse = response === "cambiar" ? tSwitchCall : tD3RollDepart;
+  auditDecision(ctx, tResponse, {
+    point: "respuesta_bloqueo_ciego",
+    holderId: null,
+    participants: ["D3", "D5", "O3", "O5"],
+    chosenOptionId: response,
+    options: (["seguir", "ayudar", "cambiar"] as const).map((r): AuditOptionRecord => ({
+      id: r,
+      status: r === response ? "elegida" : applicable.includes(r) ? "descartada_por_condicion" : "no_evaluada_por_cortocircuito",
+      reasonCode:
+        r === response
+          ? applicable.length === 1
+            ? "back_screen_forced_by_call"
+            : "back_screen_lower_concession"
+          : !applicable.includes(r)
+            ? r === "cambiar" && !switchInTime
+              ? "back_screen_switch_recognized_late"
+              : "back_screen_forced_by_call"
+            : "back_screen_higher_concession",
+      values: { concessionValue: concessions.get(r)!, call, switchCallSeconds: tSwitchCall, rollStartSeconds: tRollStart, d3RecognizeSeconds: tD3Recognize, d5ReleaseSeconds: tD5Release },
+    })),
+  });
+
+  // Trayectorias reales de la respuesta elegida.
+  setArrival(ctx, "D3", tD3Trail, trailPoint, tD3Recognize);
+  if (response === "seguir") {
+    const toPop = chaser(ctx, "D3", trailPoint, Math.max(tD3Trail, tD5Release), (p) => perimeterArrivalAdjustmentSeconds(p.attributes.T22)).geometryTo(SPAIN_POP_SPOT);
+    setArrival(ctx, "D3", toPop.arrivalSeconds, SPAIN_POP_SPOT, Math.max(tD3Trail, tD5Release));
+    setArrival(ctx, "D5", tD5Release, d5Start, tRollStart);
+    setArrival(ctx, "D5", tD5AtRim, ATTACKED_HOOP, tD5Release);
+    event(ctx, tD3RollDepart, "reconocido", "help_decision", ["D3"], "D3 va con O3 tras el bloqueo ciego: el roll queda para D5, retenido por el bloqueo.", { helps: false, response });
+  } else {
+    if (d3Detour.waypoint) setArrival(ctx, "D3", tD3AtWaypoint, d3RollOrigin, tD3RollDepart);
+    setArrival(ctx, "D3", tD3OnRoll, d3RollPoint, d3Detour.waypoint ? tD3AtWaypoint : tD3RollDepart);
+    registerContainment(ctx, "D3", tD3RollDepart, tD3OnRoll, closeoutBrakingExtraSeconds(d3.attributes.F03), tRollStart, tRollReady);
+    if (response === "ayudar") {
+      setArrival(ctx, "D5", tD5Release, d5Start, tRollStart);
+      setArrival(ctx, "D5", tD5AtRim, ATTACKED_HOOP, tD5Release);
+      event(ctx, tD3RollDepart, "reconocido", "help_decision", ["D3"], "D3 se hunde desde la pintura sobre el roll profundo de O5.", { helps: true, response });
+      event(ctx, tD3OnRoll, "concedido", "help_left_assignment", ["D3", "O3"], "La ayuda de D3 deja libre a O3 en el pop por encima del arco.");
+    } else {
+      const d5Pop = chaser(ctx, "D5", d5Start, Math.max(tD5Release, tSwitchCall), (p) => perimeterArrivalAdjustmentSeconds(p.attributes.T22)).geometryTo(SPAIN_POP_SPOT);
+      setArrival(ctx, "D5", tD5Release, d5Start, tRollStart);
+      setArrival(ctx, "D5", d5Pop.arrivalSeconds, SPAIN_POP_SPOT, Math.max(tD5Release, tSwitchCall));
+      event(ctx, tSwitchCall, "reconocido", "back_screen_switch", ["D3", "D5"], "D3 canta el cambio en el bloqueo ciego: toma al continuador y D5 saldrá al pop de O3.", { switchCallSeconds: tSwitchCall, d5ReleaseSeconds: tD5Release });
+    }
+  }
+  setArrival(ctx, "O3", tPopReady, SPAIN_POP_SPOT, tD5Release);
+  event(ctx, tD5Release, "ejecutado", "back_screen_pop", ["O3"], "O3 suelta el bloqueo ciego y se abre al pop por encima del arco.", { popSpot: SPAIN_POP_SPOT, arrivesAt: tPopReady });
+
+  if (clock - tDecision <= 0) {
+    if (ctx.linked) return linkedShotClockViolation(ctx, "O1");
+    return finalize(ctx, { kind: "shot_clock_violation" }, { status: "held", holderId: "O1", position: ctx.positions.O1! });
+  }
+  return decideHandlerRead(ctx, "lectura_spain", tDecision, ["O1", "O3", "O5", "D3", "D5"], handlerOptions(response));
+}
+
+/** Momentos del bloqueo ciego que el segundo cuerno puede poner (LAB-0.9). */
+interface SpainTiming {
+  readonly bsPoint: Point2D;
+  readonly tO3AtScreen: number;
+  readonly tBackScreenSet: number;
+}
+
+/**
+ * Lectura del bloqueador ciego al empezar la acción (`lectura_spain_bloqueador`):
+ * hay a quién bloquear si D5 juega detrás de la pantalla (drop o por debajo)
+ * y aún no protege el aro, y si sincronizar el bloqueo directo con el ciego
+ * cabe en el reloj. Si no, O3 se queda en el codo y se juega el árbol de
+ * Horns con la cobertura real (la ficha sigue siendo Spain: su fallback).
+ */
+function readSpainBackScreen(ctx: CoreContext): { readonly timing: SpainTiming | null; readonly reason: AuditReasonCode; readonly values: Record<string, number | string | boolean | null> } {
+  const coverage = ctx.resolvedCoverage;
+  const d5 = ctx.positions.D5!;
+  const o3 = player(ctx, "O3");
+  const bsPoint = spainBackScreenPoint(d5);
+  // Camino real de O3: rodea a su defensor si le queda delante.
+  const tO3AtScreen = detourAround(ctx.positions.O3!, bsPoint, ctx.positions.D3!, COMBINED_CONTACT_RADIUS_METERS).length / attackerMoveSpeedMps(o3.attributes.F01);
+  const tBackScreenSet = tO3AtScreen + SCREEN_SET_AFTER_ARRIVAL_SECONDS;
+  const values = { coverage, d5DistanceToHoop: distance(d5, ATTACKED_HOOP), backScreenSetSeconds: tBackScreenSet };
+  // ICE ante una pantalla que no es lateral (la de Horns) se juega drop (`coverage_not_applicable`).
+  const playsDrop = coverage === "drop" || coverage === "por_debajo" || (coverage === "ice" && !isLateralScreenSpot(ctx.positions.O5!));
+  if (!playsDrop || !isBackScreenTarget(d5)) return { timing: null, reason: "back_screen_target_absent", values };
+  // Hace falta reloj para el bloqueo ciego, el uso de la pantalla y una lectura.
+  const o1 = player(ctx, "O1");
+  if (tBackScreenSet + recognitionLatencySeconds(o1.attributes.M01, o1.attributes.M05) + CATCH_AND_SHOOT_PREP_SECONDS >= ctx.shotClockMs / 1000) {
+    return { timing: null, reason: "back_screen_shot_clock_insufficient", values };
+  }
+  return { timing: { bsPoint, tO3AtScreen, tBackScreenSet }, reason: "back_screen_target_present", values };
 }
 
 interface EntryOpportunity {

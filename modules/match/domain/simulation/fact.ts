@@ -27,6 +27,10 @@ export type FactKind =
   | "ice_late"
   | "at_level_committed"
   | "at_level_recovery"
+  // ME-07B v2 §4 (LAB-0.9): Horns→Spain (bloqueo ciego, cambio en él y pop).
+  | "back_screen_set"
+  | "back_screen_switch"
+  | "back_screen_pop"
   | "trap_broken_advantage"
   | "trap_recovered"
   | "read_option"

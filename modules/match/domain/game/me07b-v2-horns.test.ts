@@ -37,7 +37,8 @@ function input(seed: number, placement: ScreenPlacementChoice, puertoCoverage: D
   return buildGameInput({
     seed,
     auditEnabled: true,
-    home: { id: SC, name: SIERRA_CLARA.name, players: SIERRA_CLARA.players, ...common, coverage: "auto", screenPlacement: placement },
+    // Ficha base Horns→bloqueo: sin la variante Spain (LAB-0.9), que tiene su propia prueba (`me07b-v2-spain.test.ts`).
+    home: { id: SC, name: SIERRA_CLARA.name, players: SIERRA_CLARA.players, ...common, coverage: "auto", screenPlacement: placement, chainedVariant: "ninguna" },
     away: { id: PUERTO_AMBAR.id, name: PUERTO_AMBAR.name, players: PUERTO_AMBAR.players, ...common, coverage: puertoCoverage, screenPlacement: "auto" },
   });
 }

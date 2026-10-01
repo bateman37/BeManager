@@ -51,6 +51,15 @@ describe("ME-07B v2 §3: ficha de libro", () => {
     expect(horns.structure.O3).not.toBe(base.structure.O3);
     expect(horns.reads).not.toContain("lectura_ice");
     expect(cardFor("bloqueo_directo", "horns").id).toBe("horns_bloqueo");
+    // Horns→Spain (LAB-0.9): misma colocación y primera acción; otra variante, otro orden y otras lecturas.
+    const spain = playbookCard("horns_spain");
+    expect(cardFor("bloqueo_directo", "horns", "spain").id).toBe("horns_spain");
+    expect(spain.placement).toBe(horns.placement);
+    expect(spain.chainedVariant).toBe("spain");
+    expect(horns.chainedVariant).toBeNull();
+    expect(spain.structure.O3).not.toBe(horns.structure.O3);
+    expect(spain.reads).toContain("lectura_spain");
+    expect(horns.reads).not.toContain("lectura_spain");
     // Dos fichas con la misma primera acción difieren en espacio (colocación) y lectura (ICE).
     const central = playbookCard("bloqueo_directo_central");
     const lateral = playbookCard("bloqueo_directo_lateral");
@@ -93,6 +102,7 @@ describe("ME-07B v2 §3: ficha de libro", () => {
       expect(checked).toBeGreaterThan(100);
       expect(r.stop.cause).toBe("final");
     }
-    expect(seen).toEqual(new Set(["bloqueo_directo_central", "mano_a_mano_central", "bloqueo_directo_lateral", "horns_bloqueo"]));
+    // Con la colocación Horns y la variante en `auto`, la ficha Spain también se juega (LAB-0.9).
+    expect(seen).toEqual(new Set(["bloqueo_directo_central", "mano_a_mano_central", "bloqueo_directo_lateral", "horns_bloqueo", "horns_spain"]));
   });
 });

@@ -13,6 +13,8 @@ import type {
   OffensivePlanChoice,
   OffBallDefensiveCallChoice,
   OffensiveCreationPriority,
+  ChainedVariantChoice,
+  BackScreenCallChoice,
 } from "../lab/match-input";
 import { LAB_0_3_PARAMETERS_VERSION } from "../lab/lab-0-3-parameters";
 import type { ReboundPriority } from "../simulation/possession-core";
@@ -48,6 +50,10 @@ export interface GameTeamInput {
   readonly creationPriority: OffensiveCreationPriority;
   /** Colocación del bloqueo directo de este equipo (ME-07B v2 §4, LAB-0.7): `auto`, central o lateral. */
   readonly screenPlacement: ScreenPlacementChoice;
+  /** Variante encadenada que este equipo puede llamar al atacar (ME-07B v2 §4, LAB-0.9): `auto`, `ninguna` o `spain`. */
+  readonly chainedVariant: ChainedVariantChoice;
+  /** Respuesta de este equipo al bloqueo ciego de Spain cuando defiende (LAB-0.9): `auto`, `seguir` o `cambiar`. */
+  readonly backScreenCall: BackScreenCallChoice;
 }
 
 export interface GameInput {
@@ -84,6 +90,10 @@ export interface BuildGameTeamArgs {
   readonly creationPriority?: OffensiveCreationPriority;
   /** ME-07B v2 §4: por defecto `"auto"`. */
   readonly screenPlacement?: ScreenPlacementChoice;
+  /** ME-07B v2 §4 (LAB-0.9): por defecto `"auto"`. */
+  readonly chainedVariant?: ChainedVariantChoice;
+  /** ME-07B v2 §4 (LAB-0.9): por defecto `"auto"`. */
+  readonly backScreenCall?: BackScreenCallChoice;
 }
 
 function buildTeam(args: BuildGameTeamArgs): GameTeamInput {
@@ -115,6 +125,8 @@ function buildTeam(args: BuildGameTeamArgs): GameTeamInput {
     offBallDefensiveCall: args.offBallDefensiveCall ?? "guardar_espacio",
     creationPriority: args.creationPriority ?? "equilibrado",
     screenPlacement: args.screenPlacement ?? "auto",
+    chainedVariant: args.chainedVariant ?? "auto",
+    backScreenCall: args.backScreenCall ?? "auto",
   };
 }
 

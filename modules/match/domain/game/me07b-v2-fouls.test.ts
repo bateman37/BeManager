@@ -68,9 +68,12 @@ describe("ME-07B v2 §2.5: faltas por contacto real en balón vivo", () => {
   });
 
   it("las faltas de tiro no nacen casi solo de segundas oportunidades", () => {
+    // Muestra de ocho partidos (91–98): con dos (92, 93) la proporción es ruido de
+    // muestra pequeña (v2-5: 13/29 con la variante Spain en `auto`, 25/42 sin ella;
+    // 79/125 y 84/135 en las ocho).
     let outside = 0;
     let total = 0;
-    for (const r of games) {
+    for (const r of [91, 92, 93, 94, 95, 96, 97, 98].map((seed) => play(seed))) {
       const phaseEntry = new Map<string, string>();
       for (const p of r.possessions) for (const ph of p.phases) phaseEntry.set(`${p.index}|${ph.index}`, ph.entry);
       for (const e of r.events.filter((x) => x.kind === "shooting_foul")) {

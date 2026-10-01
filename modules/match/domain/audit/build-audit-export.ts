@@ -80,6 +80,9 @@ export interface AuditExportTeam {
   readonly creationPriority: string;
   /** ME-07B v2 §4 (LAB-0.7): colocación del bloqueo directo pedida (auto, central o lateral). */
   readonly screenPlacement: string;
+  /** ME-07B v2 §4 (LAB-0.9): variante encadenada pedida al atacar y respuesta al bloqueo ciego al defender. */
+  readonly chainedVariant: string;
+  readonly backScreenCall: string;
   readonly roster: readonly AuditExportTeamPlayer[];
   /**
    * Huella estable de la foto efectiva de este equipo (ME-06 §5): deriva
@@ -378,6 +381,8 @@ function teamFingerprint(team: GameInput["teams"][number]): string {
       offBallDefensiveCall: team.offBallDefensiveCall,
       creationPriority: team.creationPriority,
       screenPlacement: team.screenPlacement ?? "auto",
+      chainedVariant: team.chainedVariant ?? "auto",
+      backScreenCall: team.backScreenCall ?? "auto",
       starters: [...team.starters].sort(),
       declaredRoles: team.declaredRoles,
       roster: team.roster
@@ -421,6 +426,8 @@ const SHOT_CAUSING_POINTS: ReadonlySet<string> = new Set([
   "lectura_show",
   "lectura_a_la_altura",
   "lectura_ice",
+  // ME-07B v2 §4 (LAB-0.9): lectura del manejador en Horns→Spain.
+  "lectura_spain",
   "segunda_entrada",
   "lectura_mano_a_mano",
   "entrada_fase_transicion",
@@ -570,6 +577,8 @@ function exportTeam(team: GameInput["teams"][number]): AuditExportTeam {
     offBallDefensiveCall: team.offBallDefensiveCall,
     creationPriority: team.creationPriority,
     screenPlacement: team.screenPlacement ?? "auto",
+    chainedVariant: team.chainedVariant ?? "auto",
+    backScreenCall: team.backScreenCall ?? "auto",
     roster: team.roster.map((p) => ({
       id: p.id,
       name: p.name,

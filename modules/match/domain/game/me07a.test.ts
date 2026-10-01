@@ -116,8 +116,10 @@ describe("ME-07A §4: cobertura y orden sin balón en auto, con denominadores re
     const gameInput = buildGameInput({
       seed: 1,
       auditEnabled: true,
-      home: { id: SC, name: SIERRA_CLARA.name, players: slow(SIERRA_CLARA.players), priority: "proteger_balance", coverage: "auto", offBallDefensiveCall: "auto" },
-      away: { id: PA, name: PUERTO_AMBAR.name, players: slow(PUERTO_AMBAR.players), priority: "proteger_balance", coverage: "auto", offBallDefensiveCall: "auto" },
+      // Sin la variante Spain (LAB-0.9): la prueba es de la regla de elegibilidad de la trampa y
+      // conserva la misma secuencia natural en la que se comprobó (con Spain en `auto` cambia la secuencia).
+      home: { id: SC, name: SIERRA_CLARA.name, players: slow(SIERRA_CLARA.players), priority: "proteger_balance", coverage: "auto", offBallDefensiveCall: "auto", chainedVariant: "ninguna" },
+      away: { id: PA, name: PUERTO_AMBAR.name, players: slow(PUERTO_AMBAR.players), priority: "proteger_balance", coverage: "auto", offBallDefensiveCall: "auto", chainedVariant: "ninguna" },
     });
     const result = playFullGame(gameInput);
     const decisions = result.audit!.decisions.filter((d) => d.point === "seleccion_cobertura");
@@ -158,7 +160,8 @@ describe("ME-07A §4: cobertura y orden sin balón en auto, con denominadores re
 });
 
 describe("ME-07A §6: partido e integridad con dos equipos completamente en auto", () => {
-  it("dos equipos en auto (plan, cobertura, orden sin balón, prioridad de creación) completan un partido reproducible y conciliado", () => {
+  // Dos partidos completos con auditoría (≈2,3 s cada uno desde LAB-0.9): más margen que el límite por defecto.
+  it("dos equipos en auto (plan, cobertura, orden sin balón, prioridad de creación) completan un partido reproducible y conciliado", { timeout: 60_000 }, () => {
     const gameInput = buildGameInput({
       seed: 82,
       auditEnabled: true,

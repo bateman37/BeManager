@@ -40,6 +40,8 @@ import type {
   DefensiveCoverageChoice,
   OffBallDefensiveCallChoice,
   OffensiveCreationPriority,
+  ChainedVariantChoice,
+  BackScreenCallChoice,
 } from "../lab/match-input";
 import { getScenario } from "../lab/scenario";
 import type { ObservedOutcome } from "../lab/lab-0-4-parameters";
@@ -401,6 +403,20 @@ export abstract class LinkedRun {
   protected offBallCallWhenDefending(teamId: string): OffBallDefensiveCallChoice {
     void teamId;
     return "guardar_espacio";
+  }
+  /**
+   * Variante encadenada que puede llamar el equipo que ataca (ME-07B v2 §4,
+   * LAB-0.9). Por defecto `ninguna`: los modos que no la declaren (el tramo
+   * de ME-03) conservan exactamente su comportamiento.
+   */
+  protected chainedVariantWhenAttacking(teamId: string): ChainedVariantChoice {
+    void teamId;
+    return "ninguna";
+  }
+  /** Respuesta del equipo que defiende al bloqueo ciego de Spain (LAB-0.9). Por defecto `auto`. */
+  protected backScreenCallWhenDefending(teamId: string): BackScreenCallChoice {
+    void teamId;
+    return "auto";
   }
   /**
    * Prioridad de creación del equipo que ataca (ME-07A §3.1). Por defecto
@@ -862,6 +878,8 @@ export abstract class LinkedRun {
       offBallDefensiveCall: this.offBallCallWhenDefending(frame.defending.id),
       creationPriority: this.creationPriorityWhenAttacking(frame.attacking.id),
       screenPlacement: this.currentPlacement,
+      chainedVariant: this.chainedVariantWhenAttacking(frame.attacking.id),
+      backScreenCall: this.backScreenCallWhenDefending(frame.defending.id),
     };
   }
 

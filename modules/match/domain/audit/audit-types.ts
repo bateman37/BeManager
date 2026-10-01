@@ -47,7 +47,12 @@ export type AuditDecisionPoint =
   // ME-07B v2 §4–§5 (LAB-0.7): colocación del bloqueo, ICE y «a la altura».
   | "colocacion_bloqueo"
   | "lectura_ice"
-  | "lectura_a_la_altura";
+  | "lectura_a_la_altura"
+  // ME-07B v2 §4 (LAB-0.9): variante encadenada Horns→Spain.
+  | "seleccion_variante"
+  | "lectura_spain_bloqueador"
+  | "respuesta_bloqueo_ciego"
+  | "lectura_spain";
 
 /**
  * Motivo estructurado y estable de cada opción. Uno por causa real del
@@ -116,6 +121,17 @@ export type AuditReasonCode =
   | "family_not_in_lateral_placement"
   // ME-07B v2 §4 (LAB-0.8): la colocación de la ficha (Horns) solo admite el bloqueo directo.
   | "family_not_in_card_placement"
+  // ME-07B v2 §4 (LAB-0.9): variante encadenada (Spain) y respuesta al bloqueo ciego.
+  | "variant_projected_value_higher"
+  | "variant_projected_value_lower"
+  | "variant_forced_by_plan"
+  | "back_screen_target_present"
+  | "back_screen_target_absent"
+  | "back_screen_shot_clock_insufficient"
+  | "back_screen_lower_concession"
+  | "back_screen_higher_concession"
+  | "back_screen_forced_by_call"
+  | "back_screen_switch_recognized_late"
   | "not_evaluated_short_circuit"
   | "situational_value_lower"
   | "tie_band_resolved_by_tendency"

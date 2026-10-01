@@ -10,9 +10,10 @@
  * pantalla, pase, lectura frente al mejor cierre real, salida segura), sin
  * guiones ni movimiento instantáneo.
  *
- * Fichas: las tres acciones organizadas de partida y **Horns→bloqueo**
- * (LAB-0.8, primera ficha del «libro por fase» de §4). 1-4 alto, Delay,
- * Spain, drag, saques… siguen pendientes (ver
+ * Fichas: las tres acciones organizadas de partida, **Horns→bloqueo**
+ * (LAB-0.8, primera ficha del «libro por fase» de §4) y **Horns→Spain**
+ * (LAB-0.9, variante encadenada). 1-4 alto, Delay, drag, saques… siguen
+ * pendientes (ver
  * `docs/match/TACTICAL-MATRIX.md`); se añaden aquí como fichas nuevas cuando
  * tengan su mecanismo. Dos fichas con la misma primitiva solo existen si
  * difieren en orden, espacio, responsabilidad o lectura (la central y la
@@ -25,7 +26,10 @@ import type { AuditDecisionPoint } from "../audit/audit-types";
 import type { OffensivePlan, OffensivePlanChoice } from "../lab/match-input";
 import type { ScreenPlacement, ScreenPlacementChoice } from "../lab/lab-0-7-parameters";
 
-export type PlaybookCardId = "bloqueo_directo_central" | "mano_a_mano_central" | "bloqueo_directo_lateral" | "horns_bloqueo";
+export type PlaybookCardId = "bloqueo_directo_central" | "mano_a_mano_central" | "bloqueo_directo_lateral" | "horns_bloqueo" | "horns_spain";
+
+/** Variante encadenada que una ficha ejecuta sobre su primera acción (§4): hoy, Spain desde Horns (LAB-0.9). */
+export type PlaybookChainedVariant = "spain";
 
 /** Fase del libro en que la ficha puede llamarse. Solo el ataque organizado tiene fichas hoy. */
 export type PlaybookPhase = "ataque_organizado";
@@ -55,8 +59,10 @@ export interface PlaybookCard {
   };
   /** Primera acción: la familia que ejecuta el núcleo. */
   readonly firstAction: OffensivePlan;
-  /** Variantes que la ficha puede encadenar (hoy: la segunda entrada del bloqueo). */
-  readonly variants: readonly ("segunda_entrada")[];
+  /** Variantes que la ficha puede encadenar (la segunda entrada del bloqueo; Spain, LAB-0.9). */
+  readonly variants: readonly ("segunda_entrada" | PlaybookChainedVariant)[];
+  /** Variante encadenada que **define** la ficha (Spain): `null` en las fichas base. */
+  readonly chainedVariant: PlaybookChainedVariant | null;
   /** Puntos de lectura legítimos dentro de la ficha (manejador, receptor, defensa que lee). */
   readonly reads: readonly AuditDecisionPoint[];
   /** Seguridad/reinicio: si nada vale más, salida segura y reorganización con el control. */
@@ -99,6 +105,7 @@ export const ORGANIZED_PLAYBOOK: readonly PlaybookCard[] = [
     reads: PNR_READS,
     safety: "salida_segura_y_reorganizar",
     priority: 0,
+    chainedVariant: null,
   },
   {
     id: "mano_a_mano_central",
@@ -113,6 +120,7 @@ export const ORGANIZED_PLAYBOOK: readonly PlaybookCard[] = [
     reads: ["entrada_mano_a_mano", "transferencia_mano_a_mano", "bloqueo_indirecto_o3", "lectura_mano_a_mano", "seleccion_orden_sin_balon"],
     safety: "salida_segura_y_reorganizar",
     priority: 1,
+    chainedVariant: null,
   },
   {
     id: "bloqueo_directo_lateral",
@@ -128,6 +136,7 @@ export const ORGANIZED_PLAYBOOK: readonly PlaybookCard[] = [
     reads: [...PNR_READS, "lectura_ice"],
     safety: "salida_segura_y_reorganizar",
     priority: 2,
+    chainedVariant: null,
   },
   {
     // Libro por fase (§4): «Organizado: Horns→bloqueo». LAB-0.8.
@@ -151,6 +160,35 @@ export const ORGANIZED_PLAYBOOK: readonly PlaybookCard[] = [
     reads: PNR_READS,
     safety: "salida_segura_y_reorganizar",
     priority: 3,
+    chainedVariant: null,
+  },
+  {
+    // Libro por fase (§4): «Organizado: Horns→Spain». LAB-0.9. Misma
+    // colocación y bloqueo que Horns→bloqueo; difiere en orden (el segundo
+    // cuerno pone primero un bloqueo ciego a D5 y el manejador sincroniza su
+    // pantalla con él), espacio (roll profundo al poste bajo y pop por encima
+    // del arco) y responsabilidad (quien puede ayudar al roll es el defensor
+    // del bloqueador ciego, que deja el pop; o D5 si cambian).
+    id: "horns_spain",
+    label: "Horns → Spain (bloqueo ciego del segundo cuerno sobre el protector del roll)",
+    phase: "ataque_organizado",
+    allowedPlans: ["auto", "bloqueo_directo"],
+    placement: "horns",
+    structure: {
+      O1: "manejador arriba: espera al bloqueador ciego y usa la pantalla",
+      O2: "esquina fuerte",
+      O3: "segundo cuerno: bloqueo ciego a D5 y pop por encima del arco",
+      O4: "esquina débil",
+      O5: "cuerno que bloquea y rueda profundo al poste bajo débil",
+    },
+    roles: { creator: { role: "O1", substitutes: ["poseedor_real"] }, screener: { role: "O5", substitutes: ["O4"] } },
+    firstAction: "bloqueo_directo",
+    variants: ["spain"],
+    // Sin objetivo para el bloqueo ciego (cambio, trampa, show, a la altura) se juega el árbol de Horns.
+    reads: [...PNR_READS, "lectura_spain_bloqueador", "respuesta_bloqueo_ciego", "lectura_spain"],
+    safety: "salida_segura_y_reorganizar",
+    priority: 4,
+    chainedVariant: "spain",
   },
 ];
 
@@ -158,9 +196,9 @@ export function playbookCard(id: PlaybookCardId): PlaybookCard {
   return ORGANIZED_PLAYBOOK.find((c) => c.id === id)!;
 }
 
-/** Ficha que corresponde a una primera acción resuelta en una colocación. */
-export function cardFor(firstAction: OffensivePlan, placement: ScreenPlacement): PlaybookCard {
-  const card = ORGANIZED_PLAYBOOK.find((c) => c.firstAction === firstAction && c.placement === placement);
+/** Ficha que corresponde a una primera acción resuelta en una colocación (y su variante encadenada, si la llama). */
+export function cardFor(firstAction: OffensivePlan, placement: ScreenPlacement, variant: PlaybookChainedVariant | null = null): PlaybookCard {
+  const card = ORGANIZED_PLAYBOOK.find((c) => c.firstAction === firstAction && c.placement === placement && c.chainedVariant === variant);
   if (!card) throw new Error(`No hay ficha para ${firstAction} con colocación ${placement}.`);
   return card;
 }
