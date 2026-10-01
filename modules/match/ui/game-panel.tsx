@@ -118,6 +118,7 @@ const SCREEN_PLACEMENT_LABELS: Record<ScreenPlacementChoice, string> = {
   central: "Central",
   lateral: "Lateral",
   horns: "Horns (dos interiores en los codos)",
+  delay: "Delay (pívot arriba: entrega en mano y poste)",
 };
 const CHAINED_VARIANT_LABELS: Record<ChainedVariantChoice, string> = {
   auto: "Auto (compara la ficha base y sus variantes)",

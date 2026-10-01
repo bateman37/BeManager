@@ -52,7 +52,13 @@ export type AuditDecisionPoint =
   | "seleccion_variante"
   | "lectura_spain_bloqueador"
   | "respuesta_bloqueo_ciego"
-  | "lectura_spain";
+  | "lectura_spain"
+  // ME-07B v2 §4 (LAB-0.10): Delay→DHO con entrada a poste y salidas.
+  | "entrega_delay"
+  | "lectura_delay"
+  | "lectura_delay_pivote"
+  | "respuesta_poste"
+  | "lectura_poste";
 
 /**
  * Motivo estructurado y estable de cada opción. Uno por causa real del
@@ -132,6 +138,10 @@ export type AuditReasonCode =
   | "back_screen_higher_concession"
   | "back_screen_forced_by_call"
   | "back_screen_switch_recognized_late"
+  // ME-07B v2 §4 (LAB-0.10): ayuda al poste («dig») y coberturas que no aplican a la entrega.
+  | "help_lower_concession"
+  | "help_higher_concession"
+  | "coverage_not_in_card"
   | "not_evaluated_short_circuit"
   | "situational_value_lower"
   | "tie_band_resolved_by_tendency"

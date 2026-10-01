@@ -18,7 +18,7 @@ import type { AuditDecisionPoint } from "../audit/audit-types";
  */
 const READ_POINTS = new Set<AuditDecisionPoint>(ORGANIZED_PLAYBOOK.flatMap((c) => c.reads));
 
-function play(seed: number, sierra: { coverage: "auto" | "ice"; screenPlacement: "auto" | "lateral" | "horns" }, puertoCoverage: "auto" | "ice"): GameResult {
+function play(seed: number, sierra: { coverage: "auto" | "ice"; screenPlacement: "auto" | "lateral" | "horns" | "delay" }, puertoCoverage: "auto" | "ice"): GameResult {
   const common = { priority: "proteger_balance" as const, offBallDefensiveCall: "auto" as const, offensivePlan: "auto" as const, creationPriority: "equilibrado" as const };
   return playFullGame(
     buildGameInput({
@@ -80,11 +80,21 @@ describe("ME-07B v2 §3: ficha de libro", () => {
     expect(eligiblePlacements("auto", "central")).toEqual(["central"]);
     // Sin ficha compatible (mano a mano obligada con colocación lateral): la central.
     expect(eligiblePlacements("mano_a_mano_sin_balon", "lateral")).toEqual(["central"]);
+    // Delay (LAB-0.10): solo por orden; con el bloqueo directo obligado no hay ficha y se juega la central.
+    expect(eligiblePlacements("auto", "delay")).toEqual(["delay"]);
+    expect(eligiblePlacements("mano_a_mano_sin_balon", "delay")).toEqual(["delay"]);
+    expect(eligiblePlacements("mano_a_mano_sin_balon", "auto")).toEqual(["central"]);
+    expect(eligiblePlacements("bloqueo_directo", "delay")).toEqual(["central"]);
+    const delay = playbookCard("delay_mano_a_mano");
+    expect(delay.firstAction).toBe("mano_a_mano_sin_balon");
+    expect(delay.offeredInAuto).toBe(false);
+    expect(cardFor("mano_a_mano_sin_balon", "delay").id).toBe("delay_mano_a_mano");
+    expect(delay.reads).toContain("lectura_poste");
   });
 
   it("en partidos completos cada lectura pertenece a la ficha en vigor de su fase", () => {
     const seen = new Set<PlaybookCardId>();
-    for (const r of [play(92, { coverage: "auto", screenPlacement: "auto" }, "auto"), play(92, { coverage: "auto", screenPlacement: "lateral" }, "ice"), play(93, { coverage: "auto", screenPlacement: "auto" }, "auto"), play(92, { coverage: "auto", screenPlacement: "horns" }, "auto")]) {
+    for (const r of [play(92, { coverage: "auto", screenPlacement: "auto" }, "auto"), play(92, { coverage: "auto", screenPlacement: "lateral" }, "ice"), play(93, { coverage: "auto", screenPlacement: "auto" }, "auto"), play(92, { coverage: "auto", screenPlacement: "horns" }, "auto"), play(92, { coverage: "auto", screenPlacement: "delay" }, "auto")]) {
       const decisions = r.audit!.decisions;
       const cardOfPhase = new Map<string, PlaybookCardId>();
       for (const d of decisions.filter((x) => x.point === "seleccion_familia")) {
@@ -103,6 +113,6 @@ describe("ME-07B v2 §3: ficha de libro", () => {
       expect(r.stop.cause).toBe("final");
     }
     // Con la colocación Horns y la variante en `auto`, la ficha Spain también se juega (LAB-0.9).
-    expect(seen).toEqual(new Set(["bloqueo_directo_central", "mano_a_mano_central", "bloqueo_directo_lateral", "horns_bloqueo", "horns_spain"]));
+    expect(seen).toEqual(new Set(["bloqueo_directo_central", "mano_a_mano_central", "bloqueo_directo_lateral", "horns_bloqueo", "horns_spain", "delay_mano_a_mano"]));
   });
 });

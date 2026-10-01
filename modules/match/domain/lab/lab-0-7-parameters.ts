@@ -29,8 +29,12 @@ import { HORNS_SECOND_HORN_SPOT, WEAK_CORNER_HELP_LEFT_SPOT } from "./lab-0-8-pa
 
 export const LAB_0_7_PARAMETERS_VERSION = "LAB-0.7";
 
-/** Colocación del bloqueo directo: central (ME-01), lateral (ME-07B v2) u Horns (LAB-0.8). */
-export type ScreenPlacement = "central" | "lateral" | "horns";
+/**
+ * Colocación de la acción organizada: central (ME-01), lateral (ME-07B v2),
+ * Horns (LAB-0.8) o Delay (LAB-0.10: pívot arriba, entrega en mano y poste;
+ * no es un bloqueo directo, pero comparte el selector «Colocación» de la ficha).
+ */
+export type ScreenPlacement = "central" | "lateral" | "horns" | "delay";
 
 /** Colocación pedida por el entrenador: `auto` la decide el poseedor real por proyección. */
 export type ScreenPlacementChoice = "auto" | ScreenPlacement;
@@ -101,6 +105,10 @@ export interface PnrSetGeometry {
 export function pnrSetGeometry(placement: ScreenPlacement): PnrSetGeometry {
   if (placement === "lateral") {
     return { placement, shortRoll: LATERAL_SHORT_ROLL_SPOT, deepContinuation: LATERAL_DEEP_CONTINUATION_SPOT, helpLeftSpot: WEAK_CORNER_HELP_LEFT_SPOT, helpLeftLabel: "en la esquina débil" };
+  }
+  if (placement === "delay") {
+    // Delay no tiene bloqueo directo: estos puntos no se usan (la ficha juega su propia acción, LAB-0.10).
+    return { placement, shortRoll: SHORT_ROLL_SPOT, deepContinuation: DEEP_CONTINUATION_SPOT, helpLeftSpot: WEAK_CORNER_HELP_LEFT_SPOT, helpLeftLabel: "en la esquina débil" };
   }
   if (placement === "horns") {
     return { placement, shortRoll: SHORT_ROLL_SPOT, deepContinuation: DEEP_CONTINUATION_SPOT, helpLeftSpot: HORNS_SECOND_HORN_SPOT, helpLeftLabel: "en el codo" };

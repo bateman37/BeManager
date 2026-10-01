@@ -428,6 +428,10 @@ const SHOT_CAUSING_POINTS: ReadonlySet<string> = new Set([
   "lectura_ice",
   // ME-07B v2 §4 (LAB-0.9): lectura del manejador en Horns→Spain.
   "lectura_spain",
+  // ME-07B v2 §4 (LAB-0.10): lecturas de Delay (manejador tras la entrega, pívot que se la queda, poste).
+  "lectura_delay",
+  "lectura_delay_pivote",
+  "lectura_poste",
   "segunda_entrada",
   "lectura_mano_a_mano",
   "entrada_fase_transicion",

@@ -31,6 +31,13 @@ export type FactKind =
   | "back_screen_set"
   | "back_screen_switch"
   | "back_screen_pop"
+  // ME-07B v2 §4 (LAB-0.10): Delay (retraso, entrega en mano, puerta de atrás, ayuda al poste, corte).
+  | "delay_hold"
+  | "dho_completed"
+  | "dho_denied"
+  | "backdoor_cut"
+  | "post_dig"
+  | "weak_side_cut"
   | "trap_broken_advantage"
   | "trap_recovered"
   | "read_option"

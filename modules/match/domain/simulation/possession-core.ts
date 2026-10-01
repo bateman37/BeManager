@@ -97,6 +97,7 @@ import { createNoopAuditCollector, type AuditCollector } from "../audit/audit-co
 import type { AuditDecisionPoint, AuditOptionRecord, AuditReasonCode } from "../audit/audit-types";
 import { cardFor, type PlaybookCardId } from "../tactics/playbook-card";
 import { SPAIN_POP_SPOT, SPAIN_ROLL_SPOT, isBackScreenTarget, spainBackScreenPoint } from "../lab/lab-0-9-parameters";
+import { DELAY_WEAK_CUT_SPOT } from "../lab/lab-0-10-parameters";
 
 /**
  * Tiro de recepción de O3 en el punto que deja libre la ayuda al roll
@@ -827,6 +828,27 @@ function projectSpainOverShownCoverages(ctx: CoreContext, scenario: ScenarioDefi
 }
 
 /**
+ * Valor esperado de Delay (LAB-0.10) frente a la defensa observada: cada
+ * cobertura mostrada se traduce a su respuesta ante la entrega (hundirse,
+ * cambiar o saltar) y se proyecta en seco hasta la primera lectura, con la
+ * misma ponderación por frecuencia (`shownCoverageWeights`, previa drop).
+ */
+function projectDelayOverShownCoverages(ctx: CoreContext, shown: Readonly<Partial<Record<DefensiveCoverage, ObservedOutcome>>> | undefined): number {
+  const weights = shownCoverageWeights<DefensiveCoverage>(shown, "drop");
+  const byResponse = new Map<DelayResponse, number>();
+  let expected = 0;
+  for (const [c, w] of Object.entries(weights) as [DefensiveCoverage, number][]) {
+    const r = delayResponseFor(c);
+    if (!byResponse.has(r)) {
+      const o = familyOpportunity(projectFamilyRead(ctx, (dry) => runDelayPhase(dry, r)));
+      byResponse.set(r, o.viable ? o.value : 0);
+    }
+    expected += w * byResponse.get(r)!;
+  }
+  return expected;
+}
+
+/**
  * Variante encadenada que llama el ataque en Horns (`seleccion_variante`,
  * LAB-0.9): `ninguna` o `spain` por orden; `auto` compara la ficha base y
  * Spain con la misma proyección frente a la defensa observada (empate: la
@@ -930,6 +952,10 @@ export function projectOrganizedOpportunity(
     set: pnrSetGeometry(input.screenPlacement ?? "central"),
   };
   const planChoice: OffensivePlanChoice = input.offensivePlan ?? "bloqueo_directo";
+  if (ctx.set.placement === "delay") {
+    // LAB-0.10: Delay se proyecta frente a cada respuesta a la entrega que el rival ha mostrado.
+    return { value: Math.max(0, projectDelayOverShownCoverages(ctx, linked.observations?.defenseByCoverage)), plan: "mano_a_mano_sin_balon", bestReadOption: null };
+  }
   // ME-07B v2 §2.2/§5: el bloqueo se valora frente a la defensa observada, no solo contra drop.
   const bloqueo =
     planChoice === "mano_a_mano_sin_balon" ? null : projectBloqueoOverShownCoverages(ctx, scenario, linked.observations?.defenseByCoverage);
@@ -1028,8 +1054,9 @@ export function computePossessionCore(
     // LAB-0.7/LAB-0.8: las colocaciones lateral y Horns son del bloqueo
     // directo; quien la eligió (`colocacion_bloqueo`, al organizar) ya la
     // comparó con la central, que es donde se juega la mano a mano.
-    resolvedPlan = "bloqueo_directo";
+    // LAB-0.10: Delay es de la entrega en mano (familia mano a mano).
     const placement = ctx.set.placement;
+    resolvedPlan = placement === "delay" ? "mano_a_mano_sin_balon" : "bloqueo_directo";
     // ME-07B v2 §4 (LAB-0.9): desde Horns, el ataque llama o no la variante Spain.
     spainCalled = placement === "horns" && resolveChainedVariant(ctx, scenario, linked?.observations?.defenseByCoverage);
     auditDecision(ctx, 0, {
@@ -1037,10 +1064,16 @@ export function computePossessionCore(
       holderId: "O1",
       participants: ["O1", "O2", "O3", "O4", "O5"],
       chosenOptionId: resolvedPlan,
-      options: [
-        { id: "bloqueo_directo", status: "elegida", reasonCode: "placement_forced_by_plan", values: { placement, cardId: cardFor("bloqueo_directo", placement, spainCalled ? "spain" : null).id } },
-        { id: "mano_a_mano_sin_balon", status: "no_evaluada_por_cortocircuito", reasonCode: placement === "lateral" ? "family_not_in_lateral_placement" : "family_not_in_card_placement", values: { placement, cardId: null } },
-      ],
+      options:
+        placement === "delay"
+          ? [
+              { id: "bloqueo_directo", status: "no_evaluada_por_cortocircuito", reasonCode: "family_not_in_card_placement", values: { placement, cardId: null } },
+              { id: "mano_a_mano_sin_balon", status: "elegida", reasonCode: "placement_forced_by_plan", values: { placement, cardId: cardFor("mano_a_mano_sin_balon", placement).id } },
+            ]
+          : [
+              { id: "bloqueo_directo", status: "elegida", reasonCode: "placement_forced_by_plan", values: { placement, cardId: cardFor("bloqueo_directo", placement, spainCalled ? "spain" : null).id } },
+              { id: "mano_a_mano_sin_balon", status: "no_evaluada_por_cortocircuito", reasonCode: placement === "lateral" ? "family_not_in_lateral_placement" : "family_not_in_card_placement", values: { placement, cardId: null } },
+            ],
     });
   } else if (planChoice === "auto") {
     // ME-06 §3.2: evaluación pura de la oportunidad de entrada de cada
@@ -1118,7 +1151,44 @@ export function computePossessionCore(
   }
 
   const coverageChoice: DefensiveCoverageChoice = ctx.input.coverage;
-  if (coverageChoice === "auto") {
+  let delayResponse: DelayResponse | null = null;
+  if (ctx.set.placement === "delay") {
+    // LAB-0.10: ante la entrega en mano solo aplican tres respuestas (hundirse,
+    // cambiar o saltar la entrega); en `auto`, la de menor concesión proyectada.
+    const responses: readonly DelayResponse[] = ["hundirse", "cambiar_entrega", "saltar_entrega"];
+    if (coverageChoice === "auto") {
+      const seenCoverage = linked?.observations?.defenseByCoverage;
+      const projected = responses.map((r) => familyOpportunity(projectFamilyRead(ctx, (dry) => runDelayPhase(dry, r))));
+      const blended = projected.map((o, i) => blendProjectionWithObservation(o.viable ? o.value : 0, seenCoverage?.[DELAY_RESPONSE_COVERAGE[responses[i]!]]));
+      let best = 0;
+      for (let i = 1; i < responses.length; i++) if (blended[i]! < blended[best]!) best = i;
+      delayResponse = responses[best]!;
+      ctx.resolvedCoverage = DELAY_RESPONSE_COVERAGE[delayResponse];
+      const ALL: readonly DefensiveCoverage[] = ["drop", "trampa", "cambio", "show", "a_la_altura", "por_debajo", "ice"];
+      auditDecision(ctx, 0, {
+        point: "seleccion_cobertura",
+        holderId: null,
+        participants: ["D1", "D5"],
+        chosenOptionId: ctx.resolvedCoverage,
+        options: ALL.map((c): AuditOptionRecord => {
+          const i = responses.findIndex((r) => DELAY_RESPONSE_COVERAGE[r] === c);
+          if (i < 0) return { id: c, status: "descartada_por_condicion", reasonCode: "coverage_not_in_card", values: { delayResponse: delayResponseFor(c) } };
+          return {
+            id: c,
+            status: i === best ? "elegida" : "descartada_por_condicion",
+            reasonCode: i === best ? (blended.some((v, j) => j !== i && v === blended[i]) ? "coverage_tied_base_kept" : "coverage_lower_concession") : "coverage_higher_concession",
+            values: { delayResponse: responses[i]!, concessionValue: projected[i]!.viable ? projected[i]!.value : 0, offenseBestReadOption: projected[i]!.bestOptionId, blendedValue: blended[i]! },
+          };
+        }),
+      });
+    } else {
+      ctx.resolvedCoverage = coverageChoice;
+      delayResponse = delayResponseFor(coverageChoice);
+      if (coverageChoice !== "drop" && coverageChoice !== "cambio" && coverageChoice !== "show" && coverageChoice !== "trampa") {
+        event(ctx, 0, "reconocido", "coverage_not_applicable", ["D1", "D5"], "La orden es de pantalla, pero en Delay la acción es una entrega en mano: D5 se hunde entre O5 y el aro.", { coverage: coverageChoice, delayResponse });
+      }
+    }
+  } else if (coverageChoice === "auto") {
     const estimate = estimateCoverageChoice(ctx, scenario);
     // ME-07B v2 §2.3/§5: la defensa combina la concesión proyectada de cada
     // cobertura con lo que ya ha concedido de verdad con ella en este
@@ -1210,7 +1280,9 @@ export function computePossessionCore(
     });
   }
   const organized =
-    spainRead?.timing
+    delayResponse
+      ? runDelayPhase(ctx, delayResponse)
+      : spainRead?.timing
       ? runSpainPhase(ctx, ctx.resolvedCoverage === "por_debajo" ? "por_debajo" : "por_encima", spainRead.timing)
       : resolvedPlan === "mano_a_mano_sin_balon"
       ? runHandoffPhase(ctx)
@@ -3038,6 +3110,8 @@ function decideHandlerRead(
   tDecision: number,
   participants: readonly string[],
   options: readonly HandlerReadOption[],
+  /** Quien lee (por defecto el manejador O1; en Delay, el pívot que se la queda o el poste). */
+  holderSlot: string = "O1",
 ): PossessionCoreResult {
   if (ctx.projecting) {
     throw new ReadProjectionReached({ tDecisionSeconds: tDecision, options: options.map((o) => ({ id: o.id, value: o.value, completion: o.completion })) });
@@ -3047,7 +3121,7 @@ function decideHandlerRead(
   let chosen = viable[0]!;
   let byTendency = false;
   const band = viable.filter((o) => expected(chosen) - expected(o) <= FIRST_READ_TIE_BAND_POINTS);
-  const tendency = player(ctx, "O1").shotTendency;
+  const tendency = player(ctx, holderSlot).shotTendency;
   const pick = tendency === "decidida" ? band.find((o) => o.kind === "tiro") : tendency === "prudente" ? band.find((o) => o.kind !== "tiro") : undefined;
   if (pick && pick !== chosen) {
     chosen = pick;
@@ -3071,7 +3145,7 @@ function decideHandlerRead(
     values: { ...o.values, situationalValue: Number.isFinite(o.value) ? o.value : null, completion: o.completion },
   }));
   return chosen.execute((factLinkKind) =>
-    auditDecision(ctx, tDecision, { point, holderId: "O1", participants, chosenOptionId: chosen.id, factLinkKind, options: records }),
+    auditDecision(ctx, tDecision, { point, holderId: holderSlot, participants, chosenOptionId: chosen.id, factLinkKind, options: records }),
   );
 }
 
@@ -3811,6 +3885,476 @@ function readSpainBackScreen(ctx: CoreContext): { readonly timing: SpainTiming |
     return { timing: null, reason: "back_screen_shot_clock_insufficient", values };
   }
   return { timing: { bsPoint, tO3AtScreen, tBackScreenSet }, reason: "back_screen_target_present", values };
+}
+
+/**
+ * Delay→DHO con entrada a poste y salidas (ME-07B v2 §4, «Libro por fase»;
+ * LAB-0.10). En vez de iniciar un bloqueo directo, el ataque retrasa la
+ * acción: el manejador (O1, ala derecha) entra el balón al interior de arriba
+ * (O5, por encima del arco), le **sigue** y recibe de él una **entrega en mano
+ * (DHO)**: el cuerpo de O5 es la pantalla (retraso T13/F05 de O5 frente a T16
+ * de D1, peso; la orden sin balón de D1 lo ajusta como en el mano a mano). El
+ * otro interior (O4) espera en el poste bajo del lado del balón.
+ *
+ * Respuesta de la defensa a la entrega (según su cobertura; en `auto`, la de
+ * menor concesión proyectada entre las tres aplicables):
+ * - `hundirse` (drop, por debajo, a la altura, ICE): D5 se queda entre O5 y el
+ *   aro; D1 persigue por encima de la entrega con el retraso del cuerpo de O5.
+ * - `cambiar_entrega` (cambio): D5 toma a O1 en la entrega y D1 se queda con
+ *   O5 (el emparejamiento persiste en la posesión).
+ * - `saltar_entrega` (show, trampa): D5 sale al punto de la entrega; si llega
+ *   antes que O1, la **niega** y O5 se la queda (keeper) con su pintura vacía;
+ *   si llega tarde, la entrega sale y D5 está fuera de la pintura.
+ *
+ * Lecturas: con la entrega hecha, O1 (`lectura_delay`) ataca el aro, tira de
+ * tres o parado tras la entrega, entra al poste o sale seguro hacia O5. Con la
+ * entrega negada, O5 (`lectura_delay_pivote`) ataca el aro, encuentra el
+ * **corte por la puerta de atrás** de O1, entra al poste (alto-bajo) o
+ * invierte al ala débil. En el poste (`lectura_poste`), O4 finaliza (al aro o
+ * en gancho) frente a D4 y a la ayuda, sale a la esquina si su defensor ha
+ * ayudado («dig», `respuesta_poste`), encuentra el corte del ala débil o
+ * **repostea** (devuelve arriba y el ataque se reorganiza con el reloj que
+ * quede). Ninguna vía es obligatoria: si nada vale más, salida segura.
+ */
+type DelayResponse = "hundirse" | "cambiar_entrega" | "saltar_entrega";
+
+function delayResponseFor(coverage: DefensiveCoverage): DelayResponse {
+  if (coverage === "cambio") return "cambiar_entrega";
+  if (coverage === "show" || coverage === "trampa") return "saltar_entrega";
+  return "hundirse";
+}
+
+/** Cobertura con la que se registra cada respuesta a la entrega (observación y auditoría). */
+const DELAY_RESPONSE_COVERAGE: Readonly<Record<DelayResponse, DefensiveCoverage>> = { hundirse: "drop", cambiar_entrega: "cambio", saltar_entrega: "show" };
+
+/** Salida segura de Delay: el balón vuelve al pívot de arriba (o, si lo tiene él, al ala débil) y el ataque se reorganiza. */
+function delayOutlet(ctx: CoreContext, holderSlot: string, holderPos: Point2D, tDecision: number, record: (factLinkKind?: string) => void, text: string, extra: Partial<PossessionCoreResult> = {}): PossessionCoreResult {
+  const target = holderSlot === "O5" ? "O3" : "O5";
+  const tOutlet = tDecision + PASS_RELEASE_SECONDS + distanceSeconds(holderPos, ctx.positions[target]!);
+  event(ctx, tOutlet, "concedido", "possession_continues", [holderSlot, target], text);
+  record("possession_continues");
+  return {
+    ...finalize(ctx, { kind: "possession_reorganized_control_kept", outletPlayerId: target }, { status: "held", holderId: target, position: ctx.positions[target]! }),
+    ...extra,
+  };
+}
+
+/**
+ * Lectura del poste (LAB-0.10): O4 recibe en el poste bajo y lee frente a D4
+ * (por detrás, a contacto) y a la posible ayuda («dig») del defensor de la
+ * esquina fuerte, que D2 decide comparando concesiones al reconocer la
+ * recepción (M01/M05). Opciones: al aro (T01), gancho/floater desde el poste
+ * (T02), pase a la esquina (si D2 ayudó), corte del ala débil (O3 por detrás
+ * de D3, T21 adelanta su salida) y repostear (devolver arriba y reorganizar).
+ */
+function postReadOptions(ctx: CoreContext, tCatch: number, tRelease: number, swap: Partial<PossessionCoreResult>): { options: HandlerReadOption[]; dig: boolean; concessionWithDig: number; concessionWithoutDig: number; tD2Dig: number; digPoint: Point2D; digInTime: boolean; tRead: number } {
+  const o2 = player(ctx, "O2");
+  const o3 = player(ctx, "O3");
+  const o4 = player(ctx, "O4");
+  const d2 = player(ctx, "D2");
+  const d3 = player(ctx, "D3");
+  const post = ctx.positions.O4!;
+  const corner = ctx.positions.O2!;
+  const clock = ctx.shotClockMs / 1000;
+  const d4Behind = chaser(ctx, "D4", ctx.positions.D4!, tCatch, (p) => interiorArrivalAdjustmentSeconds(p.attributes.T23));
+  const d5Sag = chaser(ctx, "D5", ctx.positions.D5!, tCatch + recognitionLatencySeconds(player(ctx, "D5").attributes.M01, player(ctx, "D5").attributes.M05), (p) => interiorArrivalAdjustmentSeconds(p.attributes.T23));
+  // D2 lee el pase de entrada en el aire (desde que sale), no espera a la recepción.
+  const tD2Recognize = tRelease + recognitionLatencySeconds(d2.attributes.M01, d2.attributes.M05);
+  // El poste recibe de espaldas: lee la defensa (M01/M05, como cualquier lectura) y gira antes de
+  // moverse (misma preparación de una finalización cercana, LAB-0.1).
+  const tRead = tCatch + recognitionLatencySeconds(o4.attributes.M01, o4.attributes.M05);
+  const tTurn = tRead + CLOSE_FINISH_PREP_SECONDS;
+  // Camino del giro al aro: rodea a D4 por el lado libre.
+  const dropStep = detourAround(post, ATTACKED_HOOP, ctx.positions.D4!, COMBINED_CONTACT_RADIUS_METERS);
+  // La ayuda («dig») llega a contacto de O4 desde su lado: si llega antes del giro, son dos sobre el balón.
+  const digPoint = pointShortOfTarget(ctx.positions.D2!, post, COMBINED_CONTACT_RADIUS_METERS);
+  const tD2Dig = tD2Recognize + timeToReach(ctx.positions.D2!, digPoint, defenderLateralSpeedMps(d2.attributes.F04));
+  const d2Dig: ContestCandidate = { id: "D2", geometryTo: () => ({ geometry: { originPos: ctx.positions.D2!, destinationPos: digPoint, speedMps: defenderLateralSpeedMps(d2.attributes.F04), brakingExtraSeconds: closeoutBrakingExtraSeconds(d2.attributes.F03) }, arrivalSeconds: tD2Dig }) };
+  const d2DigToRim = chaser(ctx, "D2", digPoint, tD2Dig, (p) => interiorArrivalAdjustmentSeconds(p.attributes.T23));
+  const d2Home = chaser(ctx, "D2", ctx.positions.D2!, tD2Recognize, (p) => perimeterArrivalAdjustmentSeconds(p.attributes.T22));
+  const d2Recover = chaser(ctx, "D2", digPoint, tD2Dig, (p) => perimeterArrivalAdjustmentSeconds(p.attributes.T22));
+  // Corte del ala débil: sale al recibir el poste (T21 adelanta la salida); D3 lo reconoce tarde (M01/M05).
+  const o3CutStart = Math.max(0, tCatch - cutterStartTimeReductionSeconds(o3.attributes.T21));
+  const tO3AtCut = o3CutStart + timeToReach(ctx.positions.O3!, DELAY_WEAK_CUT_SPOT, attackerMoveSpeedMps(o3.attributes.F01));
+  const d3Chase = chaser(ctx, "D3", ctx.positions.D3!, tCatch + recognitionLatencySeconds(d3.attributes.M01, d3.attributes.M05), (p) => interiorArrivalAdjustmentSeconds(p.attributes.T23));
+
+  // Dos sobre el poste (D4 a la espalda y D2 cerrando el giro) si D2 llega antes de que O4 gire:
+  // presión real de dos defensores sobre el balón (misma primitiva T07/T15 que la trampa).
+  const digInTime = tD2Dig <= tTurn;
+  const pressureSteal = turnoverUnderPressureProbability(o4.attributes.T07, Math.min(d2.attributes.T15, player(ctx, "D4").attributes.T15));
+  function build(dig: boolean): HandlerReadOption[] {
+    const helpers = dig ? [d4Behind, d2DigToRim, d5Sag] : [d4Behind, d5Sag];
+    const doubled = dig && digInTime;
+    const moveCompletion = doubled ? 1 - pressureSteal : 1;
+    // El giro al aro rodea a D4, que defiende por detrás entre el poste y el aro (dos cuerpos no se cruzan).
+    const tRim = tTurn + dropStep.length / attackerMoveSpeedMps(o4.attributes.F01) + CLOSE_FINISH_PREP_SECONDS;
+    const rim = bestContest(ctx, helpers, ATTACKED_HOOP, tRim, CLOSE_FINISH_PREP_SECONDS)!;
+    const rimValue = tRim < clock ? 2 * shotProbability(CLOSE_FINISH_BASE_PROBABILITY, o4.attributes.T01, rim.level) : -Infinity;
+    const hookType: ShotType = isFloaterZone(post) ? "floater" : isMidRangeZone(post) ? "mid_range" : "close_finish";
+    // Gancho/tiro de giro desde el poste: D4 ya está a contacto (no tiene que desplazarse).
+    const tHook = tRead + CATCH_AND_SHOOT_PREP_SECONDS;
+    const d4AtContact: ContestCandidate = { id: "D4", geometryTo: () => ({ geometry: { originPos: ctx.positions.D4!, destinationPos: ctx.positions.D4!, speedMps: defenderLateralSpeedMps(player(ctx, "D4").attributes.F04), brakingExtraSeconds: 0 }, arrivalSeconds: 0 }) };
+    const hook = bestContest(ctx, dig ? [d4AtContact, d2Dig] : [d4AtContact], post, tHook, CATCH_AND_SHOOT_PREP_SECONDS)!;
+    const hookValue = tHook < clock ? 2 * shotProbability(shotBaseProbability(hookType), shotSkill(o4, hookType), hook.level) : -Infinity;
+    const tKickArrival = tRead + PASS_RELEASE_SECONDS + distanceSeconds(post, corner);
+    const tKickReady = tKickArrival + CATCH_AND_SHOOT_PREP_SECONDS;
+    const kick = bestContest(ctx, [dig ? d2Recover : d2Home], corner, tKickReady, CATCH_AND_SHOOT_PREP_SECONDS)!;
+    const kickValue = dig && isBehindThreePointLine(corner) && tKickReady < clock ? 3 * shotProbability(THREE_POINT_BASE_PROBABILITY, o2.attributes.T04, kick.level) : -Infinity;
+    const tCutArrival = Math.max(tO3AtCut, tRead + PASS_RELEASE_SECONDS + distanceSeconds(post, DELAY_WEAK_CUT_SPOT));
+    const tCutReady = tCutArrival + CLOSE_FINISH_PREP_SECONDS;
+    const cut = bestContest(ctx, [d3Chase, d5Sag], DELAY_WEAK_CUT_SPOT, tCutReady, CLOSE_FINISH_PREP_SECONDS)!;
+    const cutValue = tCutReady < clock ? 2 * shotProbability(CLOSE_FINISH_BASE_PROBABILITY, o3.attributes.T01, cut.level) : -Infinity;
+    const shoot = (args: ShotAttemptArgs) => (record: (factLinkKind?: string) => void) => {
+      record();
+      if (doubled && resolvesTurnoverUnderPressure(o4.attributes.T07, Math.min(d2.attributes.T15, player(ctx, "D4").attributes.T15), ctx.rng)) {
+        event(ctx, tTurn, "concedido", "turnover", ["D2", "D4"], "D4 y D2 cierran el giro del poste entre los dos y le roban el balón a O4.");
+        return { ...finalize(ctx, { kind: "steal_by_defense" }, { status: "held", holderId: "D2", position: post }), ...swap };
+      }
+      return { ...resolveShotAttempt(ctx, args), ...swap };
+    };
+    const passTo = (receiver: "O2" | "O3", spot: Point2D, tArrival: number, deflectorId: string, shot: ShotAttemptArgs, text: string) => (record: (factLinkKind?: string) => void) => {
+      if (receiver === "O3") {
+        setArrival(ctx, "O3", tO3AtCut, DELAY_WEAK_CUT_SPOT, o3CutStart);
+        event(ctx, o3CutStart, "ejecutado", "weak_side_cut", ["O3", "D3"], "O3 corta desde el ala débil por detrás de D3, que mira al poste.");
+      }
+      const outcome = resolvePass(o4.attributes.T09, player(ctx, receiver).attributes.T11, true, player(ctx, deflectorId).attributes.T17, 1, ctx.rng);
+      event(ctx, tArrival, "ejecutado", "pass_released", ["O4", receiver], text);
+      record("pass_released");
+      if (outcome.kind === "deflected_loose_ball") return { ...resolveLooseBallAfterPass(ctx, tArrival, "O4", deflectorId), ...swap };
+      const delay = outcome.kind === "awkward_control" ? outcome.extraDelaySeconds : 0;
+      event(ctx, tArrival, "concedido", "pass_received", [receiver], receiver === "O2" ? "O2 recibe en la esquina." : "O3 recibe el corte junto al aro.");
+      return { ...resolveShotAttempt(ctx, { ...shot, tReady: shot.tReady + delay, prepSeconds: shot.prepSeconds + delay }), ...swap };
+    };
+    return [
+      {
+        id: "finalizar_poste",
+        value: rimValue,
+        completion: moveCompletion,
+        kind: "tiro",
+        values: { contesterId: realId(ctx, rim.id), opposition: rim.level, readySeconds: tRim, dig, doubled, stealProbability: doubled ? pressureSteal : 0 },
+        execute: shoot({ shooterId: "O4", shooterSkill: o4.attributes.T01, shotType: "close_finish", shooterPos: ATTACKED_HOOP, tReady: tRim, prepSeconds: CLOSE_FINISH_PREP_SECONDS, contesterId: rim.id, contesterArrival: rim.arrival, contesterGeometry: rim.geometry }),
+      },
+      {
+        id: "gancho_poste",
+        value: hookValue,
+        completion: moveCompletion,
+        kind: "tiro",
+        values: { contesterId: realId(ctx, hook.id), opposition: hook.level, shotType: hookType, dig, doubled },
+        execute: shoot({ shooterId: "O4", shooterSkill: shotSkill(o4, hookType), shotType: hookType, shooterPos: post, tReady: tHook, prepSeconds: CATCH_AND_SHOOT_PREP_SECONDS, contesterId: hook.id, contesterArrival: hook.arrival, contesterGeometry: hook.geometry }),
+      },
+      {
+        id: "salida_esquina_o2",
+        value: kickValue,
+        completion: 1 - deflectionProbability(d2.attributes.T17, o4.attributes.T09),
+        kind: "pase",
+        values: { contesterId: realId(ctx, kick.id), opposition: kick.level, dig, marginSeconds: kick.arrival - tKickReady },
+        execute: passTo("O2", corner, tKickArrival, "D2", { shooterId: "O2", shooterSkill: o2.attributes.T04, shotType: "three_point", shooterPos: corner, tReady: tKickReady, prepSeconds: CATCH_AND_SHOOT_PREP_SECONDS, contesterId: kick.id, contesterArrival: kick.arrival, contesterGeometry: kick.geometry }, "O4 saca el balón del poste hacia la esquina que deja la ayuda de D2."),
+      },
+      {
+        id: "corte_o3",
+        value: cutValue,
+        completion: 1 - deflectionProbability(d3.attributes.T17, o4.attributes.T09),
+        kind: "pase",
+        values: { contesterId: realId(ctx, cut.id), opposition: cut.level, cutterAtSpotSeconds: tO3AtCut },
+        execute: passTo("O3", DELAY_WEAK_CUT_SPOT, tCutArrival, "D3", { shooterId: "O3", shooterSkill: o3.attributes.T01, shotType: "close_finish", shooterPos: DELAY_WEAK_CUT_SPOT, tReady: tCutReady, prepSeconds: CLOSE_FINISH_PREP_SECONDS, contesterId: cut.id, contesterArrival: cut.arrival, contesterGeometry: cut.geometry }, "O4 encuentra el corte de O3 desde el ala débil."),
+      },
+      {
+        id: "repostear",
+        value: 0,
+        completion: 1,
+        kind: "salida",
+        values: {},
+        execute: (record) => delayOutlet(ctx, "O4", post, tRead, record, "O4 no encuentra ventaja: devuelve el balón arriba a O5 y vuelve a sellar el poste; el ataque se reorganiza.", swap),
+      },
+    ];
+  }
+  const best = (opts: HandlerReadOption[]) => Math.max(0, ...opts.map((o) => (Number.isFinite(o.value) ? o.value * o.completion : 0)));
+  const withDig = build(true);
+  const withoutDig = build(false);
+  const concessionWithDig = best(withDig);
+  const concessionWithoutDig = best(withoutDig);
+  const dig = concessionWithDig < concessionWithoutDig;
+  return { options: dig ? withDig : withoutDig, dig, concessionWithDig, concessionWithoutDig, tD2Dig, digPoint, digInTime, tRead };
+}
+
+/** Pase de entrada al poste y su lectura (desvío posible de D4, que defiende por detrás). */
+function postEntryOption(ctx: CoreContext, passerSlot: "O1" | "O5", passerPos: Point2D, tDecision: number, swap: Partial<PossessionCoreResult>): HandlerReadOption {
+  const o4 = player(ctx, "O4");
+  const d4 = player(ctx, "D4");
+  const passer = player(ctx, passerSlot);
+  const tCatch = tDecision + PASS_RELEASE_SECONDS + distanceSeconds(passerPos, ctx.positions.O4!);
+  const tRelease = tDecision + PASS_RELEASE_SECONDS;
+  const projected = postReadOptions(ctx, tCatch, tRelease, swap);
+  const value = Math.max(-Infinity, ...projected.options.filter((o) => o.kind !== "salida").map((o) => (Number.isFinite(o.value) ? o.value * o.completion : -Infinity)));
+  return {
+    id: "entrada_poste_o4",
+    value: Number.isFinite(value) ? value : -Infinity,
+    completion: 1 - deflectionProbability(d4.attributes.T17, passer.attributes.T09),
+    kind: "pase",
+    values: { postBestOption: [...projected.options].sort((a, b) => b.value * b.completion - a.value * a.completion)[0]?.id ?? null, digProjected: projected.dig },
+    execute: (record) => {
+      const outcome = resolvePass(passer.attributes.T09, o4.attributes.T11, true, d4.attributes.T17, 1, ctx.rng);
+      event(ctx, tCatch, "ejecutado", "pass_released", [passerSlot, "O4"], `${passerSlot} entra el balón al poste bajo a O4.`);
+      record("pass_released");
+      if (outcome.kind === "deflected_loose_ball") return { ...resolveLooseBallAfterPass(ctx, tCatch, passerSlot, "D4"), ...swap };
+      const tAct = tCatch + (outcome.kind === "awkward_control" ? outcome.extraDelaySeconds : 0);
+      event(ctx, tCatch, "concedido", "pass_received", ["O4"], "O4 recibe en el poste bajo con D4 a la espalda.");
+      const read = postReadOptions(ctx, tAct, tRelease, swap);
+      auditDecision(ctx, tAct, {
+        point: "respuesta_poste",
+        holderId: "O4",
+        participants: ["D2", "O2", "O4", "D4"],
+        chosenOptionId: read.dig ? "ayudar_poste" : "quedarse_esquina",
+        options: [
+          { id: "ayudar_poste", status: read.dig ? "elegida" : "descartada_por_condicion", reasonCode: read.dig ? "help_lower_concession" : "help_higher_concession", values: { concessionValue: read.concessionWithDig, digArrivalSeconds: read.tD2Dig, postTurnSeconds: read.tRead + CLOSE_FINISH_PREP_SECONDS, digInTime: read.digInTime } },
+          { id: "quedarse_esquina", status: read.dig ? "descartada_por_condicion" : "elegida", reasonCode: read.dig ? "help_higher_concession" : "help_lower_concession", values: { concessionValue: read.concessionWithoutDig } },
+        ],
+      });
+      if (read.dig) {
+        setArrival(ctx, "D2", read.tD2Dig, read.digPoint, tRelease + recognitionLatencySeconds(player(ctx, "D2").attributes.M01, player(ctx, "D2").attributes.M05));
+        event(ctx, read.tD2Dig, "concedido", "post_dig", ["D2", "O2"], "D2 se hunde a cerrar el giro del poste («dig») y deja a O2 en la esquina.", { digPoint: read.digPoint });
+      }
+      return decideHandlerRead(ctx, "lectura_poste", read.tRead, ["O4", "D4", "D2", "O2", "O3"], read.options, "O4");
+    },
+  };
+}
+
+function runDelayPhase(ctx: CoreContext, response: DelayResponse): PossessionCoreResult {
+  const o1 = player(ctx, "O1");
+  const o5 = player(ctx, "O5");
+  const d1 = player(ctx, "D1");
+  const d5 = player(ctx, "D5");
+  const wing = ctx.positions.O1!;
+  const hub = ctx.positions.O5!;
+  const clock = ctx.shotClockMs / 1000;
+  const swap: Partial<PossessionCoreResult> = response === "cambiar_entrega" ? { defensiveSwap: ["D1", "D5"] } : {};
+  event(ctx, 0, "reconocido", "delay_hold", ["O1", "O5", "O4"], "Delay: O1 retrasa la acción en el ala y busca a O5 arriba; O4 se coloca en el poste bajo.", { response });
+
+  // --- 1. Entrada al pívot de arriba ----------------------------------------
+  const tEntry = PASS_RELEASE_SECONDS + distanceSeconds(wing, hub);
+  if (clock - tEntry <= 0) {
+    if (ctx.linked) return linkedShotClockViolation(ctx, "O1");
+    return finalize(ctx, { kind: "shot_clock_violation" }, { status: "held", holderId: "O1", position: wing });
+  }
+  const entryCompletion = 1 - deflectionProbability(d5.attributes.T17, o1.attributes.T09);
+  const entryPass: ReturnType<typeof resolvePass> = ctx.projecting ? { kind: "clean_reception" } : resolvePass(o1.attributes.T09, o5.attributes.T11, true, d5.attributes.T17, 1, ctx.rng);
+  event(ctx, tEntry, "ejecutado", "pass_released", ["O1", "O5"], "O1 entra el balón a O5 arriba.");
+  if (entryPass.kind === "deflected_loose_ball") {
+    auditDecision(ctx, tEntry, { point: "entrega_delay", holderId: "O1", participants: ["O1", "O5", "D5"], chosenOptionId: "entrada_negada", factLinkKind: "pass_released", options: [{ id: "entrada_o5", status: "elegida", reasonCode: "entry_pass_denied" }] });
+    return { ...resolveLooseBallAfterPass(ctx, tEntry, "O1", "D5"), ...swap };
+  }
+  const tO5Ready = tEntry + (entryPass.kind === "awkward_control" ? entryPass.extraDelaySeconds : 0);
+  event(ctx, tEntry, "concedido", "pass_received", ["O5"], "O5 recibe arriba, por encima del arco.");
+
+  // --- 2. O1 sigue su pase a por la entrega ---------------------------------
+  const handoffPoint = pointShortOfTarget(wing, hub, COMBINED_CONTACT_RADIUS_METERS);
+  const tO1AtHandoff = PASS_RELEASE_SECONDS + timeToReach(wing, handoffPoint, attackerMoveSpeedMps(o1.attributes.F01));
+  const tHandoffReady = Math.max(tO5Ready, tO1AtHandoff);
+  setArrival(ctx, "O1", tO1AtHandoff, handoffPoint, PASS_RELEASE_SECONDS);
+  // D1 persigue por encima de la entrega: el cuerpo de O5 le retrasa (misma primitiva que una pantalla).
+  const handoffScreenDelay = screenInterceptDelaySeconds(o5.attributes.T13, o5.attributes.F05, d1.attributes.T16) + screenContactAdjustmentSeconds(o5.measures.weightKg - d1.measures.weightKg);
+  const tD1Recognize = PASS_RELEASE_SECONDS + recognitionLatencySeconds(d1.attributes.M01, d1.attributes.M05);
+  const d1Speed = defenderLateralSpeedMps(d1.attributes.F04);
+  const offBallChoice: OffBallDefensiveCallChoice = ctx.input.offBallDefensiveCall ?? "guardar_espacio";
+  const d1TrailFor = (call: OffBallDefensiveCall) => {
+    const adjustment = call === "negar_primera_salida" ? -OFF_BALL_CALL_NAVIGATION_ADJUSTMENT_SECONDS : OFF_BALL_CALL_NAVIGATION_ADJUSTMENT_SECONDS;
+    return Math.max(tD1Recognize + timeToReach(ctx.positions.D1!, handoffPoint, d1Speed), tHandoffReady + Math.max(0, handoffScreenDelay + adjustment));
+  };
+
+  // --- Respuesta de D5 a la entrega -----------------------------------------
+  const d5Speed = defenderLateralSpeedMps(d5.attributes.F04);
+  const tD5Recognize = PASS_RELEASE_SECONDS + recognitionLatencySeconds(d5.attributes.M01, d5.attributes.M05);
+  const jumpPoint = moveToward(handoffPoint, ATTACKED_HOOP, 1, COMBINED_CONTACT_RADIUS_METERS);
+  const tD5AtJump = Math.max(tD5Recognize, tD5Recognize + distance(ctx.positions.D5!, jumpPoint) / d5Speed - perimeterArrivalAdjustmentSeconds(d5.attributes.T22));
+  // Salta la entrega: la niega si ya está colocado (llegada + frenada F03) cuando O1 llega al punto.
+  const denied = response === "saltar_entrega" && tD5AtJump + closeoutBrakingExtraSeconds(d5.attributes.F03) <= tHandoffReady;
+
+  const optionsCache = new Map<OffBallDefensiveCall, { options: HandlerReadOption[]; tDecision: number; holder: "O1" | "O5" }>();
+  const handlerOptionsFor = (call: OffBallDefensiveCall): { options: HandlerReadOption[]; tDecision: number; holder: "O1" | "O5" } => {
+    const cached = optionsCache.get(call);
+    if (cached) return cached;
+    const built = buildHandlerOptions(call);
+    optionsCache.set(call, built);
+    return built;
+  };
+  function buildHandlerOptions(call: OffBallDefensiveCall): { options: HandlerReadOption[]; tDecision: number; holder: "O1" | "O5" } {
+    const tD1Back = d1TrailFor(call);
+    if (!denied) {
+      const tDecision = tHandoffReady;
+      const d1Trail = chaser(ctx, "D1", handoffPoint, tD1Back);
+      const d5Help: ContestCandidate =
+        response === "hundirse"
+          ? chaser(ctx, "D5", ctx.positions.D5!, tDecision, (p) => interiorArrivalAdjustmentSeconds(p.attributes.T23))
+          : chaser(ctx, "D5", jumpPoint, Math.max(tD5AtJump, tDecision), (p) => interiorArrivalAdjustmentSeconds(p.attributes.T23));
+      const d4Help = chaser(ctx, "D4", ctx.positions.D4!, tDecision + recognitionLatencySeconds(player(ctx, "D4").attributes.M01, player(ctx, "D4").attributes.M05), (p) => interiorArrivalAdjustmentSeconds(p.attributes.T23));
+      const tRim = tDecision + timeToReach(handoffPoint, ATTACKED_HOOP, attackerMoveSpeedMps(o1.attributes.F01)) + CLOSE_FINISH_PREP_SECONDS;
+      const rim = bestContest(ctx, [d5Help, d1Trail, d4Help], ATTACKED_HOOP, tRim, CLOSE_FINISH_PREP_SECONDS)!;
+      const rimValue = tRim < clock ? 2 * shotProbability(CLOSE_FINISH_BASE_PROBABILITY, o1.attributes.T01, rim.level) : -Infinity;
+      const tTriple = tDecision + movingShotPrepSeconds(o1.attributes.T06);
+      const d5AtBall: ContestCandidate = { id: "D5", geometryTo: () => ({ geometry: { originPos: ctx.positions.D5!, destinationPos: jumpPoint, speedMps: d5Speed, brakingExtraSeconds: closeoutBrakingExtraSeconds(d5.attributes.F03) }, arrivalSeconds: tD5AtJump }) };
+      const triple = bestContest(ctx, response === "hundirse" ? [d1Trail] : [d1Trail, d5AtBall], handoffPoint, tTriple, movingShotPrepSeconds(o1.attributes.T06))!;
+      const tripleValue = isBehindThreePointLine(handoffPoint) && tTriple < clock ? 3 * shotProbability(THREE_POINT_BASE_PROBABILITY, o1.attributes.T04, triple.level) : -Infinity;
+      const pullUp = response === "hundirse" ? planPullUp(ctx, { shooterId: "O1", from: handoffPoint, tStart: tDecision, protectorPos: ctx.positions.D5!, standoffMeters: contestReachMeters(d5.measures.wingspanCm) + 0.05, contesters: [d1Trail, d5Help] }) : null;
+      const pullUpValue = pullUp && pullUp.tReady < clock ? pullUp.value : -Infinity;
+      const options: HandlerReadOption[] = [
+        {
+          id: "finalizar",
+          value: rimValue,
+          completion: entryCompletion,
+          kind: "tiro",
+          values: { contesterId: realId(ctx, rim.id), opposition: rim.level, readySeconds: tRim, response },
+          execute: (record) => {
+            record();
+            return { ...resolveShotAttempt(ctx, { shooterId: "O1", shooterSkill: o1.attributes.T01, shotType: "close_finish", shooterPos: ATTACKED_HOOP, tReady: tRim, prepSeconds: CLOSE_FINISH_PREP_SECONDS, contesterId: rim.id, contesterArrival: rim.arrival, contesterGeometry: rim.geometry }), ...swap };
+          },
+        },
+        {
+          id: "triple_o1",
+          value: tripleValue,
+          completion: entryCompletion,
+          kind: "tiro",
+          values: { contesterId: realId(ctx, triple.id), opposition: triple.level, d1BackSeconds: tD1Back, response },
+          execute: (record) => {
+            record();
+            return { ...resolveShotAttempt(ctx, { shooterId: "O1", shooterSkill: o1.attributes.T04, shotType: "three_point", shooterPos: handoffPoint, tReady: tTriple, prepSeconds: movingShotPrepSeconds(o1.attributes.T06), contesterId: triple.id, contesterArrival: triple.arrival, contesterGeometry: triple.geometry }), ...swap };
+          },
+        },
+        {
+          id: "parada_o1",
+          value: pullUpValue,
+          completion: entryCompletion,
+          kind: "tiro",
+          values: { shotType: pullUp?.shotType ?? null, contesterId: pullUp ? realId(ctx, pullUp.contesterId) : null, opposition: pullUp?.opposition ?? null },
+          execute: (record) => {
+            record();
+            const plan = pullUp!;
+            setArrival(ctx, "O1", tDecision + plan.travelSeconds, plan.spot, tDecision);
+            return { ...resolveShotAttempt(ctx, { shooterId: "O1", shooterSkill: shotSkill(o1, plan.shotType), shotType: plan.shotType, shooterPos: plan.spot, tReady: plan.tReady, prepSeconds: plan.prepSeconds, contesterId: plan.contesterId, contesterArrival: plan.contesterArrival, contesterGeometry: plan.contesterGeometry }), ...swap };
+          },
+        },
+        { ...postEntryOption(ctx, "O1", handoffPoint, tDecision, swap), completion: entryCompletion * (1 - deflectionProbability(player(ctx, "D4").attributes.T17, o1.attributes.T09)) },
+        {
+          id: "salida_segura",
+          value: 0,
+          completion: 1,
+          kind: "salida",
+          values: {},
+          execute: (record) => delayOutlet(ctx, "O1", handoffPoint, tDecision, record, "O1 sale de la entrega sin ventaja y devuelve el balón a O5; el ataque se reorganiza.", swap),
+        },
+      ];
+      return { options, tDecision, holder: "O1" };
+    }
+    // Entrega negada: O5 se la queda con su defensor fuera de la pintura.
+    const tKeep = tHandoffReady;
+    const d5Recover = chaser(ctx, "D5", jumpPoint, Math.max(tD5AtJump, tKeep) + recognitionLatencySeconds(d5.attributes.M01, d5.attributes.M05), (p) => interiorArrivalAdjustmentSeconds(p.attributes.T23));
+    const d4Help = chaser(ctx, "D4", ctx.positions.D4!, tKeep + recognitionLatencySeconds(player(ctx, "D4").attributes.M01, player(ctx, "D4").attributes.M05), (p) => interiorArrivalAdjustmentSeconds(p.attributes.T23));
+    const tRim = tKeep + timeToReach(hub, ATTACKED_HOOP, attackerMoveSpeedMps(o5.attributes.F01)) + CLOSE_FINISH_PREP_SECONDS;
+    const rim = bestContest(ctx, [d5Recover, d4Help], ATTACKED_HOOP, tRim, CLOSE_FINISH_PREP_SECONDS)!;
+    const rimValue = tRim < clock ? 2 * shotProbability(CLOSE_FINISH_BASE_PROBABILITY, o5.attributes.T01, rim.level) : -Infinity;
+    // Puerta de atrás: O1, con D5 en su camino arriba, corta al aro por detrás; D1 le persigue tarde.
+    const tO1AtRim = tKeep + timeToReach(handoffPoint, ATTACKED_HOOP, attackerMoveSpeedMps(o1.attributes.F01));
+    const tBackdoorArrival = Math.max(tO1AtRim, tKeep + PASS_RELEASE_SECONDS + distanceSeconds(hub, ATTACKED_HOOP));
+    const tBackdoorReady = tBackdoorArrival + CLOSE_FINISH_PREP_SECONDS;
+    const d1Chase = chaser(ctx, "D1", ctx.positions.D1!, tKeep + recognitionLatencySeconds(d1.attributes.M01, d1.attributes.M05));
+    const backdoor = bestContest(ctx, [d1Chase, d4Help], ATTACKED_HOOP, tBackdoorReady, CLOSE_FINISH_PREP_SECONDS)!;
+    const backdoorValue = tBackdoorReady < clock ? 2 * shotProbability(CLOSE_FINISH_BASE_PROBABILITY, o1.attributes.T01, backdoor.level) : -Infinity;
+    const options: HandlerReadOption[] = [
+      {
+        id: "finalizar_o5",
+        value: rimValue,
+        completion: entryCompletion,
+        kind: "tiro",
+        values: { contesterId: realId(ctx, rim.id), opposition: rim.level, readySeconds: tRim },
+        execute: (record) => {
+          record();
+          return { ...resolveShotAttempt(ctx, { shooterId: "O5", shooterSkill: o5.attributes.T01, shotType: "close_finish", shooterPos: ATTACKED_HOOP, tReady: tRim, prepSeconds: CLOSE_FINISH_PREP_SECONDS, contesterId: rim.id, contesterArrival: rim.arrival, contesterGeometry: rim.geometry }), ...swap };
+        },
+      },
+      {
+        id: "puerta_atras_o1",
+        value: backdoorValue,
+        completion: entryCompletion * (1 - deflectionProbability(d5.attributes.T17, o5.attributes.T09)),
+        kind: "pase",
+        values: { contesterId: realId(ctx, backdoor.id), opposition: backdoor.level, cutterAtRimSeconds: tO1AtRim },
+        execute: (record) => {
+          setArrival(ctx, "O1", tO1AtRim, ATTACKED_HOOP, tKeep);
+          event(ctx, tKeep, "ejecutado", "backdoor_cut", ["O1", "D1"], "Con D5 en el punto de la entrega, O1 corta por la puerta de atrás hacia el aro.");
+          const outcome = resolvePass(o5.attributes.T09, o1.attributes.T11, true, d5.attributes.T17, 1, ctx.rng);
+          event(ctx, tBackdoorArrival, "ejecutado", "pass_released", ["O5", "O1"], "O5 encuentra a O1 en el corte por la puerta de atrás.");
+          record("pass_released");
+          if (outcome.kind === "deflected_loose_ball") return { ...resolveLooseBallAfterPass(ctx, tBackdoorArrival, "O5", "D5"), ...swap };
+          const delay = outcome.kind === "awkward_control" ? outcome.extraDelaySeconds : 0;
+          event(ctx, tBackdoorArrival, "concedido", "pass_received", ["O1"], "O1 recibe junto al aro.");
+          return { ...resolveShotAttempt(ctx, { shooterId: "O1", shooterSkill: o1.attributes.T01, shotType: "close_finish", shooterPos: ATTACKED_HOOP, tReady: tBackdoorReady + delay, prepSeconds: CLOSE_FINISH_PREP_SECONDS + delay, contesterId: backdoor.id, contesterArrival: backdoor.arrival, contesterGeometry: backdoor.geometry }), ...swap };
+        },
+      },
+      { ...postEntryOption(ctx, "O5", hub, tKeep, swap), completion: entryCompletion * (1 - deflectionProbability(player(ctx, "D4").attributes.T17, o5.attributes.T09)) },
+      {
+        id: "salida_segura",
+        value: 0,
+        completion: 1,
+        kind: "salida",
+        values: {},
+        execute: (record) => delayOutlet(ctx, "O5", hub, tKeep, record, "O5 se queda el balón sin ventaja e invierte al ala débil; el ataque se reorganiza.", swap),
+      },
+    ];
+    return { options, tDecision: tKeep, holder: "O5" };
+  }
+
+  // Orden sin balón de D1 (ME-06 §3.1, mismo ajuste): en `auto`, la de menor concesión proyectada.
+  const concessionOf = (call: OffBallDefensiveCall) => Math.max(0, ...handlerOptionsFor(call).options.map((o) => (Number.isFinite(o.value) ? o.value * o.completion : 0)));
+  let call: OffBallDefensiveCall;
+  if (offBallChoice === "auto") {
+    const negar = concessionOf("negar_primera_salida");
+    const guardar = concessionOf("guardar_espacio");
+    call = negar < guardar ? "negar_primera_salida" : "guardar_espacio";
+    auditDecision(ctx, tD1Recognize, {
+      point: "seleccion_orden_sin_balon",
+      holderId: null,
+      participants: ["D1", "O1"],
+      chosenOptionId: call,
+      options: [
+        { id: "negar_primera_salida", status: call === "negar_primera_salida" ? "elegida" : "descartada_por_condicion", reasonCode: call === "negar_primera_salida" ? "off_ball_call_lower_concession" : "off_ball_call_higher_concession", values: { concessionValue: negar } },
+        { id: "guardar_espacio", status: call === "guardar_espacio" ? "elegida" : "descartada_por_condicion", reasonCode: call === "guardar_espacio" ? (negar === guardar ? "off_ball_call_tied_base_kept" : "off_ball_call_lower_concession") : "off_ball_call_higher_concession", values: { concessionValue: guardar } },
+      ],
+    });
+  } else {
+    call = offBallChoice;
+  }
+  const tD1Back = d1TrailFor(call);
+
+  // Trayectorias y hechos de la entrega.
+  if (response === "cambiar_entrega") {
+    const tD5Switch = Math.max(tD5Recognize, tD5Recognize + distance(ctx.positions.D5!, jumpPoint) / d5Speed - perimeterArrivalAdjustmentSeconds(d5.attributes.T22));
+    setArrival(ctx, "D5", tD5Switch, jumpPoint, tD5Recognize);
+    setArrival(ctx, "D1", tD1Recognize + timeToReach(ctx.positions.D1!, moveToward(hub, ATTACKED_HOOP, 1, COMBINED_CONTACT_RADIUS_METERS), d1Speed), moveToward(hub, ATTACKED_HOOP, 1, COMBINED_CONTACT_RADIUS_METERS), tD1Recognize);
+    event(ctx, tD5Recognize, "reconocido", "switch_committed", ["D5", "D1"], "D5 canta el cambio en la entrega: toma a O1 y D1 se queda con O5.", { switchPoint: jumpPoint });
+  } else if (response === "saltar_entrega") {
+    setArrival(ctx, "D5", tD5AtJump, jumpPoint, tD5Recognize);
+    setArrival(ctx, "D1", tD1Back, handoffPoint, tD1Recognize);
+    event(ctx, tD5AtJump, "ejecutado", "show_committed", ["D5"], denied ? "D5 salta al punto de la entrega antes que O1 y la niega; deja la pintura." : "D5 sale a saltar la entrega, pero O1 llega antes; D5 queda fuera de la pintura.", { jumpPoint, arrivesAt: tD5AtJump, denied });
+  } else {
+    setArrival(ctx, "D1", tD1Back, handoffPoint, tD1Recognize);
+  }
+  auditDecision(ctx, tHandoffReady, {
+    point: "entrega_delay",
+    holderId: "O5",
+    participants: ["O5", "O1", "D1", "D5"],
+    chosenOptionId: denied ? "entrega_negada" : "entrega_completada",
+    options: [
+      denied
+        ? { id: "entrega_negada", status: "elegida", reasonCode: "handoff_denied_defender_arrived", values: { response, d5JumpArrivalSeconds: tD5AtJump, handoffReadySeconds: tHandoffReady, d1BackSeconds: tD1Back, handoffScreenDelay } }
+        : { id: "entrega_completada", status: "elegida", reasonCode: "handoff_completed", values: { response, d5JumpArrivalSeconds: response === "saltar_entrega" ? tD5AtJump : null, handoffReadySeconds: tHandoffReady, d1BackSeconds: tD1Back, handoffScreenDelay } },
+    ],
+  });
+  event(ctx, tHandoffReady, denied ? "concedido" : "ejecutado", denied ? "dho_denied" : "dho_completed", ["O5", "O1"], denied ? "O5 se queda el balón: la entrega está negada." : `O5 entrega en mano a O1; D1 persigue con ${(tD1Back - tHandoffReady).toFixed(2)} s de retraso.`, { handoffPoint, denied });
+
+  const { options, tDecision, holder } = handlerOptionsFor(call);
+  if (clock - tDecision <= 0) {
+    if (ctx.linked) return linkedShotClockViolation(ctx, holder);
+    return finalize(ctx, { kind: "shot_clock_violation" }, { status: "held", holderId: holder, position: holder === "O1" ? handoffPoint : hub });
+  }
+  return decideHandlerRead(ctx, holder === "O1" ? "lectura_delay" : "lectura_delay_pivote", tDecision, holder === "O1" ? ["O1", "O5", "O4", "D1", "D5"] : ["O5", "O1", "O4", "D5", "D4"], options, holder);
 }
 
 interface EntryOpportunity {

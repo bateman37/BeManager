@@ -47,6 +47,7 @@ import { getScenario } from "../lab/scenario";
 import type { ObservedOutcome } from "../lab/lab-0-4-parameters";
 import { LATERAL_PNR_TARGETS, type ScreenPlacement, type ScreenPlacementChoice } from "../lab/lab-0-7-parameters";
 import { HORNS_PNR_TARGETS } from "../lab/lab-0-8-parameters";
+import { DELAY_TARGETS } from "../lab/lab-0-10-parameters";
 import { eligiblePlacements } from "../tactics/playbook-card";
 import { FIRST_READ_TIE_BAND_POINTS, contestReachMeters, evaluateContestLevel, type LAB_0_3_PARAMETERS_VERSION } from "../lab/lab-0-3-parameters";
 import {
@@ -1293,6 +1294,7 @@ export abstract class LinkedRun {
   protected dispositionTargets(placement: ScreenPlacement = "central"): Record<string, Point2D> {
     if (placement === "lateral") return { ...LATERAL_PNR_TARGETS };
     if (placement === "horns") return { ...HORNS_PNR_TARGETS };
+    if (placement === "delay") return { ...DELAY_TARGETS };
     const scenario = getScenario(this.settings.dispositionScenarioId);
     const targets: Record<string, Point2D> = {};
     for (const slot of [...scenario.offense, ...scenario.defense]) targets[slot.playerId] = slot.initialPosition;
@@ -1392,7 +1394,13 @@ export abstract class LinkedRun {
         // ayuda); los dos exteriores restantes ocupan las esquinas (O2, O4).
         // Si el poseedor es un interior, en Horns no crea él: devuelve el
         // balón al manejador. Los defensores siguen a su marca.
-        const maps = placement === "horns" ? this.hornsRoleMaps(frame, handlerMap) : [handlerMap, swapRoles(handlerMap, "4", "5")];
+        // Delay (LAB-0.10): los dos interiores son el pívot de arriba (O5) y el poste (O4).
+        const maps =
+          placement === "horns"
+            ? this.hornsRoleMaps(frame, handlerMap)
+            : placement === "delay"
+              ? this.delayRoleMaps(frame, handlerMap)
+              : [handlerMap, swapRoles(handlerMap, "4", "5")];
         for (const map of maps) {
           const handlerId = map.O1!;
           let tAllSet = t0;
@@ -1517,6 +1525,21 @@ export abstract class LinkedRun {
       out.push(map);
     }
     return out;
+  }
+
+  /**
+   * Asignaciones Delay (LAB-0.10) desde una asignación con su creador ya
+   * fijado: cada interior del quinteto puede ser el pívot de arriba (O5) y el
+   * otro el poste (O4); los exteriores que no crean van a la esquina fuerte
+   * (O2, quien ya era O2 si es exterior) y al ala débil (O3). Un interior no
+   * crea en Delay (como en Horns). Cada atacante conserva a su defensor.
+   */
+  private delayRoleMaps(frame: Frame, handlerMap: Readonly<Record<string, string>>): Record<string, string>[] {
+    return this.hornsRoleMaps(frame, handlerMap).map((horns) => {
+      // Misma elección de manejador e interiores que Horns, con el segundo interior en el poste (O4) y el exterior en el ala débil (O3).
+      const map: Record<string, string> = { ...horns, O3: horns.O4!, O4: horns.O3!, D3: horns.D4!, D4: horns.D3! };
+      return map;
+    });
   }
 
   private slotOf(map: Readonly<Record<string, string>>, id: string): string {
@@ -1652,7 +1675,9 @@ export abstract class LinkedRun {
         actors: [frame.slotToId.O1!, frame.slotToId.O5!],
         text:
           entryText ??
-          (this.currentPlacement === "horns"
+          (this.currentPlacement === "delay"
+            ? `Los cinco atacantes están situados en Delay: ${frame.slotToId.O5} arriba por encima del arco, ${frame.slotToId.O4} en el poste bajo, ${frame.slotToId.O2} en la esquina fuerte y ${frame.slotToId.O3} en el ala débil; ${frame.slotToId.O1} retrasa la acción desde el ala (${coverageText[coverage] ?? coverage}) con ${(remaining / 1000).toFixed(1)} s de lanzamiento.${lateText}`
+            : this.currentPlacement === "horns"
             ? `Los cinco atacantes están situados en Horns: ${frame.slotToId.O5} y ${frame.slotToId.O3} en los codos, ${frame.slotToId.O2} y ${frame.slotToId.O4} en las esquinas; ${frame.slotToId.O1} usa el bloqueo de ${frame.slotToId.O5} (${coverageText[coverage] ?? coverage}) con ${(remaining / 1000).toFixed(1)} s de lanzamiento.${lateText}`
             : `Los cinco atacantes están situados: ${frame.slotToId.O1} y ${frame.slotToId.O5} inician el bloqueo directo ${this.currentPlacement} (${coverageText[coverage] ?? coverage}) con ${(remaining / 1000).toFixed(1)} s de lanzamiento.${lateText}`),
         detail: { shotClockMs: remaining, lateDefenders: late, roles: { ...frame.slotToId }, placement: this.currentPlacement },
