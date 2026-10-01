@@ -158,7 +158,12 @@ Pendiente: la respuesta de zona.
 altura».** *Colocación*: al organizar, `assignOrganizedRoles` compara
 además la colocación del bloqueo (`screenPlacement`: `auto` evalúa central
 y lateral con la misma proyección en seco que creador y bloqueador; el
-entrenador puede fijar una) y la audita en `colocacion_bloqueo`. La lateral
+entrenador puede fijar una) y la audita en `colocacion_bloqueo`. Desde la sesión v2-6 la colocación
+(ficha) se elige por su mejor valor proyectado y la banda de empate
+(`FIRST_READ_TIE_BAND_POINTS`) solo desempata asignaciones de creador y
+bloqueador de la misma ficha y del mismo plan, por el instante de su primera
+lectura real (situarse + preparación de la ficha); antes desempataba también
+entre fichas por el instante de quedar situados. La lateral
 usa la disposición `LATERAL_PNR_TARGETS` (manejador en el ala, bloqueador a
 3,3 m del eje, misma distancia manejador–bloqueador que la central) y su
 short roll lateral; la mano a mano solo existe desde la central
@@ -254,9 +259,12 @@ o salida segura. Pruebas: `me07b-v2-spain.test.ts`, `lab-0-9-parameters.test.ts`
 *Colocación* (`DELAY_TARGETS`): un interior arriba por encima del arco (O5),
 el otro en el poste bajo del lado del balón (O4), el manejador en el ala
 derecha, la esquina fuerte (O2) y el ala débil (O3) ocupadas; los dos
-interiores por el orden de roles del quinteto. *Entrada*: solo por orden
-(`screenPlacement=delay`); en la colocación `auto` no compite todavía
-(`offeredInAuto=false`). Familia: la de la entrega en mano. *Acción*: pase de
+interiores por el orden de roles del quinteto. *Entrada*: por orden
+(`screenPlacement=delay`) o, desde la sesión v2-6, en la colocación `auto`
+(`offeredInAuto=true`): compite por su valor proyectado, ponderado por las
+respuestas a la entrega que el rival ha mostrado (`defenseByHandoffResponse`,
+aparte de las coberturas de pantalla; sus resultados tampoco cuentan como
+mano a mano central). Familia: la de la entrega en mano. *Acción*: pase de
 entrada arriba (desvío por D5); el manejador sigue su pase y recibe la
 entrega en mano a contacto del pívot: el cuerpo de O5 retrasa a D1 como una
 pantalla (T13/F05 de O5, T16 de D1, peso), ajustado por la orden sin balón de

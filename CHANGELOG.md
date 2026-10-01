@@ -113,6 +113,18 @@ decisiones duraderas viven en `docs/decisions/`, no aquí.
   Solo por orden («Colocación: Delay»): en `auto` no compite todavía. Corregido
   en el recorrido de `/lab`: el corte atravesaba a su defensor y cada corte era
   falta tardía (3–5 excluidos por partido). Pruebas en `me07b-v2-delay.test.ts`.
+- **§2.2 Comparador de fichas y Delay en `auto` (sesión v2-6).** La ficha
+  (colocación) se elige por su valor proyectado; la banda de empate solo
+  desempata asignaciones de la misma ficha y del mismo plan, por la primera
+  lectura real (antes decidía el 81,9 % de las colocaciones a favor de una que
+  valía menos). Delay compite en `auto` frente a las respuestas a la entrega
+  vistas. Arreglos de estados alcanzados: balón suelto recuperado conserva las
+  parejas vivas; receptor del roll sin reloj acaba en violación auditada.
+  Foto de las 20: central 93,4 % → 40,5 % de las colocaciones, Delay 0,7 %;
+  **la familia sigue siendo bloqueo en el 94,0 %** (antes 86,5 %), con causa
+  medida en `docs/match/analysis/ME-07B-v2-comparador-v2-6.md` y scripts
+  `me07b-v2-placement-gap.ts`, `me07b-v2-projection-calibration.ts` y
+  `me07b-v2-possession-slice.ts`. Semillas de escenario recalculadas con causa.
 - **Saques (stack, Iverson, box, diamond, elevator):** analizados, sin
   mecanismo nuevo; falta la primitiva de saque defendido (nota en la matriz).
 - **§2.2/§5 El ataque proyecta contra la defensa observada.** Selector de

@@ -183,7 +183,18 @@ el resto `coverage_not_in_card`; puntos `entrega_delay` (`entrega_completada`/
 es quien lee: manejador, pívot o poste). Hechos `delay_hold`, `dho_completed`,
 `dho_denied`, `backdoor_cut`, `post_dig` (`digPoint`), `weak_side_cut`. La
 configuración exportada de cada equipo añade `chainedVariant` y
-`backScreenCall` (entran en la huella).
+`backScreenCall` (entran en la huella). **v2-6 (comparador):**
+`colocacion_bloqueo` añade por opción `firstReadSeconds`, el desglose
+`valueAgainst_<cobertura|respuesta>` y `coverageWeight_<cobertura>`, la mejor vía
+ante el plan base (`baseBestRead`, `baseBestReadRawValue`,
+`baseBestReadCompletion`, `baseDecisionSeconds`), `spainCalled` en Horns y, en
+la elegida, la asignación ejecutada (`chosenAssignmentValue`,
+`chosenHandlerId`, `chosenScreenerId`, `chosenFirstReadSeconds`); motivo nuevo
+`placement_tied_first_read_later` (a igual valor exacto) en lugar de
+`creator_ready_later_in_band` entre fichas. `organizacion_creador` añade
+`firstReadSeconds`. `lectura_segunda_o5` sin opción (`chosenOptionId=null`,
+todas `receiver_option_not_viable` con `shotClockSeconds`) cuando el reloj
+expira antes de cualquier vía del receptor.
 **§2.6:** `result.summary.shots` enlaza cada FGA a la
 familia elegida antes que él en su fase y a la última decisión de
 lectura/entrada anterior (`causingDecision` con id, punto, opción,

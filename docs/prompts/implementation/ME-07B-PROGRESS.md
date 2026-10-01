@@ -804,3 +804,125 @@ Siguiente paso: la primitiva de saque defendido (colocación por ficha, marca
 de cada receptor, pantallas sin balón, lectura del sacador con la cuenta de
 5 s, pase con desvío) y sobre ella una ficha de saque; contrastar Delay para
 dejarlo competir en `auto`.
+
+### Sesión v2-6 — 2026-10-01
+
+**Base:** `478ad56`; rama `claude/me-07b-v2-capitulo-tactico`, **PR #11 Draft**
+(no se fusiona ni se marca Ready). Encargo de Dennis para esta ronda (literal):
+«Pausa la construcción de saques. La próxima ronda debe centrarse en el
+partido auto/auto: hacer que Delay pueda competir mediante una comparación
+válida, comprobar por qué domina el bloqueo directo y mostrar en /lab
+partidos completos con decisiones variadas y explicables, sin cuotas
+artificiales. Compara las mismas 20 semillas y enseña posesiones
+consecutivas, no solo jugadas escogidas como ejemplo. Deja la PR en Draft y
+entrega los resultados aunque el monopolio persista.» Saques: sin trabajo.
+
+**Resultado en una línea: el monopolio del bloqueo persiste como familia
+(94,0 % de 4.710 en la foto de las 20; antes 86,5 % de 4.613) y se reparte
+como ficha (central 93,4 % → 40,5 %); Delay compite y se elige 33 veces
+(0,7 %).** Detalle en `docs/match/analysis/ME-07B-v2-comparador-v2-6.md`.
+
+#### Trabajo interrumpido de la sesión anterior (qué se hizo con él)
+La sesión se cortó por límite de API con el motor sin commitear (comparador,
+Delay en `auto`, balón suelto con parejas vivas, receptor del roll sin reloj
+y semillas de escenario recalculadas). Se leyó el diff completo y se ejecutó
+`npm run check`: **verde** (350 tests). Se **terminó y commiteó tal cual**
+(`47f2eea`) porque era coherente y correcto; no se revirtió nada. La
+afirmación de su comentario («decidía el 82 % de las colocaciones a favor de
+una ficha que valía menos») se **verificó** sobre `478ad56`: 3.801 de 4.639
+(81,9 %), 3.556 a favor de la central.
+
+#### Hecho y verificado (con commits)
+1. `47f2eea` — **ficha por valor y Delay en `auto`** (ver CHANGELOG):
+   colocación por mejor valor proyectado; banda de LAB-0.3 solo entre
+   asignaciones de la misma ficha, por la primera lectura real
+   (`firstReadSeconds`); Delay valorado frente a `defenseByHandoffResponse`
+   (aparte de las coberturas de pantalla) y fuera de `offenseByFamily`;
+   motivo `placement_tied_first_read_later`; desglose por cobertura en la
+   auditoría; balón suelto recuperado por el ataque conserva las parejas vivas
+   (un segundo cambio en la posesión las dejaba al revés); receptor del roll
+   sin vía viable porque el reloj expira → lectura auditada sin opción y
+   violación (antes, excepción). Nueva `me07b-v2-comparator.test.ts`.
+2. `54a0979` — **la banda no cruza de plan en la central** (encontrado en esta
+   sesión al comparar Sierra +5: 264 mano a mano → 3 con `47f2eea`; 71
+   colocaciones proyectaban la mano a mano como mejor plan y la asignación
+   ejecutada era la del bloqueo, que leía antes). Tras el arreglo: 15.
+3. Este commit — scripts reproducibles `me07b-v2-placement-gap.ts`
+   (brecha emparejada y su descomposición, y la etapa de familia),
+   `me07b-v2-projection-calibration.ts` (proyectado frente a anotado por
+   ficha y cobertura) y `me07b-v2-possession-slice.ts` (posesiones
+   consecutivas desde una exportación de `/lab`); análisis nuevo
+   `docs/match/analysis/ME-07B-v2-comparador-v2-6.md` (la foto basal ya tenía
+   295 líneas) enlazado desde el índice; matriz, ACTIONS, AUDIT, CHANGELOG.
+
+#### Por qué domina el bloqueo (cifras reales; detalle en el análisis)
+- **Colocación:** Delay nunca supera a la mejor de las otras tres salvo 33
+  veces (Sierra +3, semilla 86, Puerto). Mediana de la brecha −0,08 a −0,20;
+  ante la misma respuesta base (drop/hundirse) ya vale 0,05–0,16 menos, y las
+  coberturas que muestra el rival suman hasta +0,06 al bloqueo.
+- **Familia en la central:** la proyección sola prefiere la mano a mano en 343
+  de 587 decisiones (foto seed, Sierra) y se juega en 106: lo observado sube el
+  bloqueo +0,135 y baja la mano a mano −0,083 de media. No es sesgo de unidades
+  (ambas se miden igual): la mano a mano central rinde 0,67 por uso frente a
+  0,96 proyectados; el bloqueo central 1,09 frente a 0,97; Delay 0,61 frente a
+  0,77 (n = 33). Con este fixture, la mano a mano y Delay crean menos de lo que
+  promete su primera lectura.
+
+#### `/lab` real (PostgreSQL 16 + Chromium de Playwright, `next start`)
+`walk-v26.cjs` en el scratchpad (restaurar ambos equipos desde el seed, todo
+`auto`, auditoría, descarga `.json.gz`; opcional `SIERRA_INC=3` con «Todos» +
+«+3» y restauración al terminar), sobre el árbol de `54a0979`:
+- Semilla 92 → **130–128** (= dominio), `stop=final`, 0 actas sin conciliar.
+  Posesiones **101–120 consecutivas** (tramo fijado antes del segundo arreglo,
+  no escogido): colocaciones central/lateral/Horns con valores separados por
+  0,000–0,019, coberturas cambio/show/drop/por debajo con su concesión, lecturas
+  atacar el cambio, pase al roll (aro/floater/invertir), finalizar y triple;
+  familia bloqueo en las 19 que organizan; Delay 0,13–0,20 por debajo en todas.
+- Sierra +3, semilla 86 → **183–85** (= dominio): Delay 33 veces; posesiones
+  109–128: Delay en 8 de las 9 de Puerto (0,760 frente a 0,744 de Horns), ante
+  «hundirse» y siempre con `entrada_poste_o4`; racha de 16 seguidas (117–147).
+
+#### Pruebas realmente pasadas
+`npm run check` completo (lint + typecheck + test + docs:check + build) en el
+árbol de `47f2eea` (350 tests) y en `54a0979` (350). Recalculadas con causa
+(cambia la secuencia natural): ME-04 bocina con tiro anotado 560 → **540**,
+fallo sin rebote 41 → **31**, dos prórrogas/guardián 376 → **111** (ninguna en
+1–110); ROT-3 natural pasa de Puerto rol 3 (ninguna semilla 1–150 lo alcanza)
+a **Sierra rol 5, semilla 9** (entra O4); receptor sin reloj 1134 → **597** (1
+de 1.200); Delay en `auto` +5/103 → **+3/86**; faltas de trampa sobre 92–94
+(92 y 93 no tienen ninguna); frontera del bloqueo sobre 92–93; Horns frente a
+central comprueba que nadie queda libre en el codo (la central puede jugar la
+mano a mano); roles: banda solo dentro del mismo plan.
+
+#### Regresión
+`scripts/me07b-v2-stop-sweep.ts 1 60` en `54a0979`: **180/180 `final`**, 0 actas
+sin conciliar, 3 relevos de emergencia ROT-3 (seed 9; +5 43 y 50), ningún
+`menos_de_cinco` ni guardián. Foto de las 20 (`me07b-v2-baseline-20.ts`): 20
+`final` y conciliadas; tabla antes/después en el análisis v2-6. Coste con
+auditoría: seed 25,5 s → 29,9 s (11 partidos).
+
+#### No verificado / pendiente
+- **DECISIÓN REQUERIDA (Dennis):** si la colocación (ficha) debe aprender de
+  sus propios resultados con la misma regla LAB-0.4 que ya usa la familia.
+  Sin ello Delay hace rachas que no rinden (semilla 86); con ello cambiaría
+  también el reparto central/lateral/Horns. No implementado.
+- Por qué la mano a mano central y Delay rinden ~30 % menos de lo proyectado
+  (la proyección llega a la primera lectura; lo que pasa después no se
+  proyecta): sin diagnosticar por dentro.
+- Pase desviado recuperado por el pasador «en 0,00 s» y repetido: preexistente
+  (373/382 recuperaciones a 0,00 s en `478ad56`), repeticiones seguidas 4 → 6.
+- Sierra +5 pierde su mano a mano (264 → 15): Horns gana por valor y la mano a
+  mano solo existe en la central.
+- Saques (pausados por Dennis), `menos_de_cinco` y el resto de §4–§7 como en v2-5.
+
+#### Reanudar
+```bash
+cd BeManager && git fetch origin && git checkout claude/me-07b-v2-capitulo-tactico && git pull
+npm ci && npm run check
+npx tsx scripts/me07b-v2-stop-sweep.ts 1 60
+npx tsx scripts/me07b-v2-baseline-20.ts
+npx tsx scripts/me07b-v2-placement-gap.ts
+```
+Siguiente paso: la decisión de Dennis sobre el aprendizaje por ficha; después,
+diagnosticar dentro de la mano a mano central y de Delay la distancia entre
+lo proyectado y lo anotado.
