@@ -56,12 +56,15 @@ import {
   FREE_THROW_PREP_SECONDS,
 } from "../lab/lab-0-1-parameters";
 import type { EffectiveOpposition } from "../lab/lab-0-1-parameters";
+import { COMBINED_CONTACT_RADIUS_METERS, m09CoordinationLatencySeconds } from "../lab/lab-0-2-parameters";
 import {
-  COMBINED_CONTACT_RADIUS_METERS,
-  SHORT_ROLL_SPOT,
-  DEEP_CONTINUATION_SPOT,
-  m09CoordinationLatencySeconds,
-} from "../lab/lab-0-2-parameters";
+  pnrSetGeometry,
+  ICE_BASELINE_DRIVE_SPOT,
+  ICE_LOW_HELP_SPOT,
+  ICE_BASELINE_PULL_UP_SPOT,
+  ICE_POP_SPOT,
+  type PnrSetGeometry,
+} from "../lab/lab-0-7-parameters";
 import { blendProjectionWithObservation, shooterLandingSeconds, type ObservedOutcome } from "../lab/lab-0-4-parameters";
 import { contestReachMeters, evaluateContestLevel, FIRST_READ_TIE_BAND_POINTS } from "../lab/lab-0-3-parameters";
 import { isFloaterZone, isMidRangeZone } from "../lab/lab-0-5-parameters";
@@ -352,6 +355,8 @@ interface CoreContext {
    * costes que su ejecución real.
    */
   readonly projecting?: boolean;
+  /** Puntos de la disposición del bloqueo directo de esta acción (central o lateral, LAB-0.7). */
+  readonly set: PnrSetGeometry;
 }
 
 /**
@@ -752,11 +757,13 @@ export function projectOrganizedOpportunity(
     audit: createNoopAuditCollector(),
     auditMeta: null,
     projecting: true,
+    set: pnrSetGeometry(input.screenPlacement ?? "central"),
   };
   const planChoice: OffensivePlanChoice = input.offensivePlan ?? "bloqueo_directo";
   const bloqueo =
     planChoice === "mano_a_mano_sin_balon" ? null : familyOpportunity(projectFamilyRead(ctx, (dry) => runDropPhase(dry, scenario)));
-  const handoff = planChoice === "bloqueo_directo" ? null : familyOpportunity(projectFamilyRead(ctx, (dry) => runHandoffPhase(dry)));
+  const handoff =
+    planChoice === "bloqueo_directo" || ctx.set.placement === "lateral" ? null : familyOpportunity(projectFamilyRead(ctx, (dry) => runHandoffPhase(dry)));
   if (handoff && (!bloqueo || handoff.value > bloqueo.value)) {
     return { value: handoff.viable ? handoff.value : 0, plan: "mano_a_mano_sin_balon", bestReadOption: handoff.bestOptionId };
   }
@@ -814,6 +821,7 @@ export function computePossessionCore(
     auditMeta: linked
       ? { t0: linked.t0 ?? 0, possessionIndex: linked.possessionIndex ?? null, phaseIndex: linked.phaseIndex ?? null }
       : null,
+    set: pnrSetGeometry(input.screenPlacement ?? "central"),
   };
 
   if (linked) {
@@ -837,7 +845,22 @@ export function computePossessionCore(
 
   const planChoice: OffensivePlanChoice = ctx.input.offensivePlan ?? "bloqueo_directo";
   let resolvedPlan: OffensivePlan;
-  if (planChoice === "auto") {
+  if (ctx.set.placement === "lateral") {
+    // LAB-0.7: la colocación lateral es del bloqueo directo; quien la eligió
+    // (`colocacion_bloqueo`, al organizar) ya la comparó con la central, que
+    // es donde se juega la mano a mano.
+    resolvedPlan = "bloqueo_directo";
+    auditDecision(ctx, 0, {
+      point: "seleccion_familia",
+      holderId: "O1",
+      participants: ["O1", "O2", "O3", "O4", "O5"],
+      chosenOptionId: resolvedPlan,
+      options: [
+        { id: "bloqueo_directo", status: "elegida", reasonCode: "placement_forced_by_plan", values: { placement: "lateral" } },
+        { id: "mano_a_mano_sin_balon", status: "no_evaluada_por_cortocircuito", reasonCode: "family_not_in_lateral_placement", values: { placement: "lateral" } },
+      ],
+    });
+  } else if (planChoice === "auto") {
     // ME-06 §3.2: evaluación pura de la oportunidad de entrada de cada
     // familia desde el estado real heredado, sin RNG y sin ejecutar la vía
     // descartada. Solo se ejecuta (con su propio árbol de lectura, sorteos
@@ -926,8 +949,14 @@ export function computePossessionCore(
       },
       { id: "cambio", eligible: estimate.switchProjection.viable, projected: estimate.switchProjection.value, values: { offenseBestReadOption: estimate.switchProjection.bestOptionId } },
       { id: "show", eligible: estimate.showProjection.viable, projected: estimate.showProjection.value, values: { offenseBestReadOption: estimate.showProjection.bestOptionId } },
+      { id: "a_la_altura", eligible: estimate.atLevelProjection.viable, projected: estimate.atLevelProjection.value, values: { offenseBestReadOption: estimate.atLevelProjection.bestOptionId } },
       { id: "por_debajo", eligible: estimate.underProjection.viable, projected: estimate.underProjection.value, values: { offenseBestReadOption: estimate.underProjection.bestOptionId } },
-      { id: "ice", eligible: estimate.iceEligible, projected: Infinity, values: { lateralScreen: estimate.iceEligible } },
+      {
+        id: "ice",
+        eligible: estimate.iceEligible && (estimate.iceProjection?.viable ?? false),
+        projected: estimate.iceProjection?.value ?? Infinity,
+        values: { lateralScreen: estimate.iceEligible, offenseBestReadOption: estimate.iceProjection?.bestOptionId ?? null },
+      },
     ];
     // ME-07A §4: una cobertura cuya concesión proyectada es indistinguible de
     // la de drop no es una alternativa distinta: se conserva drop como plan
@@ -950,7 +979,7 @@ export function computePossessionCore(
           : !c.eligible
           ? c.id === "trampa"
             ? "coverage_trap_not_eligible"
-            : c.id === "ice"
+            : c.id === "ice" && !estimate.iceEligible
               ? "coverage_ice_central_not_eligible"
               : "read_option_not_viable"
           : i === bestIndex
@@ -980,10 +1009,12 @@ export function computePossessionCore(
           ? runSwitchPhase(ctx)
           : ctx.resolvedCoverage === "show"
             ? runShowPhase(ctx, scenario)
+            : ctx.resolvedCoverage === "a_la_altura"
+              ? runShowPhase(ctx, scenario, "a_la_altura")
             : ctx.resolvedCoverage === "por_debajo"
               ? runDropPhase(ctx, scenario, "por_debajo")
               : ctx.resolvedCoverage === "ice"
-                ? runIceOrFallback(ctx, scenario)
+                ? runIcePhase(ctx, scenario)
                 : runDropPhase(ctx, scenario);
   return { ...organized, organizedChoice: { plan: resolvedPlan, coverage: ctx.resolvedCoverage } };
 }
@@ -1096,8 +1127,8 @@ function buildTagHelpPlan(ctx: CoreContext, scenario: ScenarioDefinition, tUseSc
   const tHelpDecision = scenario.startsWithHelpAlreadyCommitted ? 0 : tUseScreen + recognitionLatencySeconds(d3.attributes.M01, d3.attributes.M05);
   const d3HelpSpeed = defenderLateralSpeedMps(d3.attributes.F04);
   const d4RepairSpeed = defenderLateralSpeedMps(d4.attributes.F04);
-  const d3StartPoint = scenario.startsWithHelpAlreadyCommitted ? SHORT_ROLL_SPOT : ctx.positions.D3!;
-  const rawD3Arrival = scenario.startsWithHelpAlreadyCommitted ? 0.1 : tHelpDecision + timeToReach(d3StartPoint, SHORT_ROLL_SPOT, d3HelpSpeed);
+  const d3StartPoint = scenario.startsWithHelpAlreadyCommitted ? ctx.set.shortRoll : ctx.positions.D3!;
+  const rawD3Arrival = scenario.startsWithHelpAlreadyCommitted ? 0.1 : tHelpDecision + timeToReach(d3StartPoint, ctx.set.shortRoll, d3HelpSpeed);
   const tD3Arrive = Math.max(0, rawD3Arrival - interiorArrivalAdjustmentSeconds(d3.attributes.T23));
   const d4OriginalPos = scenario.startsWithHelpAlreadyCommitted ? LATE_CLOSEOUT_D4_START : ctx.positions.D4!;
   const tD4Start = tD3Arrive + recognitionLatencySeconds(d4.attributes.M01, d4.attributes.M05);
@@ -1106,7 +1137,7 @@ function buildTagHelpPlan(ctx: CoreContext, scenario: ScenarioDefinition, tUseSc
     origin: d3StartPoint,
     decision: tHelpDecision,
     arrival: tD3Arrive,
-    geometry: { originPos: d3StartPoint, destinationPos: SHORT_ROLL_SPOT, speedMps: d3HelpSpeed, brakingExtraSeconds: closeoutBrakingExtraSeconds(d3.attributes.F03) },
+    geometry: { originPos: d3StartPoint, destinationPos: ctx.set.shortRoll, speedMps: d3HelpSpeed, brakingExtraSeconds: closeoutBrakingExtraSeconds(d3.attributes.F03) },
     d4Start: tD4Start,
     d4Arrival: tD4Arrive,
     d4Geometry: { originPos: d4OriginalPos, destinationPos: WEAK_CORNER_SPOT, speedMps: d4RepairSpeed, brakingExtraSeconds: closeoutBrakingExtraSeconds(d4.attributes.F03) },
@@ -1267,7 +1298,7 @@ function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition, d1Route: S
   const tScreenSet = scenario.startsWithHelpAlreadyCommitted ? 0 : SCREEN_SET_AFTER_ARRIVAL_SECONDS;
   const tHandlerArrival = timeToReach(ctx.positions.O1!, o1UsePoint, attackerMoveSpeedMps(o1.attributes.F01));
   const tUseScreen = Math.max(tScreenSet, tHandlerArrival);
-  event(ctx, tScreenSet, "ejecutado", "screen_set", ["O5"], "O5 llega y coloca su pantalla central.");
+  event(ctx, tScreenSet, "ejecutado", "screen_set", ["O5"], `O5 llega y coloca su pantalla ${ctx.set.placement}.`, { placement: ctx.set.placement });
 
   const weightDiff = o5.measures.weightKg - d1.measures.weightKg;
   const screenDelay =
@@ -1315,16 +1346,16 @@ function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition, d1Route: S
   // (short roll), en vez de recibir/finalizar desde la posición original
   // del bloqueo por tener asignado el rol de continuador.
   const continuationShift = screenCoordinationShiftSeconds(o5.attributes.M04);
-  const rollTravelSeconds = timeToReach(screenPoint, SHORT_ROLL_SPOT, attackerMoveSpeedMps(o5.attributes.F01));
+  const rollTravelSeconds = timeToReach(screenPoint, ctx.set.shortRoll, attackerMoveSpeedMps(o5.attributes.F01));
   const tRollReady = Math.max(0.05, tUseScreen - continuationShift + rollTravelSeconds);
-  setArrival(ctx, "O5", tRollReady, SHORT_ROLL_SPOT, tRollReady - rollTravelSeconds);
+  setArrival(ctx, "O5", tRollReady, ctx.set.shortRoll, tRollReady - rollTravelSeconds);
   event(ctx, tRollReady, "ejecutado", "roll_continuation", ["O5"], "O5 continúa hacia el short roll tras la pantalla.", {
-    rollSpot: SHORT_ROLL_SPOT,
+    rollSpot: ctx.set.shortRoll,
     // Punto de referencia de la continuación profunda (ME-02 §3): O5 no lo
     // ocupa en esta secuencia (se detiene en el short roll), se deja
     // trazable como el punto de referencia aprobado si una lectura futura
     // lo necesita.
-    deepContinuationSpot: DEEP_CONTINUATION_SPOT,
+    deepContinuationSpot: ctx.set.deepContinuation,
   });
 
   // --- Ayuda de D3 (protección interior, T23) ------------------------------
@@ -1354,7 +1385,7 @@ function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition, d1Route: S
   };
 
   function rollReceiverRead(tAct: number, help: HelpPlan | null): { options: ReceiverOption[]; contained: boolean } {
-    const contained = help !== null && distance(positionAtInstant(help.geometry, help.arrival, tAct + CLOSE_FINISH_PREP_SECONDS), SHORT_ROLL_SPOT) <= COMBINED_CONTACT_RADIUS_METERS;
+    const contained = help !== null && distance(positionAtInstant(help.geometry, help.arrival, tAct + CLOSE_FINISH_PREP_SECONDS), ctx.set.shortRoll) <= COMBINED_CONTACT_RADIUS_METERS;
     const rimCandidates: ContestCandidate[] = [d5DropRetreat];
     const floaterCandidates: ContestCandidate[] = [d5DropRetreat];
     if (help) {
@@ -1369,7 +1400,7 @@ function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition, d1Route: S
     }
     const options = readRollReceiver(ctx, {
       receiverId: "O5",
-      receiverPos: SHORT_ROLL_SPOT,
+      receiverPos: ctx.set.shortRoll,
       rimCandidates,
       floaterCandidates,
       invert: help ? { deflectorId: "D3", closerId: "D4", closerGeometry: help.d4Geometry, closerArrival: help.d4Arrival } : null,
@@ -1417,7 +1448,7 @@ function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition, d1Route: S
   );
 
   if (helpPlan) {
-    setArrival(ctx, "D3", tD3ArriveHelp, SHORT_ROLL_SPOT, tHelpDecision);
+    setArrival(ctx, "D3", tD3ArriveHelp, ctx.set.shortRoll, tHelpDecision);
     registerContainment(ctx, "D3", tHelpDecision, tD3ArriveHelp, d3BrakingExtra, tRollReady - rollTravelSeconds, tRollReady);
     event(
       ctx,
@@ -1867,7 +1898,7 @@ function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition, d1Route: S
     ];
 
     if (receiverChoice.id === "invertir_o3") {
-      const tPassArrivalO3 = tAct + PASS_RELEASE_SECONDS + distanceSeconds(SHORT_ROLL_SPOT, WEAK_CORNER_SPOT);
+      const tPassArrivalO3 = tAct + PASS_RELEASE_SECONDS + distanceSeconds(ctx.set.shortRoll, WEAK_CORNER_SPOT);
       const tPrepReadyO3 = tPassArrivalO3 + CATCH_AND_SHOOT_PREP_SECONDS;
       const invertOutcome = resolvePass(o5.attributes.T09, o3.attributes.T11, true, d3.attributes.T17, 1, ctx.rng);
       event(ctx, tPassArrivalO3, "ejecutado", "pass_released", ["O5", "O3"], "O5 invierte hacia O3 en la esquina débil.");
@@ -2072,7 +2103,7 @@ function runTrapPhase(ctx: CoreContext): PossessionCoreResult {
   const tScreenSet = SCREEN_SET_AFTER_ARRIVAL_SECONDS;
   const tHandlerArrival = timeToReach(ctx.positions.O1!, o1UsePoint, attackerMoveSpeedMps(o1.attributes.F01));
   const tUseScreen = Math.max(tScreenSet, tHandlerArrival);
-  event(ctx, tScreenSet, "ejecutado", "screen_set", ["O5"], "O5 llega y coloca su pantalla central.");
+  event(ctx, tScreenSet, "ejecutado", "screen_set", ["O5"], `O5 llega y coloca su pantalla ${ctx.set.placement}.`, { placement: ctx.set.placement });
 
   const weightDiff = o5.measures.weightKg - d1.measures.weightKg;
   const screenDelay =
@@ -2096,16 +2127,16 @@ function runTrapPhase(ctx: CoreContext): PossessionCoreResult {
 
   // --- O5 continúa hacia el short roll, igual geometría que en drop -----
   const continuationShift = screenCoordinationShiftSeconds(o5.attributes.M04);
-  const rollTravelSeconds = timeToReach(screenPoint, SHORT_ROLL_SPOT, attackerMoveSpeedMps(o5.attributes.F01));
+  const rollTravelSeconds = timeToReach(screenPoint, ctx.set.shortRoll, attackerMoveSpeedMps(o5.attributes.F01));
   const tRollReady = Math.max(0.05, tUseScreen - continuationShift + rollTravelSeconds);
-  setArrival(ctx, "O5", tRollReady, SHORT_ROLL_SPOT, tRollReady - rollTravelSeconds);
+  setArrival(ctx, "O5", tRollReady, ctx.set.shortRoll, tRollReady - rollTravelSeconds);
   event(ctx, tRollReady, "ejecutado", "roll_continuation", ["O5"], "O5 continúa hacia el short roll tras la pantalla.", {
-    rollSpot: SHORT_ROLL_SPOT,
+    rollSpot: ctx.set.shortRoll,
     // Punto de referencia de la continuación profunda (ME-02 §3): O5 no lo
     // ocupa en esta secuencia (se detiene en el short roll), se deja
     // trazable como el punto de referencia aprobado si una lectura futura
     // lo necesita.
-    deepContinuationSpot: DEEP_CONTINUATION_SPOT,
+    deepContinuationSpot: ctx.set.deepContinuation,
   });
 
   // --- D5 sale a comprometer a O1 (aviso: emisor D5) ----------------------
@@ -2135,10 +2166,10 @@ function runTrapPhase(ctx: CoreContext): PossessionCoreResult {
   const tLowManDecision = tD5TrapArrival + m09LatencyD3;
   const d3LowManOrigin = ctx.positions.D3!;
   const d3LowManSpeed = defenderLateralSpeedMps(d3.attributes.F04);
-  const rawD3LowManArrival = tLowManDecision + timeToReach(d3LowManOrigin, SHORT_ROLL_SPOT, d3LowManSpeed);
+  const rawD3LowManArrival = tLowManDecision + timeToReach(d3LowManOrigin, ctx.set.shortRoll, d3LowManSpeed);
   const tD3LowManArrival = Math.max(0, rawD3LowManArrival - interiorArrivalAdjustmentSeconds(d3.attributes.T23));
   const d3BrakingExtra = closeoutBrakingExtraSeconds(d3.attributes.F03);
-  setArrival(ctx, "D3", tD3LowManArrival, SHORT_ROLL_SPOT, tLowManDecision);
+  setArrival(ctx, "D3", tD3LowManArrival, ctx.set.shortRoll, tLowManDecision);
   registerContainment(ctx, "D3", tLowManDecision, tD3LowManArrival, d3BrakingExtra, tRollReady - rollTravelSeconds, tRollReady);
   event(
     ctx,
@@ -2199,7 +2230,7 @@ function runTrapPhase(ctx: CoreContext): PossessionCoreResult {
 
   const d3RollGeometry: ContestGeometry = {
     originPos: d3LowManOrigin,
-    destinationPos: SHORT_ROLL_SPOT,
+    destinationPos: ctx.set.shortRoll,
     speedMps: d3LowManSpeed,
     brakingExtraSeconds: d3BrakingExtra,
   };
@@ -2226,7 +2257,7 @@ function runTrapPhase(ctx: CoreContext): PossessionCoreResult {
     const passToO5 = 1 - deflectionProbability(d3.attributes.T17, o1.attributes.T09);
     const tO5ReadyProjected = tPassArrivalToO5 + CLOSE_FINISH_PREP_SECONDS;
     const tPrepReadyO3Projected =
-      tO5ReadyProjected + PASS_RELEASE_SECONDS + distanceSeconds(SHORT_ROLL_SPOT, WEAK_CORNER_SPOT) + CATCH_AND_SHOOT_PREP_SECONDS;
+      tO5ReadyProjected + PASS_RELEASE_SECONDS + distanceSeconds(ctx.set.shortRoll, WEAK_CORNER_SPOT) + CATCH_AND_SHOOT_PREP_SECONDS;
     let branch: TrapProjection["branch"];
     let next: number;
     if (tD3LowManArrival > tO5ReadyProjected) {
@@ -2328,7 +2359,7 @@ function runTrapPhase(ctx: CoreContext): PossessionCoreResult {
     // Si D3 (low man) no llega a contener a O5 a tiempo, el 4x3 sigue vivo:
     // O5 puede leer directamente la salida exterior que dejó D4 (O4).
     if (tD3LowManArrival > tO5Ready) {
-      const tPassArrivalO4 = tO5Ready + PASS_RELEASE_SECONDS + distanceSeconds(SHORT_ROLL_SPOT, ctx.positions.O4!);
+      const tPassArrivalO4 = tO5Ready + PASS_RELEASE_SECONDS + distanceSeconds(ctx.set.shortRoll, ctx.positions.O4!);
       const tPrepReadyO4 = tPassArrivalO4 + CATCH_AND_SHOOT_PREP_SECONDS;
       auditDecision(ctx, tO5Ready, {
         point: "lectura_trampa",
@@ -2375,7 +2406,7 @@ function runTrapPhase(ctx: CoreContext): PossessionCoreResult {
     // D3 sí contiene el short roll a tiempo: O5 puede todavía invertir hacia
     // O3 en la esquina débil si D4 no ha cerrado esa ventana (misma lectura
     // de inversión que en drop, C2), antes de forzar el tiro bajo contención.
-    const tPassArrivalO3 = tO5Ready + PASS_RELEASE_SECONDS + distanceSeconds(SHORT_ROLL_SPOT, WEAK_CORNER_SPOT);
+    const tPassArrivalO3 = tO5Ready + PASS_RELEASE_SECONDS + distanceSeconds(ctx.set.shortRoll, WEAK_CORNER_SPOT);
     const tPrepReadyO3 = tPassArrivalO3 + CATCH_AND_SHOOT_PREP_SECONDS;
     const marginO3 = tD4ArriveAtCorner - tPrepReadyO3;
     if (marginO3 >= 0.25) {
@@ -2548,23 +2579,174 @@ function runTrapPhase(ctx: CoreContext): PossessionCoreResult {
  * otra cadena distinta para la mano a mano) se retiraron.
  */
 /**
- * ICE (ME-07B v2 §5): solo tiene sentido en un bloqueo lateral, para
- * impedir que el manejador vaya al centro, con ayuda baja del pívot. Ante el
- * bloqueo central (la única pantalla que el ataque arma hoy) no es elegible:
- * se registra el motivo y la defensa juega drop (orden solicitada ≠
- * ejecutada, con su causa). El ICE ejecutable queda pendiente del bloqueo
- * lateral.
+ * ICE (ME-07B v2 §5, LAB-0.7): solo tiene sentido en un bloqueo lateral,
+ * para impedir que el manejador vaya al centro. Ante el bloqueo central no es
+ * elegible: se registra el motivo y la defensa juega drop (orden solicitada ≠
+ * ejecutada, con su causa).
+ *
+ * Ante el bloqueo lateral: D1 reconoce la pantalla al prepararse (M01/M05) y
+ * se coloca del lado del bloqueador, a contacto del manejador (F04); si llega
+ * antes de que O1 use la pantalla, la niega y empuja hacia la línea de fondo,
+ * donde D5 espera en la ayuda baja (M01/M05, T23). Si D1 llega tarde, O1 usa
+ * la pantalla y se juega drop (`ice_late`). Con el ICE puesto, el bloqueador
+ * se abre al centro (codo) y O1 lee: penetrar por fondo contra la ayuda baja,
+ * tiro medio tras rechazar hacia fondo, pase al bloqueador abierto (la línea
+ * pasa por D1, que puede desviarlo: T17), pase a la esquina fuerte (D2 en
+ * casa) o salida segura. El ICE concede el bloqueador abierto y el tiro
+ * medio; niega el centro, el triple tras la pantalla y el roll.
  */
-function runIceOrFallback(ctx: CoreContext, scenario: ScenarioDefinition): PossessionCoreResult {
+function runIcePhase(ctx: CoreContext, scenario: ScenarioDefinition): PossessionCoreResult {
   const screenPoint = ctx.positions.O5!;
-  event(ctx, 0, "reconocido", "coverage_not_applicable", ["D1", "D5"], "La orden es ICE, pero la pantalla es central (dentro de la franja de la zona): no hay banda a la que empujar; la defensa juega drop.", {
-    requested: "ice",
-    applied: "drop",
-    screenPoint,
-    lateral: isLateralScreenSpot(screenPoint),
+  if (!isLateralScreenSpot(screenPoint)) {
+    event(ctx, 0, "reconocido", "coverage_not_applicable", ["D1", "D5"], "La orden es ICE, pero la pantalla es central (dentro de la franja de la zona): no hay banda a la que empujar; la defensa juega drop.", {
+      requested: "ice",
+      applied: "drop",
+      screenPoint,
+      lateral: false,
+    });
+    ctx.resolvedCoverage = "drop";
+    return runDropPhase(ctx, scenario);
+  }
+  const o1 = player(ctx, "O1");
+  const o2 = player(ctx, "O2");
+  const o5 = player(ctx, "O5");
+  const d1 = player(ctx, "D1");
+  const d2 = player(ctx, "D2");
+  const d3 = player(ctx, "D3");
+  const d5 = player(ctx, "D5");
+  const o1Start = ctx.positions.O1!;
+  const o1UsePoint = pointShortOfTarget(o1Start, screenPoint, COMBINED_CONTACT_RADIUS_METERS);
+  const tScreenSet = SCREEN_SET_AFTER_ARRIVAL_SECONDS;
+  const tHandlerArrival = timeToReach(o1Start, o1UsePoint, attackerMoveSpeedMps(o1.attributes.F01));
+  const tUseScreen = Math.max(tScreenSet, tHandlerArrival);
+  event(ctx, tScreenSet, "ejecutado", "screen_set", ["O5"], "O5 llega y coloca su pantalla lateral.");
+
+  // D1 se pone del lado de la pantalla, a contacto del manejador.
+  const icePoint = moveToward(o1Start, screenPoint, 1, COMBINED_CONTACT_RADIUS_METERS);
+  const tIceCall = recognitionLatencySeconds(d1.attributes.M01, d1.attributes.M05);
+  const tD1Ice = tIceCall + distance(ctx.positions.D1!, icePoint) / defenderLateralSpeedMps(d1.attributes.F04);
+  if (tD1Ice > tUseScreen) {
+    event(ctx, tUseScreen, "reconocido", "ice_late", ["D1", "O1"], `D1 llega tarde a ponerse del lado de la pantalla (${tD1Ice.toFixed(2)} s frente a ${tUseScreen.toFixed(2)} s): O1 usa el bloqueo y la defensa juega drop.`, {
+      requested: "ice",
+      applied: "drop",
+      icePoint,
+      d1IceAt: tD1Ice,
+      screenUsedAt: tUseScreen,
+    });
+    return runDropPhase(ctx, scenario);
+  }
+  setArrival(ctx, "D1", tD1Ice, icePoint, tIceCall);
+  const tD5Call = recognitionLatencySeconds(d5.attributes.M01, d5.attributes.M05);
+  const d5Speed = defenderLateralSpeedMps(d5.attributes.F04);
+  const tD5Low = Math.max(tD5Call, tD5Call + distance(ctx.positions.D5!, ICE_LOW_HELP_SPOT) / d5Speed - interiorArrivalAdjustmentSeconds(d5.attributes.T23));
+  setArrival(ctx, "D5", tD5Low, ICE_LOW_HELP_SPOT, tD5Call);
+  event(ctx, tD1Ice, "ejecutado", "ice_committed", ["D1", "D5"], "ICE: D1 se pone del lado de la pantalla, niega el centro y empuja a O1 hacia la línea de fondo; D5 baja a la ayuda.", {
+    icePoint,
+    d1IceAt: tD1Ice,
+    screenUsedAt: tUseScreen,
+    lowHelpSpot: ICE_LOW_HELP_SPOT,
+    d5LowAt: tD5Low,
   });
-  ctx.resolvedCoverage = "drop";
-  return runDropPhase(ctx, scenario);
+  // El bloqueador, con la pantalla negada, se abre al centro.
+  const tO5Read = Math.max(tScreenSet, tD1Ice) + recognitionLatencySeconds(o5.attributes.M01, o5.attributes.M05);
+  const tO5Pop = tO5Read + timeToReach(screenPoint, ICE_POP_SPOT, attackerMoveSpeedMps(o5.attributes.F01));
+  setArrival(ctx, "O5", tO5Pop, ICE_POP_SPOT, tO5Read);
+  event(ctx, tO5Pop, "ejecutado", "roll_continuation", ["O5"], "Con la pantalla negada, O5 se abre al centro mientras su defensor espera abajo.", { rollSpot: ICE_POP_SPOT });
+
+  const tDecision = tD1Ice + recognitionLatencySeconds(o1.attributes.M01, o1.attributes.M05);
+  const clock = ctx.shotClockMs / 1000;
+  if (clock - tDecision <= 0) {
+    if (ctx.linked) return linkedShotClockViolation(ctx, "O1");
+    return finalize(ctx, { kind: "shot_clock_violation" }, { status: "held", holderId: "O1", position: o1Start });
+  }
+  const o1Speed = attackerMoveSpeedMps(o1.attributes.F01);
+  const d1Slide = chaser(ctx, "D1", icePoint, tDecision, (p) => perimeterArrivalAdjustmentSeconds(p.attributes.T22));
+  const d5FromLow = chaser(ctx, "D5", ICE_LOW_HELP_SPOT, Math.max(tD5Low, tDecision), (p) => interiorArrivalAdjustmentSeconds(p.attributes.T23));
+  const d3Help = chaser(ctx, "D3", ctx.positions.D3!, tDecision + recognitionLatencySeconds(d3.attributes.M01, d3.attributes.M05), (p) => interiorArrivalAdjustmentSeconds(p.attributes.T23));
+
+  // Penetrar por fondo contra la ayuda baja.
+  const tAtBaseline = tDecision + timeToReach(o1Start, ICE_BASELINE_DRIVE_SPOT, o1Speed);
+  const tRimReady = tAtBaseline + timeToReach(ICE_BASELINE_DRIVE_SPOT, ATTACKED_HOOP, o1Speed) + CLOSE_FINISH_PREP_SECONDS;
+  const rim = bestContest(ctx, [d5FromLow, d1Slide], ATTACKED_HOOP, tRimReady, CLOSE_FINISH_PREP_SECONDS)!;
+  const rimValue = tRimReady < clock && !rim.occupied ? 2 * shotProbability(CLOSE_FINISH_BASE_PROBABILITY, o1.attributes.T01, rim.level) : -Infinity;
+  // Tiro medio tras rechazar hacia fondo.
+  const pullUpPrep = movingShotPrepSeconds(o1.attributes.T06);
+  const tPullUpReady = tDecision + timeToReach(o1Start, ICE_BASELINE_PULL_UP_SPOT, o1Speed) + pullUpPrep;
+  const pullUp = bestContest(ctx, [d1Slide, d5FromLow], ICE_BASELINE_PULL_UP_SPOT, tPullUpReady, pullUpPrep)!;
+  const pullUpType: ShotType = isMidRangeZone(ICE_BASELINE_PULL_UP_SPOT) ? "mid_range" : "floater";
+  const pullUpValue = tPullUpReady < clock ? 2 * shotProbability(shotBaseProbability(pullUpType), shotSkill(o1, pullUpType), pullUp.level) : -Infinity;
+  // Pase al bloqueador abierto en el codo: la línea pasa por D1.
+  const tPopPass = Math.max(tO5Pop, tDecision + PASS_RELEASE_SECONDS + distanceSeconds(o1Start, ICE_POP_SPOT));
+  const envAt = (): RollReceiverEnv => ({
+    receiverId: "O5",
+    receiverPos: ICE_POP_SPOT,
+    rimCandidates: [d5FromLow, d3Help],
+    floaterCandidates: [d5FromLow],
+    invert: null,
+  });
+  const projectedReceiver = readRollReceiver(ctx, envAt(), tPopPass);
+  const popValue = Math.max(-Infinity, ...projectedReceiver.map((o) => o.value));
+  const popCompletion = 1 - deflectionProbability(d1.attributes.T17, o1.attributes.T09);
+  // Pase a la esquina fuerte, con D2 en casa.
+  const cornerPos = ctx.positions.O2!;
+  const tCornerArrival = tDecision + PASS_RELEASE_SECONDS + distanceSeconds(o1Start, cornerPos);
+  const tCornerReady = tCornerArrival + CATCH_AND_SHOOT_PREP_SECONDS;
+  const d2Home = chaser(ctx, "D2", ctx.positions.D2!, tDecision, (p) => perimeterArrivalAdjustmentSeconds(p.attributes.T22));
+  const corner = bestContest(ctx, [d2Home], cornerPos, tCornerReady, CATCH_AND_SHOOT_PREP_SECONDS)!;
+  const cornerValue = isBehindThreePointLine(cornerPos) && tCornerReady < clock ? 3 * shotProbability(THREE_POINT_BASE_PROBABILITY, o2.attributes.T04, corner.level) : -Infinity;
+  const cornerCompletion = 1 - deflectionProbability(d2.attributes.T17, o1.attributes.T09);
+
+  const options: HandlerReadOption[] = [
+    {
+      id: "penetrar_fondo",
+      value: rimValue,
+      completion: 1,
+      kind: "tiro",
+      values: { contesterId: realId(ctx, rim.id), opposition: rim.level, readySeconds: tRimReady, rimOccupied: rim.occupied, d5LowSeconds: tD5Low },
+      execute: (record) => {
+        setArrival(ctx, "O1", tAtBaseline, ICE_BASELINE_DRIVE_SPOT, tDecision);
+        record();
+        return resolveShotAttempt(ctx, { shooterId: "O1", shooterSkill: o1.attributes.T01, shotType: "close_finish", shooterPos: ATTACKED_HOOP, tReady: tRimReady, prepSeconds: CLOSE_FINISH_PREP_SECONDS, contesterId: rim.id, contesterArrival: rim.arrival, contesterGeometry: rim.geometry });
+      },
+    },
+    {
+      id: "parada_fondo",
+      value: pullUpValue,
+      completion: 1,
+      kind: "tiro",
+      values: { contesterId: realId(ctx, pullUp.id), opposition: pullUp.level, readySeconds: tPullUpReady, shotType: pullUpType },
+      execute: (record) => {
+        record();
+        return resolveShotAttempt(ctx, { shooterId: "O1", shooterSkill: shotSkill(o1, pullUpType), shotType: pullUpType, shooterPos: ICE_BASELINE_PULL_UP_SPOT, tReady: tPullUpReady, prepSeconds: pullUpPrep, contesterId: pullUp.id, contesterArrival: pullUp.arrival, contesterGeometry: pullUp.geometry });
+      },
+    },
+    {
+      id: "pase_o5",
+      value: popValue,
+      completion: popCompletion,
+      kind: "pase",
+      values: { receiverBestOption: [...projectedReceiver].sort((a, b) => b.value - a.value)[0]?.id ?? null, deflectorId: realId(ctx, "D1"), popReadySeconds: tO5Pop },
+      execute: (record) => executeRollPass(ctx, { tPassArrival: tPopPass, deflectorId: "D1", envAt, record, note: "O1 pasa al bloqueador, abierto en el codo mientras su defensor espera abajo." }),
+    },
+    {
+      id: "pase_esquina_o2",
+      value: cornerValue,
+      completion: cornerCompletion,
+      kind: "pase",
+      values: { contesterId: realId(ctx, corner.id), opposition: corner.level, readySeconds: tCornerReady },
+      execute: (record) => {
+        const outcome = resolvePass(o1.attributes.T09, o2.attributes.T11, true, d2.attributes.T17, 1, ctx.rng);
+        event(ctx, tCornerArrival, "ejecutado", "pass_released", ["O1", "O2"], "O1, empujado hacia fondo, saca el balón a la esquina fuerte.");
+        record("pass_released");
+        if (outcome.kind === "deflected_loose_ball") return resolveLooseBallAfterPass(ctx, tCornerArrival, "O1", "D2");
+        const delay = outcome.kind === "awkward_control" ? outcome.extraDelaySeconds : 0;
+        event(ctx, tCornerArrival, "concedido", "pass_received", ["O2"], "O2 recibe en la esquina.");
+        return resolveShotAttempt(ctx, { shooterId: "O2", shooterSkill: o2.attributes.T04, shotType: "three_point", shooterPos: cornerPos, tReady: tCornerReady + delay, prepSeconds: CATCH_AND_SHOOT_PREP_SECONDS + delay, contesterId: corner.id, contesterArrival: corner.arrival, contesterGeometry: corner.geometry });
+      },
+    },
+    { id: "salida_segura", value: 0, completion: 1, kind: "salida", values: {}, execute: (record) => executeSafeOutlet(ctx, tDecision, record) },
+  ];
+  return decideHandlerRead(ctx, "lectura_ice", tDecision, ["O1", "O5", "D1", "D5"], options);
 }
 
 // --- ME-07B v2 §5: cambio (switch) y show (hedge) ---------------------------
@@ -2704,7 +2886,7 @@ function executeSafeOutlet(ctx: CoreContext, tDecision: number, record: (factLin
   };
 }
 
-/** Pantalla común del bloqueo central: O1 llega al punto de uso, O5 coloca y continúa al short roll. */
+/** Pantalla común del bloqueo directo (central o lateral): O1 llega al punto de uso, O5 coloca y continúa al short roll. */
 function setUpCentralScreen(ctx: CoreContext): {
   readonly screenPoint: Point2D;
   readonly o1UsePoint: Point2D;
@@ -2719,13 +2901,13 @@ function setUpCentralScreen(ctx: CoreContext): {
   const tScreenSet = SCREEN_SET_AFTER_ARRIVAL_SECONDS;
   const tHandlerArrival = timeToReach(ctx.positions.O1!, o1UsePoint, attackerMoveSpeedMps(o1.attributes.F01));
   const tUseScreen = Math.max(tScreenSet, tHandlerArrival);
-  event(ctx, tScreenSet, "ejecutado", "screen_set", ["O5"], "O5 llega y coloca su pantalla central.");
+  event(ctx, tScreenSet, "ejecutado", "screen_set", ["O5"], `O5 llega y coloca su pantalla ${ctx.set.placement}.`, { placement: ctx.set.placement });
   setArrival(ctx, "O1", tHandlerArrival, o1UsePoint, 0);
   const continuationShift = screenCoordinationShiftSeconds(o5.attributes.M04);
-  const rollTravelSeconds = timeToReach(screenPoint, SHORT_ROLL_SPOT, attackerMoveSpeedMps(o5.attributes.F01));
+  const rollTravelSeconds = timeToReach(screenPoint, ctx.set.shortRoll, attackerMoveSpeedMps(o5.attributes.F01));
   const tRollReady = Math.max(0.05, tUseScreen - continuationShift + rollTravelSeconds);
-  setArrival(ctx, "O5", tRollReady, SHORT_ROLL_SPOT, tRollReady - rollTravelSeconds);
-  event(ctx, tRollReady, "ejecutado", "roll_continuation", ["O5"], "O5 continúa hacia el short roll tras la pantalla.", { rollSpot: SHORT_ROLL_SPOT });
+  setArrival(ctx, "O5", tRollReady, ctx.set.shortRoll, tRollReady - rollTravelSeconds);
+  event(ctx, tRollReady, "ejecutado", "roll_continuation", ["O5"], "O5 continúa hacia el short roll tras la pantalla.", { rollSpot: ctx.set.shortRoll });
   return { screenPoint, o1UsePoint, tUseScreen, tRollStart: tRollReady - rollTravelSeconds, tRollReady };
 }
 
@@ -2770,8 +2952,8 @@ function runSwitchPhase(ctx: CoreContext): PossessionCoreResult {
   const tD1Call = tSwitchCall + m09CoordinationLatencySeconds(d5.attributes.M09, d1.attributes.M09);
   const d1Origin = ctx.positions.D1!;
   const d1Speed = defenderLateralSpeedMps(d1.attributes.F04);
-  const tD1OnRoller = Math.max(tD1Call, tD1Call + distance(d1Origin, SHORT_ROLL_SPOT) / d1Speed - interiorArrivalAdjustmentSeconds(d1.attributes.T23));
-  setArrival(ctx, "D1", tD1OnRoller, pointShortOfTarget(d1Origin, SHORT_ROLL_SPOT, COMBINED_CONTACT_RADIUS_METERS), tD1Call);
+  const tD1OnRoller = Math.max(tD1Call, tD1Call + distance(d1Origin, ctx.set.shortRoll) / d1Speed - interiorArrivalAdjustmentSeconds(d1.attributes.T23));
+  setArrival(ctx, "D1", tD1OnRoller, pointShortOfTarget(d1Origin, ctx.set.shortRoll, COMBINED_CONTACT_RADIUS_METERS), tD1Call);
   event(ctx, tSwitchCall, "reconocido", "switch_committed", ["D5", "D1"], `D5 canta el cambio: sale a tomar a O1 a la altura de la pantalla y D1 se queda con O5.`, {
     switchPoint,
     d5ArrivesAt: tD5Switch,
@@ -2787,7 +2969,7 @@ function runSwitchPhase(ctx: CoreContext): PossessionCoreResult {
   const d3 = player(ctx, "D3");
   const d3Help = chaser(ctx, "D3", ctx.positions.D3!, tDecision + recognitionLatencySeconds(d3.attributes.M01, d3.attributes.M05), (p) => interiorArrivalAdjustmentSeconds(p.attributes.T23));
   const d5Chase = chaser(ctx, "D5", switchPoint, Math.max(tD5Switch, tDecision), (p) => interiorArrivalAdjustmentSeconds(p.attributes.T23));
-  const d1FromRoll = chaser(ctx, "D1", pointShortOfTarget(d1Origin, SHORT_ROLL_SPOT, COMBINED_CONTACT_RADIUS_METERS), tD1OnRoller);
+  const d1FromRoll = chaser(ctx, "D1", pointShortOfTarget(d1Origin, ctx.set.shortRoll, COMBINED_CONTACT_RADIUS_METERS), tD1OnRoller);
 
   // Atacar el cambio: carrera al aro frente al pívot que le ha tomado.
   const tRimReady = tDecision + timeToReach(o1UsePoint, ATTACKED_HOOP, attackerMoveSpeedMps(o1.attributes.F01)) + CLOSE_FINISH_PREP_SECONDS;
@@ -2802,10 +2984,10 @@ function runSwitchPhase(ctx: CoreContext): PossessionCoreResult {
   const triple = bestContest(ctx, [d5AtLevel], o1UsePoint, tTripleReady, movingShotPrepSeconds(o1.attributes.T06))!;
   const tripleValue = isBehindThreePointLine(o1UsePoint) && tTripleReady < clock ? 3 * shotProbability(THREE_POINT_BASE_PROBABILITY, o1.attributes.T04, triple.level) : -Infinity;
   // Pase al continuador, emparejado con D1 (posible desajuste interior).
-  const tPassArrival = Math.max(tRollReady, tDecision + PASS_RELEASE_SECONDS + distanceSeconds(o1UsePoint, SHORT_ROLL_SPOT));
+  const tPassArrival = Math.max(tRollReady, tDecision + PASS_RELEASE_SECONDS + distanceSeconds(o1UsePoint, ctx.set.shortRoll));
   const envAt = (): RollReceiverEnv => ({
     receiverId: "O5",
-    receiverPos: SHORT_ROLL_SPOT,
+    receiverPos: ctx.set.shortRoll,
     rimCandidates: [d1FromRoll, d3Help],
     floaterCandidates: [d1FromRoll],
     invert: null,
@@ -2851,19 +3033,33 @@ function runSwitchPhase(ctx: CoreContext): PossessionCoreResult {
 }
 
 /**
- * Show (hedge) ante el bloqueo directo (ME-07B v2 §5). D5 sale delante del
- * punto de uso a frenar a O1 (M01/M05 desde la preparación, T22); D1 navega
- * la pantalla con su retraso real; cuando D1 vuelve, D5 recibe el aviso
- * (M09) y regresa al aro (T23). La ventana es el roll mientras D5 vuelve;
- * D3 decide la ayuda al continuador comparando concesiones, como en drop.
- * O1 lee: atacar el aro con D5 delante, triple sobre el show, pase al roll o
- * salida segura.
+ * Show (hedge) y «a la altura» (at the level) ante el bloqueo directo
+ * (ME-07B v2 §5, LAB-0.7). Comparten la primitiva «el pívot sube al bloqueo»
+ * pero se distinguen en profundidad, orden y responsabilidad:
+ *
+ * - **Show:** D5 sale **a la línea del manejador**, a contacto del punto de
+ *   uso (M01/M05 desde la preparación, T22), y le frena: si llega antes de
+ *   que O1 decida, O1 no puede arrancar hacia el aro hasta que D5 se retira
+ *   (cuando D1 ha superado la pantalla, aviso M09) y D5 vuelve **al aro**
+ *   (T23). Concede el roll mientras vuelve.
+ * - **A la altura:** D5 sube solo **a la altura del bloqueador**, a su lado
+ *   hacia el aro, sin meterse en la salida del manejador: O1 dobla la
+ *   esquina sin pausa, pero D5 le contiene desde cerca (sale con él al
+ *   decidir) y, cuando D1 se recupera (M09), vuelve **con el continuador**
+ *   (camino corto). Concede menos roll y más penetración contenida.
+ *
+ * D1 navega la pantalla con su retraso real; D3 decide la ayuda al
+ * continuador comparando concesiones, como en drop. O1 lee: atacar el aro,
+ * triple, pase al roll o salida segura.
  */
-function runShowPhase(ctx: CoreContext, scenario: ScenarioDefinition): PossessionCoreResult {
+type BigUpDepth = "show" | "a_la_altura";
+
+function runShowPhase(ctx: CoreContext, scenario: ScenarioDefinition, depth: BigUpDepth = "show"): PossessionCoreResult {
   const o1 = player(ctx, "O1");
   const o5 = player(ctx, "O5");
   const d1 = player(ctx, "D1");
   const d5 = player(ctx, "D5");
+  const atLevel = depth === "a_la_altura";
   const { screenPoint, o1UsePoint, tUseScreen, tRollReady } = setUpCentralScreen(ctx);
   const screenDelay =
     screenInterceptDelaySeconds(o5.attributes.T13, o5.attributes.F05, d1.attributes.T16) + screenContactAdjustmentSeconds(o5.measures.weightKg - d1.measures.weightKg);
@@ -2871,17 +3067,29 @@ function runShowPhase(ctx: CoreContext, scenario: ScenarioDefinition): Possessio
   setArrival(ctx, "D1", tD1Back, o1UsePoint, 0);
   event(ctx, tUseScreen, "ejecutado", "screen_navigated", ["O1", "D1"], `O1 usa la pantalla de O5; D1 navega con un retraso de ${screenDelay.toFixed(2)} s.`, { screenDelay });
 
-  const tShowCall = recognitionLatencySeconds(d5.attributes.M01, d5.attributes.M05);
+  const tCall = recognitionLatencySeconds(d5.attributes.M01, d5.attributes.M05);
   const d5Origin = ctx.positions.D5!;
-  const showPoint = moveToward(o1UsePoint, ATTACKED_HOOP, 1, COMBINED_CONTACT_RADIUS_METERS);
+  // Show: a contacto del punto de uso, en la línea del manejador. A la
+  // altura: a contacto del bloqueador, a su lado hacia el aro.
+  const upPoint = atLevel
+    ? moveToward(screenPoint, ATTACKED_HOOP, 1, COMBINED_CONTACT_RADIUS_METERS)
+    : moveToward(o1UsePoint, ATTACKED_HOOP, 1, COMBINED_CONTACT_RADIUS_METERS);
   const d5Speed = defenderLateralSpeedMps(d5.attributes.F04);
-  const tD5Show = Math.max(tShowCall, tShowCall + distance(d5Origin, showPoint) / d5Speed - perimeterArrivalAdjustmentSeconds(d5.attributes.T22));
-  const tRecoverStart = Math.max(tD5Show, tD1Back) + m09CoordinationLatencySeconds(d1.attributes.M09, d5.attributes.M09);
-  const tD5Home = tRecoverStart + distance(showPoint, ATTACKED_HOOP) / d5Speed - interiorArrivalAdjustmentSeconds(d5.attributes.T23);
-  setArrival(ctx, "D5", tD5Show, showPoint, tShowCall);
-  event(ctx, tD5Show, "ejecutado", "show_committed", ["D5"], "D5 sale delante de la pantalla a frenar a O1.", { showPoint, recoverStart: tRecoverStart, backAtRim: tD5Home });
-  event(ctx, tRecoverStart, "reconocido", "show_recovery", ["D5", "D1"], "D1 ya ha superado la pantalla: D5 recibe el aviso y vuelve a proteger el aro.");
-  setArrival(ctx, "D5", Math.max(tRecoverStart, tD5Home), ATTACKED_HOOP, tRecoverStart);
+  const tD5Up = Math.max(tCall, tCall + distance(d5Origin, upPoint) / d5Speed - perimeterArrivalAdjustmentSeconds(d5.attributes.T22));
+  const tRecoverStart = Math.max(tD5Up, tD1Back) + m09CoordinationLatencySeconds(d1.attributes.M09, d5.attributes.M09);
+  // Show: vuelve al aro. A la altura: vuelve con el continuador.
+  const recoverTo = atLevel ? ctx.set.shortRoll : ATTACKED_HOOP;
+  const tD5Home = tRecoverStart + distance(upPoint, recoverTo) / d5Speed - interiorArrivalAdjustmentSeconds(d5.attributes.T23);
+  setArrival(ctx, "D5", tD5Up, upPoint, tCall);
+  const depthToHoop = distance(upPoint, ATTACKED_HOOP);
+  if (atLevel) {
+    event(ctx, tD5Up, "ejecutado", "at_level_committed", ["D5"], "D5 sube a la altura del bloqueo, al lado de O5, para contener a O1 sin salirle a la línea.", { atLevelPoint: upPoint, depthToHoop, recoverStart: tRecoverStart, withRollerAt: tD5Home });
+    event(ctx, tRecoverStart, "reconocido", "at_level_recovery", ["D5", "D1"], "D1 ya ha superado la pantalla: D5 vuelve con el continuador.");
+  } else {
+    event(ctx, tD5Up, "ejecutado", "show_committed", ["D5"], "D5 sale a la línea de O1, delante de la pantalla, a frenarle.", { showPoint: upPoint, depthToHoop, recoverStart: tRecoverStart, backAtRim: tD5Home });
+    event(ctx, tRecoverStart, "reconocido", "show_recovery", ["D5", "D1"], "D1 ya ha superado la pantalla: D5 recibe el aviso y vuelve a proteger el aro.");
+  }
+  setArrival(ctx, "D5", Math.max(tRecoverStart, tD5Home), recoverTo, tRecoverStart);
 
   const tDecision = tUseScreen + recognitionLatencySeconds(o1.attributes.M01, o1.attributes.M05);
   const clock = ctx.shotClockMs / 1000;
@@ -2890,20 +3098,23 @@ function runShowPhase(ctx: CoreContext, scenario: ScenarioDefinition): Possessio
     return finalize(ctx, { kind: "shot_clock_violation" }, { status: "held", holderId: "O1", position: ctx.positions.O1! });
   }
 
-  // Trayectoria real de D5: delante de O1 hasta que vuelve al aro.
-  const d5Recovering: ContestCandidate = {
+  // Trayectoria real de D5: arriba hasta que vuelve. Show: retrocede al aro
+  // (una sola trayectoria). A la altura: sale con el continuador hacia donde
+  // éste vaya a finalizar (cierra el punto real del tiro).
+  const d5Recovering: ContestCandidate = atLevel
+    ? chaser(ctx, "D5", upPoint, tRecoverStart, (p) => interiorArrivalAdjustmentSeconds(p.attributes.T23))
+    : {
+        id: "D5",
+        geometryTo: () => ({ geometry: { originPos: upPoint, destinationPos: recoverTo, speedMps: d5Speed, brakingExtraSeconds: closeoutBrakingExtraSeconds(d5.attributes.F03) }, arrivalSeconds: Math.max(tRecoverStart, tD5Home) }),
+      };
+  const d5Up: ContestCandidate = {
     id: "D5",
-    geometryTo: () => ({ geometry: { originPos: showPoint, destinationPos: ATTACKED_HOOP, speedMps: d5Speed, brakingExtraSeconds: closeoutBrakingExtraSeconds(d5.attributes.F03) }, arrivalSeconds: Math.max(tRecoverStart, tD5Home) }),
-  };
-  const d5Showing: ContestCandidate = {
-    id: "D5",
-    geometryTo: () => ({ geometry: { originPos: d5Origin, destinationPos: showPoint, speedMps: d5Speed, brakingExtraSeconds: closeoutBrakingExtraSeconds(d5.attributes.F03) }, arrivalSeconds: tD5Show }),
+    geometryTo: () => ({ geometry: { originPos: d5Origin, destinationPos: upPoint, speedMps: d5Speed, brakingExtraSeconds: closeoutBrakingExtraSeconds(d5.attributes.F03) }, arrivalSeconds: tD5Up }),
   };
   const d1Trail = chaser(ctx, "D1", o1UsePoint, tD1Back);
 
   // D3: ayuda al continuador leída con las mismas concesiones que en drop.
   const help = buildTagHelpPlan(ctx, scenario, tUseScreen);
-  const d3 = player(ctx, "D3");
   const envFor = (withHelp: boolean): RollReceiverEnv => {
     const rim: ContestCandidate[] = [d5Recovering];
     const floater: ContestCandidate[] = [d5Recovering];
@@ -2913,7 +3124,7 @@ function runShowPhase(ctx: CoreContext, scenario: ScenarioDefinition): Possessio
     }
     return {
       receiverId: "O5",
-      receiverPos: SHORT_ROLL_SPOT,
+      receiverPos: ctx.set.shortRoll,
       rimCandidates: rim,
       floaterCandidates: floater,
       invert: withHelp ? { deflectorId: "D3", closerId: "D4", closerGeometry: help.d4Geometry, closerArrival: help.d4Arrival } : null,
@@ -2923,27 +3134,34 @@ function runShowPhase(ctx: CoreContext, scenario: ScenarioDefinition): Possessio
   const helpIsRead = ctx.linked !== null && (ctx.input.rollHelpCall ?? "auto") === "auto";
   const d3Helps =
     scenario.d3HelpsRoller && (!helpIsRead || bestOf(readRollReceiver(ctx, envFor(true), tRollReady)) < bestOf(readRollReceiver(ctx, envFor(false), tRollReady)));
-  event(ctx, help.decision, "reconocido", "help_decision", ["D3"], d3Helps ? "D3 ayuda al continuador mientras D5 vuelve del show." : "D3 conserva la marca de O3 durante el show.", { helps: d3Helps });
+  const pivotText = atLevel ? "D5 sigue a la altura del bloqueo" : "D5 vuelve del show";
+  event(ctx, help.decision, "reconocido", "help_decision", ["D3"], d3Helps ? `D3 ayuda al continuador mientras ${pivotText}.` : `D3 conserva la marca de O3 mientras ${pivotText}.`, { helps: d3Helps });
   if (d3Helps) {
-    setArrival(ctx, "D3", help.arrival, SHORT_ROLL_SPOT, help.decision);
+    setArrival(ctx, "D3", help.arrival, ctx.set.shortRoll, help.decision);
     setArrival(ctx, "D4", help.d4Arrival, WEAK_CORNER_SPOT, help.d4Start);
     event(ctx, help.arrival, "concedido", "help_left_assignment", ["D3", "O3"], "La ayuda de D3 deja libre a O3 en la esquina débil.");
   }
-  void d3;
 
-  const tRimReady = tDecision + timeToReach(o1UsePoint, ATTACKED_HOOP, attackerMoveSpeedMps(o1.attributes.F01)) + CLOSE_FINISH_PREP_SECONDS;
-  const rim = bestContest(ctx, [d5Recovering, d1Trail], ATTACKED_HOOP, tRimReady, CLOSE_FINISH_PREP_SECONDS)!;
+  // Show: si D5 ya está en la línea de O1 al decidir, O1 no arranca hacia el
+  // aro hasta que D5 se retira. A la altura: O1 dobla la esquina sin pausa,
+  // pero D5 sale con él desde el lado del bloqueador al decidir.
+  // O1 llegaría al punto del show `distance(o1UsePoint, upPoint)` después de decidir.
+  const tO1AtUpPoint = tDecision + distance(o1UsePoint, upPoint) / attackerMoveSpeedMps(o1.attributes.F01);
+  const o1Halted = !atLevel && tD5Up <= tO1AtUpPoint;
+  const tDriveStart = o1Halted ? Math.max(tDecision, tRecoverStart) : tDecision;
+  const tRimReady = tDriveStart + timeToReach(o1UsePoint, ATTACKED_HOOP, attackerMoveSpeedMps(o1.attributes.F01)) + CLOSE_FINISH_PREP_SECONDS;
+  const d5Contains = chaser(ctx, "D5", upPoint, Math.max(tD5Up, tDecision), (p) => interiorArrivalAdjustmentSeconds(p.attributes.T23));
+  const rim = bestContest(ctx, atLevel ? [d5Contains, d1Trail] : [d5Recovering, d1Trail], ATTACKED_HOOP, tRimReady, CLOSE_FINISH_PREP_SECONDS)!;
   const rimValue = tRimReady < clock ? 2 * shotProbability(CLOSE_FINISH_BASE_PROBABILITY, o1.attributes.T01, rim.level) : -Infinity;
   const tTripleReady = tDecision + movingShotPrepSeconds(o1.attributes.T06);
-  const triple = bestContest(ctx, [d5Showing, d1Trail], o1UsePoint, tTripleReady, movingShotPrepSeconds(o1.attributes.T06))!;
+  const triple = bestContest(ctx, [d5Up, d1Trail], o1UsePoint, tTripleReady, movingShotPrepSeconds(o1.attributes.T06))!;
   const tripleValue = isBehindThreePointLine(o1UsePoint) && tTripleReady < clock ? 3 * shotProbability(THREE_POINT_BASE_PROBABILITY, o1.attributes.T04, triple.level) : -Infinity;
-  // El pase al roll tiene que superar a D5 delante: desvío por D5 (T17).
-  const tPassArrival = Math.max(tRollReady, tDecision + PASS_RELEASE_SECONDS + distanceSeconds(o1UsePoint, SHORT_ROLL_SPOT));
+  // El pase al roll tiene que superar a D5 arriba: desvío por D5 (T17).
+  const tPassArrival = Math.max(tRollReady, tDecision + PASS_RELEASE_SECONDS + distanceSeconds(o1UsePoint, ctx.set.shortRoll));
   const envAt = () => envFor(d3Helps);
   const projectedReceiver = readRollReceiver(ctx, envAt(), tPassArrival);
   const passValue = Math.max(-Infinity, ...projectedReceiver.map((o) => o.value));
   const passCompletion = 1 - deflectionProbability(d5.attributes.T17, o1.attributes.T09);
-  void screenPoint;
 
   const options: HandlerReadOption[] = [
     {
@@ -2951,7 +3169,7 @@ function runShowPhase(ctx: CoreContext, scenario: ScenarioDefinition): Possessio
       value: rimValue,
       completion: 1,
       kind: "tiro",
-      values: { contesterId: realId(ctx, rim.id), opposition: rim.level, readySeconds: tRimReady },
+      values: { contesterId: realId(ctx, rim.id), opposition: rim.level, readySeconds: tRimReady, halted: o1Halted, driveStartSeconds: tDriveStart },
       execute: (record) => {
         record();
         return resolveShotAttempt(ctx, { shooterId: "O1", shooterSkill: o1.attributes.T01, shotType: "close_finish", shooterPos: ATTACKED_HOOP, tReady: tRimReady, prepSeconds: CLOSE_FINISH_PREP_SECONDS, contesterId: rim.id, contesterArrival: rim.arrival, contesterGeometry: rim.geometry });
@@ -2973,12 +3191,12 @@ function runShowPhase(ctx: CoreContext, scenario: ScenarioDefinition): Possessio
       value: passValue,
       completion: passCompletion,
       kind: "pase",
-      values: { receiverBestOption: [...projectedReceiver].sort((a, b) => b.value - a.value)[0]?.id ?? null, d5BackAtRimSeconds: tD5Home, d3Helps },
-      execute: (record) => executeRollPass(ctx, { tPassArrival, deflectorId: "D5", envAt, record, note: "O1 pasa por encima del show al continuador O5." }),
+      values: { receiverBestOption: [...projectedReceiver].sort((a, b) => b.value - a.value)[0]?.id ?? null, d5RecoveredSeconds: tD5Home, d5RecoversTo: atLevel ? "continuador" : "aro", d3Helps },
+      execute: (record) => executeRollPass(ctx, { tPassArrival, deflectorId: "D5", envAt, record, note: atLevel ? "O1 pasa al continuador O5 junto a D5, que sigue a la altura del bloqueo." : "O1 pasa por encima del show al continuador O5." }),
     },
     { id: "salida_segura", value: 0, completion: 1, kind: "salida", values: {}, execute: (record) => executeSafeOutlet(ctx, tDecision, record) },
   ];
-  return decideHandlerRead(ctx, "lectura_show", tDecision, ["O1", "O5", "D1", "D5"], options);
+  return decideHandlerRead(ctx, atLevel ? "lectura_a_la_altura" : "lectura_show", tDecision, ["O1", "O5", "D1", "D5"], options);
 }
 
 interface EntryOpportunity {
@@ -3014,6 +3232,9 @@ interface EntryOpportunity {
 interface CoverageEstimate {
   readonly switchProjection: FamilyOpportunity;
   readonly showProjection: FamilyOpportunity;
+  readonly atLevelProjection: FamilyOpportunity;
+  /** ICE proyectado (solo con pantalla lateral; si D1 llega tarde, concede lo mismo que drop). */
+  readonly iceProjection: FamilyOpportunity | null;
   readonly underProjection: FamilyOpportunity;
   /** ICE solo es elegible si la pantalla es lateral (fuera de la franja de la zona). */
   readonly iceEligible: boolean;
@@ -3040,6 +3261,8 @@ function estimateCoverageChoice(ctx: CoreContext, scenario: ScenarioDefinition):
   return {
     switchProjection: familyOpportunity(projectFamilyRead(ctx, (dry) => runSwitchPhase(dry))),
     showProjection: familyOpportunity(projectFamilyRead(ctx, (dry) => runShowPhase(dry, scenario))),
+    atLevelProjection: familyOpportunity(projectFamilyRead(ctx, (dry) => runShowPhase(dry, scenario, "a_la_altura"))),
+    iceProjection: isLateralScreenSpot(ctx.positions.O5!) ? familyOpportunity(projectFamilyRead(ctx, (dry) => runIcePhase(dry, scenario))) : null,
     underProjection: familyOpportunity(projectFamilyRead(ctx, (dry) => runDropPhase(dry, scenario, "por_debajo"))),
     iceEligible: isLateralScreenSpot(ctx.positions.O5!),
     trapEligible,

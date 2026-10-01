@@ -83,6 +83,7 @@ import {
 import { projectBoxScore } from "./box-score";
 import { createRecordingAuditCollector, sanitizeAuditFactLinks } from "../audit/audit-collector";
 import type { AuditReasonCode } from "../audit/audit-types";
+import type { ScreenPlacementChoice } from "../lab/lab-0-7-parameters";
 import type {
   FoulRecord,
   GameInput,
@@ -235,6 +236,10 @@ class GameRun extends LinkedRun {
     // mano a mano o `auto`.
     if (this.currentSetKind !== "central") return "bloqueo_directo";
     return this.teamInputs.get(teamId)!.offensivePlan;
+  }
+
+  protected screenPlacementWhenAttacking(teamId: string): ScreenPlacementChoice {
+    return this.teamInputs.get(teamId)!.screenPlacement ?? "auto";
   }
 
   protected offBallCallWhenDefending(teamId: string): OffBallDefensiveCallChoice {

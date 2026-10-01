@@ -22,6 +22,11 @@ export type FactKind =
   | "show_committed"
   | "show_recovery"
   | "coverage_not_applicable"
+  // ME-07B v2 §5 (LAB-0.7): ICE ante el bloqueo lateral y «a la altura».
+  | "ice_committed"
+  | "ice_late"
+  | "at_level_committed"
+  | "at_level_recovery"
   | "trap_broken_advantage"
   | "trap_recovered"
   | "read_option"

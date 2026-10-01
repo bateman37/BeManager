@@ -43,6 +43,7 @@ import type {
 } from "../lab/match-input";
 import { getScenario } from "../lab/scenario";
 import type { ObservedOutcome } from "../lab/lab-0-4-parameters";
+import { LATERAL_PNR_TARGETS, type ScreenPlacement, type ScreenPlacementChoice } from "../lab/lab-0-7-parameters";
 import { FIRST_READ_TIE_BAND_POINTS, contestReachMeters, evaluateContestLevel, type LAB_0_3_PARAMETERS_VERSION } from "../lab/lab-0-3-parameters";
 import {
   attackerMoveSpeedMps,
@@ -290,6 +291,12 @@ export abstract class LinkedRun {
     string,
     { offenseByFamily: Partial<Record<OffensivePlan, ObservedOutcome>>; defenseByCoverage: Partial<Record<DefensiveCoverage, ObservedOutcome>> }
   >();
+  /**
+   * Colocación del bloqueo directo de la acción organizada en curso
+   * (ME-07B v2 §4, LAB-0.7): la fija `organize` al elegir creador,
+   * bloqueador y colocación; vuelve a `central` en cuanto el núcleo la usa.
+   */
+  protected currentPlacement: ScreenPlacement = "central";
   protected pendingObservation: {
     readonly attackingId: string;
     readonly defendingId: string;
@@ -367,6 +374,15 @@ export abstract class LinkedRun {
    * mano (ME-06 §3.1; ME-07A §4: admite `"auto"`). Sin efecto cuando la
    * familia resuelta es el bloqueo directo.
    */
+  /**
+   * Colocación del bloqueo directo pedida por el equipo que ataca (ME-07B v2
+   * §4). Por defecto `central`: los modos que no la declaren (p. ej. el
+   * tramo de ME-03) conservan su disposición de siempre.
+   */
+  protected screenPlacementWhenAttacking(teamId: string): ScreenPlacementChoice {
+    void teamId;
+    return "central";
+  }
   protected offBallCallWhenDefending(teamId: string): OffBallDefensiveCallChoice {
     void teamId;
     return "guardar_espacio";
@@ -830,6 +846,7 @@ export abstract class LinkedRun {
       offensivePlan: this.offensivePlanWhenAttacking(frame.attacking.id),
       offBallDefensiveCall: this.offBallCallWhenDefending(frame.defending.id),
       creationPriority: this.creationPriorityWhenAttacking(frame.attacking.id),
+      screenPlacement: this.currentPlacement,
     };
   }
 
@@ -881,6 +898,7 @@ export abstract class LinkedRun {
 
   protected runCore(frame: Frame, t0: Milliseconds, entry: LinkedEntry, legs?: Record<string, PlannedLeg>): Step | null {
     const core = this.computeCore(frame, t0, entry, legs);
+    this.currentPlacement = "central";
     if (core.organizedChoice) {
       this.settleObservation();
       this.pendingObservation = {
@@ -1240,8 +1258,9 @@ export abstract class LinkedRun {
 
   // --- organización y acción organizada ----------------------------------------
 
-  /** Destinos de la disposición del bloqueo directo, en el marco local de quien ataca. */
-  protected dispositionTargets(): Record<string, Point2D> {
+  /** Destinos de la disposición del bloqueo directo, en el marco local de quien ataca (central o lateral, LAB-0.7). */
+  protected dispositionTargets(placement: ScreenPlacement = "central"): Record<string, Point2D> {
+    if (placement === "lateral") return { ...LATERAL_PNR_TARGETS };
     const scenario = getScenario(this.settings.dispositionScenarioId);
     const targets: Record<string, Point2D> = {};
     for (const slot of [...scenario.offense, ...scenario.defense]) targets[slot.playerId] = slot.initialPosition;
@@ -1290,8 +1309,13 @@ export abstract class LinkedRun {
     frame: Frame,
     t0: Milliseconds,
     holderId: string,
-  ): { frame: Frame; options: import("../audit/audit-types").AuditOptionRecord[] } {
-    const targets = this.dispositionTargets();
+  ): {
+    frame: Frame;
+    options: import("../audit/audit-types").AuditOptionRecord[];
+    placement: ScreenPlacement;
+    placementOptions: import("../audit/audit-types").AuditOptionRecord[];
+    targets: Record<string, Point2D>;
+  } {
     const originalHandlerId = frame.slotToId.O1!;
     const swapRoles = (map: Readonly<Record<string, string>>, a: string, b: string): Record<string, string> => {
       if (a === b) return { ...map };
@@ -1305,32 +1329,56 @@ export abstract class LinkedRun {
     const holderRole = frame.idToSlot[holderId]!.slice(1);
     const handlerMaps: Record<string, string>[] = [{ ...frame.slotToId }];
     if (holderId !== originalHandlerId) handlerMaps.push(swapRoles(frame.slotToId, "1", holderRole));
-    const candidates: { map: Record<string, string>; handlerId: string; screenerId: string; tReadyMs: number; value: number; plan: string; read: string | null }[] = [];
+    // ME-07B v2 §4 (LAB-0.7): la colocación del bloqueo (central o lateral)
+    // se elige con la misma proyección que el creador y el bloqueador; la
+    // lateral es del bloqueo directo, así que no se ofrece si el plan obliga
+    // a la mano a mano.
     const matchInput = this.coreMatchInput(frame);
+    const placementChoice = this.screenPlacementWhenAttacking(frame.attacking.id);
+    const pnrAllowed = matchInput.offensivePlan !== "mano_a_mano_sin_balon";
+    const placements: ScreenPlacement[] =
+      placementChoice === "auto" ? (pnrAllowed ? ["central", "lateral"] : ["central"]) : [pnrAllowed ? placementChoice : "central"];
+    const candidates: {
+      map: Record<string, string>;
+      handlerId: string;
+      screenerId: string;
+      tReadyMs: number;
+      value: number;
+      plan: string;
+      read: string | null;
+      placement: ScreenPlacement;
+      targets: Record<string, Point2D>;
+    }[] = [];
     const remainingAtT0 = this.shotRemainingAt(t0);
-    for (const handlerMap of handlerMaps) {
-      for (const map of [handlerMap, swapRoles(handlerMap, "4", "5")]) {
-        const handlerId = map.O1!;
-        let tAllSet = t0;
-        for (const slot of OFFENSE_SLOTS) {
-          const id = map[slot]!;
-          const arrive = t0 + secondsToMs(timeToReach(this.positionAt(id, t0), toGlobal(frame.dir, targets[slot]!), this.runSpeed(id)));
-          tAllSet = Math.max(tAllSet, arrive);
+    for (const placement of placements) {
+      const targets = this.dispositionTargets(placement);
+      for (const handlerMap of handlerMaps) {
+        for (const map of [handlerMap, swapRoles(handlerMap, "4", "5")]) {
+          const handlerId = map.O1!;
+          let tAllSet = t0;
+          for (const slot of OFFENSE_SLOTS) {
+            const id = map[slot]!;
+            const arrive = t0 + secondsToMs(timeToReach(this.positionAt(id, t0), toGlobal(frame.dir, targets[slot]!), this.runSpeed(id)));
+            tAllSet = Math.max(tAllSet, arrive);
+          }
+          const passNeeded = holderId !== handlerId;
+          const tReadyMs = passNeeded
+            ? tAllSet + secondsToMs(PASS_RELEASE_SECONDS) + secondsToMs(distance(targets[this.slotOf(map, holderId)]!, targets.O1!) / PASS_FLIGHT_SPEED_MPS)
+            : tAllSet;
+          const shotClockMs = Math.max(0, remainingAtT0 - (tReadyMs - t0));
+          const projection = projectOrganizedOpportunity(
+            { ...matchInput, screenPlacement: placement },
+            {
+              binding: map,
+              startPositions: targets,
+              shotClockMs,
+              gameClockMs: this.game.ms,
+              attackingPriority: frame.attacking.priority,
+              rules: this.coreRules(),
+            },
+          );
+          candidates.push({ map, handlerId, screenerId: map.O5!, tReadyMs, value: projection.value, plan: projection.plan, read: projection.bestReadOption, placement, targets });
         }
-        const passNeeded = holderId !== handlerId;
-        const tReadyMs = passNeeded
-          ? tAllSet + secondsToMs(PASS_RELEASE_SECONDS) + secondsToMs(distance(targets[this.slotOf(map, holderId)]!, targets.O1!) / PASS_FLIGHT_SPEED_MPS)
-          : tAllSet;
-        const shotClockMs = Math.max(0, remainingAtT0 - (tReadyMs - t0));
-        const projection = projectOrganizedOpportunity(matchInput, {
-          binding: map,
-          startPositions: targets,
-          shotClockMs,
-          gameClockMs: this.game.ms,
-          attackingPriority: frame.attacking.priority,
-          rules: this.coreRules(),
-        });
-        candidates.push({ map, handlerId, screenerId: map.O5!, tReadyMs, value: projection.value, plan: projection.plan, read: projection.bestReadOption });
       }
     }
     const best = Math.max(...candidates.map((c) => c.value));
@@ -1339,8 +1387,8 @@ export abstract class LinkedRun {
       if (best - c.value > FIRST_READ_TIE_BAND_POINTS) continue;
       if (best - chosen.value > FIRST_READ_TIE_BAND_POINTS || c.tReadyMs < chosen.tReadyMs) chosen = c;
     }
-    // Una opción por creador candidato (su mejor bloqueador), para que el
-    // motivo quede legible por jugador real.
+    // Una opción por creador candidato (su mejor bloqueador y colocación),
+    // para que el motivo quede legible por jugador real.
     const byHandler = new Map<string, (typeof candidates)[number]>();
     for (const c of candidates) {
       const prev = byHandler.get(c.handlerId);
@@ -1353,10 +1401,11 @@ export abstract class LinkedRun {
         projectedPlan: c.plan,
         projectedBestRead: c.read,
         readySeconds: (c.tReadyMs - t0) / 1000,
+        placement: c.placement,
       };
       if (c === chosen) {
         const reasonCode = c.handlerId === holderId && holderId !== originalHandlerId ? "creator_kept_by_real_holder" : "creator_projected_value_higher";
-        const note = `${c.handlerId} crea con ${c.screenerId} de bloqueador: valor proyectado ${c.value.toFixed(3)}, listo en ${((c.tReadyMs - t0) / 1000).toFixed(2)} s.`;
+        const note = `${c.handlerId} crea con ${c.screenerId} de bloqueador (${c.placement}): valor proyectado ${c.value.toFixed(3)}, listo en ${((c.tReadyMs - t0) / 1000).toFixed(2)} s.`;
         return { id: c.handlerId, status: "elegida" as const, reasonCode: reasonCode as import("../audit/audit-types").AuditReasonCode, reasonNote: note, values };
       }
       const lostByTime = best - c.value <= FIRST_READ_TIE_BAND_POINTS;
@@ -1367,7 +1416,29 @@ export abstract class LinkedRun {
         values,
       };
     });
-    return { frame: chosen.map === candidates[0]!.map ? frame : rebindFrame(frame, chosen.map), options };
+    // Mejor candidato de cada colocación evaluada (ME-07B v2 §4).
+    const placementOptions = placements.map((placement) => {
+      const own = candidates.filter((c) => c.placement === placement);
+      const top = own.includes(chosen) ? chosen : own.reduce((a, b) => (b.value > a.value ? b : a));
+      const values = { projectedValue: top.value, handlerId: top.handlerId, screenerId: top.screenerId, projectedPlan: top.plan, projectedBestRead: top.read, readySeconds: (top.tReadyMs - t0) / 1000 };
+      const isChosen = placement === chosen.placement;
+      const reasonCode: import("../audit/audit-types").AuditReasonCode =
+        placements.length === 1
+          ? "placement_forced_by_plan"
+          : isChosen
+            ? "placement_projected_value_higher"
+            : best - top.value <= FIRST_READ_TIE_BAND_POINTS
+              ? "creator_ready_later_in_band"
+              : "placement_projected_value_lower";
+      return { id: placement, status: isChosen ? ("elegida" as const) : ("descartada_por_condicion" as const), reasonCode, values };
+    });
+    return {
+      frame: chosen.map === candidates[0]!.map ? frame : rebindFrame(frame, chosen.map),
+      options,
+      placement: chosen.placement,
+      placementOptions,
+      targets: chosen.targets,
+    };
   }
 
   private slotOf(map: Readonly<Record<string, string>>, id: string): string {
@@ -1397,7 +1468,8 @@ export abstract class LinkedRun {
     const assignment = this.assignOrganizedRoles(frame, t0, holderId);
     const effectiveFrame = assignment.frame;
 
-    const arrivals = this.planOrganizeLegs(effectiveFrame, t0, []);
+    const targets = assignment.targets;
+    const arrivals = this.planOrganizeLegs(effectiveFrame, t0, [], targets);
     const holderSlot = effectiveFrame.idToSlot[holderId]!;
     // La acción organizada empieza cuando los cinco atacantes están
     // situados; el ataque no espera a una defensa que llega tarde.
@@ -1411,11 +1483,18 @@ export abstract class LinkedRun {
       chosenOptionId: handlerId,
       options: assignment.options,
     });
+    this.auditDecision(t0, {
+      point: "colocacion_bloqueo",
+      holderId,
+      participants: [handlerId, effectiveFrame.slotToId.O5!],
+      chosenOptionId: assignment.placement,
+      options: assignment.placementOptions,
+    });
 
     // Cuenta de 8 s si el control empezó en pista trasera (art. 28).
     if (this.backcourt) {
       const from = toLocal(effectiveFrame.dir, this.positionAt(holderId, t0));
-      const to = this.dispositionTargets()[holderSlot]!;
+      const to = targets[holderSlot]!;
       const offset = frontcourtEntryOffsetSeconds(from, to, (arrivals[holderId]! - t0) / 1000);
       const crossingMs = offset === null ? null : t0 + secondsToMs(offset);
       const count = evaluateBackcourtCount(this.backcourt.startMs, crossingMs, this.backcourt.elapsedBeforeMs);
@@ -1447,7 +1526,8 @@ export abstract class LinkedRun {
       if (outcome.kind === "awkward_control") tReady += secondsToMs(outcome.extraDelaySeconds);
       if (this.shotExpiryMs() <= tReady) return this.shotClockViolationDuringPlay(effectiveFrame, this.shotExpiryMs(), handlerId);
     }
-    return this.runSet(effectiveFrame, tReady);
+    this.currentPlacement = assignment.placement;
+    return this.runSet(effectiveFrame, tReady, targets);
   }
 
   protected runSet(
@@ -1469,7 +1549,7 @@ export abstract class LinkedRun {
     // instante; D2 solo se preposiciona aquí cuando ya se sabe con
     // certeza que la cobertura es `trampa`.
     const positionalDefenders = coverage === "trampa" ? ["D2", "D3", "D4", "D5"] : ["D3", "D4", "D5"];
-    const coverageText: Record<string, string> = { trampa: "trampa", auto: "cobertura automática", drop: "drop", cambio: "cambio", show: "show", por_debajo: "por debajo", ice: "ICE" };
+    const coverageText: Record<string, string> = { trampa: "trampa", auto: "cobertura automática", drop: "drop", cambio: "cambio", show: "show", a_la_altura: "a la altura", por_debajo: "por debajo", ice: "ICE" };
     const legs: Record<string, PlannedLeg> = {};
     const late: string[] = [];
     for (const slot of DEFENSE_SLOTS) {
@@ -1494,8 +1574,8 @@ export abstract class LinkedRun {
         actors: [frame.slotToId.O1!, frame.slotToId.O5!],
         text:
           entryText ??
-          `Los cinco atacantes están situados: ${frame.slotToId.O1} y ${frame.slotToId.O5} inician el bloqueo directo central (${coverageText[coverage] ?? coverage}) con ${(remaining / 1000).toFixed(1)} s de lanzamiento.${lateText}`,
-        detail: { shotClockMs: remaining, lateDefenders: late, roles: { ...frame.slotToId } },
+          `Los cinco atacantes están situados: ${frame.slotToId.O1} y ${frame.slotToId.O5} inician el bloqueo directo ${this.currentPlacement} (${coverageText[coverage] ?? coverage}) con ${(remaining / 1000).toFixed(1)} s de lanzamiento.${lateText}`,
+        detail: { shotClockMs: remaining, lateDefenders: late, roles: { ...frame.slotToId }, placement: this.currentPlacement },
         ball: { status: "held", holderId: frame.slotToId.O1!, fixed: null },
       })
     )

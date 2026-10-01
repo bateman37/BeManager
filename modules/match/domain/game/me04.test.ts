@@ -194,8 +194,9 @@ describe("ME-04 (2): bocina, tiro en el aire, reset del reloj de lanzamiento y r
     // partido que entra y solo se resuelve ese tiro. §2.3 (trampa desde la
     // preparación y defensa que aprende) lo lleva a la semilla 309, y §2.4
     // (asignación de creador/bloqueador por proyección) a la 179 y la lectura
-    // del receptor del roll a la 316; §2.5 (faltas por contacto real) a la 110.
-    const r = game(110);
+    // del receptor del roll a la 316; §2.5 (faltas por contacto real) a la 110;
+    // el bloqueo lateral, el ICE y «a la altura» (LAB-0.7) a la 325.
+    const r = game(325);
     const i = r.events.findIndex((e) => e.kind === "buzzer" && e.detail.shotInFlight === true);
     expect(i).toBeGreaterThan(0);
     const buzzer = r.events[i]!;
@@ -215,8 +216,8 @@ describe("ME-04 (2): bocina, tiro en el aire, reset del reloj de lanzamiento y r
     // soltado a tiempo sin rebote inventado tras la bocina final.
     // ME-07B v2 §2.1 (cierre de rebote y caída del tirador) desplaza ese
     // caso a la semilla 53, y §2.3 (defensa auto con trampa en competencia)
-    // a la 14, y §2.4 (asignación de creador/bloqueador y lectura del receptor) a la 60; §2.5 (faltas por contacto) a la 49.
-    const r = game(49);
+    // a la 14, y §2.4 (asignación de creador/bloqueador y lectura del receptor) a la 60; §2.5 (faltas por contacto) a la 49; LAB-0.7 (bloqueo lateral, ICE) a la 69.
+    const r = game(69);
     const i = r.events.findIndex((e) => e.kind === "buzzer" && e.detail.shotInFlight === true);
     const next = r.events.slice(i + 1, i + 4).map((e) => e.kind);
     expect(next).toEqual(["field_goal_attempt", "possession_ended", "period_ended"]);
@@ -397,6 +398,9 @@ describe("ME-04 (4): sustituciones en oportunidad legal, reentrada, minutos 5× 
   });
 
   it("canasta tardía en C4: solo sustituye el equipo que la recibe; también tras último libre y entre períodos", () => {
+    // LAB-0.7 (bloqueo lateral, ICE): la semilla publicada ya no tiene una
+    // canasta recibida en los dos últimos minutos con relevo; la 1 sí.
+    const r = game(1);
     const late = r.substitutions.filter((s) => s.window === "canasta");
     expect(late.length).toBeGreaterThan(0);
     for (const s of late) {
@@ -608,9 +612,9 @@ describe("ME-04 (6): empate → prórroga, empate en prórroga → otra; guardi�
     // 1–3000 da dos prórrogas con trampa/trampa y «cargar rebote»; la
     // semilla 225 con drop/drop y «proteger balance» sí es un partido
     // natural con dos prórrogas. §2.4 (asignación de creador/bloqueador por
-    // proyección y lectura del receptor) la desplaza a la semilla 667 y §2.5
-    // (faltas por contacto real) a la 232.
-    const r = game(232);
+    // proyección y lectura del receptor) la desplaza a la semilla 667, §2.5
+    // (faltas por contacto real) a la 232 y LAB-0.7 (bloqueo lateral, ICE) a la 246.
+    const r = game(246);
     expect(r.periods.map((p) => p.label)).toEqual(["C1", "C2", "C3", "C4", "Prórroga 1", "Prórroga 2"]);
     const endOf = (period: number) => r.events.find((e) => e.kind === "period_ended" && e.period === period)!;
     expect(endOf(4).score[SC]).toBe(endOf(4).score[PA]);
@@ -628,7 +632,7 @@ describe("ME-04 (6): empate → prórroga, empate en prórroga → otra; guardi�
   });
 
   it("el guardián de prórrogas señala la anomalía sin cerrar el empate ni inventar ganador", () => {
-    const r = game(232, BASE, { maxOvertimes: 1 });
+    const r = game(246, BASE, { maxOvertimes: 1 });
     expect(r.stop.cause).toBe("guardian");
     expect(r.winnerTeamId).toBeNull();
     expect(r.finalScore[SC]).toBe(r.finalScore[PA]);

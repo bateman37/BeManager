@@ -17,6 +17,7 @@ import { LAB_DECLARED_ROLES, FUNCTIONAL_ROLE_LABELS, type FunctionalRole } from 
 import { LAB_STARTER_IDS } from "@match/domain/players/lab-roster-fixture";
 import { buildAuditExport } from "@match/domain/audit/build-audit-export";
 import { TramoCourt } from "./tramo-panel";
+import type { ScreenPlacementChoice } from "@match/domain/lab/lab-0-7-parameters";
 
 /**
  * Sección «Partido completo» de ME-04: controles de la foto (semilla,
@@ -37,6 +38,8 @@ export interface GameTeamSettings {
   readonly offBallDefensiveCall: OffBallDefensiveCallChoice;
   /** ME-07A §3.1: prioridad de creación de este equipo para todo el partido. */
   readonly creationPriority: OffensiveCreationPriority;
+  /** ME-07B v2 §4 (LAB-0.7): colocación del bloqueo directo (auto, central o lateral). */
+  readonly screenPlacement?: ScreenPlacementChoice;
 }
 
 export interface GameSettings {
@@ -59,6 +62,7 @@ const DEFAULT_TEAM_SETTINGS: GameTeamSettings = {
   offensivePlan: "auto",
   offBallDefensiveCall: "auto",
   creationPriority: "equilibrado",
+  screenPlacement: "auto",
 };
 
 export function teamSettings(settings: GameSettings, teamId: string): GameTeamSettings {
@@ -76,6 +80,7 @@ export function toGameTeam(team: LabTeamRecord, s: GameTeamSettings): BuildGameT
     offensivePlan: s.offensivePlan,
     offBallDefensiveCall: s.offBallDefensiveCall,
     creationPriority: s.creationPriority,
+    screenPlacement: s.screenPlacement ?? "auto",
   };
 }
 
@@ -85,6 +90,7 @@ const COVERAGE_LABELS: Record<DefensiveCoverageChoice, string> = {
   trampa: "Trampa",
   cambio: "Cambio (switch)",
   show: "Show (hedge)",
+  a_la_altura: "A la altura (at the level)",
   por_debajo: "Por debajo (under)",
   ice: "ICE lateral",
 };
@@ -96,6 +102,11 @@ const OFFENSIVE_PLAN_LABELS: Record<OffensivePlanChoice, string> = {
   auto: "Auto (elige el motor)",
   bloqueo_directo: "Bloqueo directo",
   mano_a_mano_sin_balon: "Mano a mano sin balón",
+};
+const SCREEN_PLACEMENT_LABELS: Record<ScreenPlacementChoice, string> = {
+  auto: "Auto (elige el creador)",
+  central: "Central",
+  lateral: "Lateral",
 };
 const OFF_BALL_CALL_LABELS: Record<OffBallDefensiveCallChoice, string> = {
   auto: "Auto (elige la defensa)",
@@ -200,8 +211,8 @@ function Scoreboard({ game }: { readonly game: LabGameView }) {
         {game.possessions.length} posesiones · {game.events.length} hechos
       </p>
       <p className="text-xs text-slate-500 dark:text-slate-400">
-        Plan ofensivo (ME-06): {home.name} ataca con {OFFENSIVE_PLAN_LABELS[home.offensivePlan]}, prioridad {CREATION_PRIORITY_LABELS[home.creationPriority]},
-        defiende la mano a mano con {OFF_BALL_CALL_LABELS[home.offBallDefensiveCall]} · {away.name} ataca con {OFFENSIVE_PLAN_LABELS[away.offensivePlan]},
+        Plan ofensivo (ME-06): {home.name} ataca con {OFFENSIVE_PLAN_LABELS[home.offensivePlan]} (bloqueo {SCREEN_PLACEMENT_LABELS[home.screenPlacement ?? "auto"]}), prioridad {CREATION_PRIORITY_LABELS[home.creationPriority]},
+        defiende la mano a mano con {OFF_BALL_CALL_LABELS[home.offBallDefensiveCall]} · {away.name} ataca con {OFFENSIVE_PLAN_LABELS[away.offensivePlan]} (bloqueo {SCREEN_PLACEMENT_LABELS[away.screenPlacement ?? "auto"]}),
         prioridad {CREATION_PRIORITY_LABELS[away.creationPriority]}, defiende la mano a mano con {OFF_BALL_CALL_LABELS[away.offBallDefensiveCall]}.
       </p>
       <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -809,6 +820,20 @@ export function GameSection(props: GameSectionProps) {
                       {(Object.keys(OFFENSIVE_PLAN_LABELS) as OffensivePlanChoice[]).map((p) => (
                         <option key={p} value={p}>
                           {OFFENSIVE_PLAN_LABELS[p]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex items-center gap-1">
+                    Colocación del bloqueo
+                    <select
+                      className="rounded border border-slate-300 bg-transparent px-1 py-0.5 dark:border-slate-700"
+                      value={teamSettings(props.settings, team.id).screenPlacement ?? "auto"}
+                      onChange={(e) => setTeam(team.id, { screenPlacement: e.target.value as ScreenPlacementChoice })}
+                    >
+                      {(Object.keys(SCREEN_PLACEMENT_LABELS) as ScreenPlacementChoice[]).map((p) => (
+                        <option key={p} value={p}>
+                          {SCREEN_PLACEMENT_LABELS[p]}
                         </option>
                       ))}
                     </select>

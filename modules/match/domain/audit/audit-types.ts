@@ -43,7 +43,11 @@ export type AuditDecisionPoint =
   | "disputa_rebote"
   // ME-07B v2 §5: lecturas del manejador ante cambio (switch) y show.
   | "lectura_cambio"
-  | "lectura_show";
+  | "lectura_show"
+  // ME-07B v2 §4–§5 (LAB-0.7): colocación del bloqueo, ICE y «a la altura».
+  | "colocacion_bloqueo"
+  | "lectura_ice"
+  | "lectura_a_la_altura";
 
 /**
  * Motivo estructurado y estable de cada opción. Uno por causa real del
@@ -105,6 +109,11 @@ export type AuditReasonCode =
   | "read_value_lower"
   | "read_option_not_viable"
   | "coverage_ice_central_not_eligible"
+  | "coverage_ice_late"
+  | "placement_projected_value_higher"
+  | "placement_projected_value_lower"
+  | "placement_forced_by_plan"
+  | "family_not_in_lateral_placement"
   | "not_evaluated_short_circuit"
   | "situational_value_lower"
   | "tie_band_resolved_by_tendency"

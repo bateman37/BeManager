@@ -78,6 +78,8 @@ export interface AuditExportTeam {
   readonly offBallDefensiveCall: string;
   /** ME-07A §3.1: prioridad de creación de este equipo. */
   readonly creationPriority: string;
+  /** ME-07B v2 §4 (LAB-0.7): colocación del bloqueo directo pedida (auto, central o lateral). */
+  readonly screenPlacement: string;
   readonly roster: readonly AuditExportTeamPlayer[];
   /**
    * Huella estable de la foto efectiva de este equipo (ME-06 §5): deriva
@@ -373,6 +375,7 @@ function teamFingerprint(team: GameInput["teams"][number]): string {
       offensivePlan: team.offensivePlan,
       offBallDefensiveCall: team.offBallDefensiveCall,
       creationPriority: team.creationPriority,
+      screenPlacement: team.screenPlacement ?? "auto",
       starters: [...team.starters].sort(),
       declaredRoles: team.declaredRoles,
       roster: team.roster
@@ -557,6 +560,7 @@ function exportTeam(team: GameInput["teams"][number]): AuditExportTeam {
     offensivePlan: team.offensivePlan,
     offBallDefensiveCall: team.offBallDefensiveCall,
     creationPriority: team.creationPriority,
+    screenPlacement: team.screenPlacement ?? "auto",
     roster: team.roster.map((p) => ({
       id: p.id,
       name: p.name,

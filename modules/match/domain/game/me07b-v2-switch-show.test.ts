@@ -16,7 +16,8 @@ vi.setConfig({ testTimeout: 60_000 });
  * trampa por la menor concesión combinada.
  */
 function play(seed: number, coverage: DefensiveCoverageChoice, away: readonly PlayerProfile[] = PUERTO_AMBAR.players) {
-  const common = { priority: "proteger_balance" as const, offBallDefensiveCall: "auto" as const, offensivePlan: "bloqueo_directo" as const, creationPriority: "equilibrado" as const };
+  // Bloqueo central (LAB-0.7: el lateral y el ICE ejecutable se prueban en `me07b-v2-lateral-ice.test.ts`).
+  const common = { priority: "proteger_balance" as const, offBallDefensiveCall: "auto" as const, offensivePlan: "bloqueo_directo" as const, creationPriority: "equilibrado" as const, screenPlacement: "central" as const };
   return playFullGame(
     buildGameInput({
       seed,
@@ -152,11 +153,16 @@ describe("ME-07B v2 §5: coberturas en competencia en auto", () => {
       const r = play(seed, "auto");
       for (const d of r.audit!.decisions.filter((x) => x.point === "seleccion_cobertura")) {
         chosen.add(d.chosenOptionId!);
-        expect(d.options.map((o) => o.id)).toEqual(["drop", "trampa", "cambio", "show", "por_debajo", "ice"]);
-        // Bloqueo central: ICE nunca es elegible y se declara con su motivo.
+        expect(d.options.map((o) => o.id)).toEqual(["drop", "trampa", "cambio", "show", "a_la_altura", "por_debajo", "ice"]);
+        // Bloqueo central: ICE nunca es elegible y se declara con su motivo;
+        // ante el lateral (LAB-0.7) compite con su concesión proyectada.
         const ice = d.options.find((o) => o.id === "ice")!;
-        expect(ice.reasonCode).toBe("coverage_ice_central_not_eligible");
-        expect(d.chosenOptionId).not.toBe("ice");
+        if (ice.values!.lateralScreen) {
+          expect(ice.values!.concessionValue).not.toBeNull();
+        } else {
+          expect(ice.reasonCode).toBe("coverage_ice_central_not_eligible");
+          expect(d.chosenOptionId).not.toBe("ice");
+        }
       }
     }
     expect(chosen.size).toBeGreaterThanOrEqual(3);

@@ -94,6 +94,10 @@ interface TeamAgg {
   ftMissLive: number;
   tov: number;
   families: Counter;
+  /** ME-07B v2 §4 (LAB-0.7): colocación del bloqueo elegida al organizar. */
+  placements: Counter;
+  /** Lecturas del manejador ante ICE, show y «a la altura». */
+  coverageReads: Counter;
   /** Coberturas elegidas cuando este equipo DEFIENDE. */
   coveragesAsDefense: Counter;
   coverageReasonsAsDefense: Counter;
@@ -110,7 +114,7 @@ function emptyTeam(): TeamAgg {
     points: 0, possessions: 0, phasesByEntry: {}, fga2: 0, fgm2: 0, fga3: 0, fgm3: 0,
     fgaByShotType: {}, fgaByShooter: {}, fta: 0, ftm: 0, pf: 0, oreb: 0, dreb: 0,
     orebAfterFgMiss: 0, fgMissLive: 0, orebAfterFtMiss: 0, ftMissLive: 0, tov: 0,
-    families: {}, coveragesAsDefense: {}, coverageReasonsAsDefense: {}, transitionChosen: {},
+    families: {}, placements: {}, coverageReads: {}, coveragesAsDefense: {}, coverageReasonsAsDefense: {}, transitionChosen: {},
     organizeKept: 0, organizeTotal: 0, firstReadPnr: {}, secondReadO5: {}, possessionMsTotal: 0,
   };
 }
@@ -167,6 +171,8 @@ function accumulate(result: GameResult, agg: Record<string, TeamAgg>): void {
     const a = agg[team]!;
     const defense = teamIds.find((t) => t !== team)!;
     if (d.point === "seleccion_familia") inc(a.families, d.chosenOptionId ?? "sin_elegir");
+    if (d.point === "colocacion_bloqueo") inc(a.placements, d.chosenOptionId ?? "sin_elegir");
+    if (d.point === "lectura_ice" || d.point === "lectura_show" || d.point === "lectura_a_la_altura") inc(a.coverageReads, `${d.point.replace("lectura_", "")}:${d.chosenOptionId ?? "sin_elegir"}`);
     if (d.point === "seleccion_cobertura") {
       inc(agg[defense]!.coveragesAsDefense, d.chosenOptionId ?? "sin_elegir");
       for (const o of d.options) inc(agg[defense]!.coverageReasonsAsDefense, `${o.id}:${o.reasonCode}`);
@@ -243,7 +249,8 @@ for (const photo of PHOTOS) {
     console.log(`    top tiradores ${topShooters.map(([id, n]) => `${id} ${n}/${totalFga}`).join(", ")}`);
     console.log(`    FT ${a.ftm}/${a.fta} · PF ${a.pf} · TOV ${a.tov}`);
     console.log(`    OREB ${a.oreb} (tras fallo de campo vivo ${a.orebAfterFgMiss}/${a.fgMissLive}; tras libre ${a.orebAfterFtMiss}/${a.ftMissLive}) · razón OREB/fallos campo ${a.oreb}/${fgMiss}`);
-    console.log(`    familias ${JSON.stringify(a.families)} · coberturas como defensa ${JSON.stringify(a.coveragesAsDefense)}`);
+    console.log(`    familias ${JSON.stringify(a.families)} · colocación ${JSON.stringify(a.placements)} · coberturas como defensa ${JSON.stringify(a.coveragesAsDefense)}`);
+    console.log(`    lecturas ante ICE/show/a la altura ${JSON.stringify(a.coverageReads)}`);
     console.log(`    motivos cobertura ${JSON.stringify(a.coverageReasonsAsDefense)}`);
     console.log(`    transición ${JSON.stringify(a.transitionChosen)} · organiza conserva ${a.organizeKept}/${a.organizeTotal}`);
     console.log(`    1ª lectura PnR ${JSON.stringify(a.firstReadPnr)} · 2ª lectura O5 ${JSON.stringify(a.secondReadO5)}`);

@@ -23,6 +23,7 @@ import { JUMP_BALL_APPROXIMATION_VERSION, type DeadBallCause, type FoulSanction,
 import { SUBSTITUTION_POLICY_VERSION, type EmergencyFill, type SubstitutionReason } from "./substitution-policy";
 import type { BoxScore } from "./box-score";
 import type { RawAuditLog } from "../audit/audit-types";
+import type { ScreenPlacementChoice } from "../lab/lab-0-7-parameters";
 
 export const GAME_VERSION = "ME-06-GAME-1";
 export const MAX_ROSTER_SIZE = 12;
@@ -45,6 +46,8 @@ export interface GameTeamInput {
   readonly offBallDefensiveCall: OffBallDefensiveCallChoice;
   /** Prioridad de creación de este equipo para todo el partido (ME-07A §3.1). */
   readonly creationPriority: OffensiveCreationPriority;
+  /** Colocación del bloqueo directo de este equipo (ME-07B v2 §4, LAB-0.7): `auto`, central o lateral. */
+  readonly screenPlacement: ScreenPlacementChoice;
 }
 
 export interface GameInput {
@@ -79,6 +82,8 @@ export interface BuildGameTeamArgs {
   readonly offBallDefensiveCall?: OffBallDefensiveCallChoice;
   /** ME-07A §3.1: por defecto `"equilibrado"`. */
   readonly creationPriority?: OffensiveCreationPriority;
+  /** ME-07B v2 §4: por defecto `"auto"`. */
+  readonly screenPlacement?: ScreenPlacementChoice;
 }
 
 function buildTeam(args: BuildGameTeamArgs): GameTeamInput {
@@ -109,6 +114,7 @@ function buildTeam(args: BuildGameTeamArgs): GameTeamInput {
     offensivePlan: args.offensivePlan ?? "auto",
     offBallDefensiveCall: args.offBallDefensiveCall ?? "guardar_espacio",
     creationPriority: args.creationPriority ?? "equilibrado",
+    screenPlacement: args.screenPlacement ?? "auto",
   };
 }
 
