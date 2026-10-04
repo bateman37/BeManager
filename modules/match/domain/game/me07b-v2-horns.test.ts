@@ -38,7 +38,9 @@ function input(seed: number, placement: ScreenPlacementChoice, puertoCoverage: D
     seed,
     auditEnabled: true,
     // Ficha base Horns→bloqueo: sin la variante Spain (LAB-0.9), que tiene su propia prueba (`me07b-v2-spain.test.ts`).
-    home: { id: SC, name: SIERRA_CLARA.name, players: SIERRA_CLARA.players, ...common, coverage: "auto", screenPlacement: placement, chainedVariant: "ninguna" },
+    // Sesión v2-8: en la central se compara con el bloqueo directo por orden (la central también puede
+    // jugar la mano a mano rediseñada cuando vale más; estas pruebas son de la ficha del bloqueo).
+    home: { id: SC, name: SIERRA_CLARA.name, players: SIERRA_CLARA.players, ...common, coverage: "auto", screenPlacement: placement, chainedVariant: "ninguna", ...(placement === "central" ? { offensivePlan: "bloqueo_directo" as const } : {}) },
     away: { id: PUERTO_AMBAR.id, name: PUERTO_AMBAR.name, players: PUERTO_AMBAR.players, ...common, coverage: puertoCoverage, screenPlacement: "auto" },
   });
 }

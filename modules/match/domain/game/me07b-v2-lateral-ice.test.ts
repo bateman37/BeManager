@@ -155,6 +155,9 @@ describe("ME-07B v2 §5: ICE ante el bloqueo lateral", () => {
       const r = playFullGame(buildGameInput({ seed, auditEnabled: true, home: { id: SC, name: SIERRA_CLARA.name, players: SIERRA_CLARA.players, ...home }, away: { id: PA, name: PUERTO_AMBAR.name, players: PUERTO_AMBAR.players, ...home } }));
       for (const d of r.audit!.decisions.filter((x) => x.point === "seleccion_cobertura")) {
         const iceOption = d.options.find((o) => o.id === "ice")!;
+        // Ante una entrega en mano (Delay o, desde la sesión v2-8, la mano a mano central) la defensa
+        // elige una respuesta a la entrega: las coberturas de pantalla quedan fuera de la ficha.
+        if (iceOption.reasonCode === "coverage_not_in_card") continue;
         if (iceOption.values!.lateralScreen) {
           lateralSeen += 1;
           expect(iceOption.values!.concessionValue).not.toBeNull();

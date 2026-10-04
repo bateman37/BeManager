@@ -69,7 +69,9 @@ describe("ME-07B v2 §2.2 (v2-6): la ficha se elige por valor y Delay compite en
       const chosen = d.options.find((o) => o.status === "elegida")!;
       for (const o of d.options) {
         expect(chosen.values!.projectedValue as number).toBeGreaterThanOrEqual(o.values!.projectedValue as number);
-        expect(o.values!.firstReadSeconds as number).toBeGreaterThan(o.values!.readySeconds as number);
+        // Sesión v2-8: sin reloj para llegar a ninguna lectura (posesión 139, ~0 s al situarse) ninguna ficha
+        // proyecta lectura (valor 0, sin vía): no hay primera lectura posterior que exigir.
+        if (o.values!.projectedBestRead !== null) expect(o.values!.firstReadSeconds as number).toBeGreaterThan(o.values!.readySeconds as number);
         if (o !== chosen) expect(["placement_projected_value_lower", "placement_tied_first_read_later"]).toContain(o.reasonCode);
       }
       expect(chosen.reasonCode).toBe("placement_projected_value_higher");

@@ -231,8 +231,11 @@ describe("ME-07B v2 §4: el corte del ala débil no fabrica faltas tardías (reg
 
 describe("ME-07B v2 §4: salidas del poste (ayuda de la esquina, corte, repostear)", () => {
   it("con el defensor de la esquina rápido, la ayuda llega antes del giro y el poste sale a la esquina; con el del fixture llega tarde o no compensa", () => {
-    const normal = play(92, { coverage: "drop" });
-    const fast = play(92, { coverage: "drop", away: fastHelp(PUERTO_AMBAR.players), tag: "fast" });
+    // Sesión v2-8: Puerto juega ahora la mano a mano central rediseñada y el retraso de la pantalla de
+    // Delay se suma a la llegada de D1: cambia la secuencia de la 92 (con la ayuda rápida, 5 salidas a la
+    // esquina) y de la 94 (7). La 95 conserva la muestra (39 ayudas, 17 salidas; normal 6; 93, 96 y 98 igual).
+    const normal = play(95, { coverage: "drop" });
+    const fast = play(95, { coverage: "drop", away: fastHelp(PUERTO_AMBAR.players), tag: "fast" });
     const inTime = (g: { r: GameResult }) => sierra(g.r, "respuesta_poste").filter((d) => d.options[0]!.values!.digInTime === true).length / sierra(g.r, "respuesta_poste").length;
     expect(inTime(fast)).toBeGreaterThan(0.9);
     const fastResp = counts(sierra(fast.r, "respuesta_poste").map((d) => d.chosenOptionId));

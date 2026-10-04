@@ -954,9 +954,10 @@ export abstract class LinkedRun {
     const points = (this.score[pending.attackingId] ?? 0) - pending.scoreAtDecision;
     const add = (o: ObservedOutcome | undefined): ObservedOutcome => ({ uses: (o?.uses ?? 0) + 1, points: (o?.points ?? 0) + points });
     const empty = (): { offenseByFamily: Partial<Record<OffensivePlan, ObservedOutcome>>; defenseByCoverage: Partial<Record<DefensiveCoverage, ObservedOutcome>>; defenseByHandoffResponse: Partial<Record<DefensiveCoverage, ObservedOutcome>> } => ({ offenseByFamily: {}, defenseByCoverage: {}, defenseByHandoffResponse: {} });
-    const handoffCard = pending.card === "delay_mano_a_mano";
+    // Sesión v2-8: las dos entregas en mano (Delay y la central) se defienden con respuestas a la entrega.
+    const handoffCard = pending.card === "delay_mano_a_mano" || pending.card === "mano_a_mano_central";
     const off = this.observations.get(pending.attackingId) ?? empty();
-    if (!handoffCard) off.offenseByFamily[pending.plan] = add(off.offenseByFamily[pending.plan]);
+    if (pending.card !== "delay_mano_a_mano") off.offenseByFamily[pending.plan] = add(off.offenseByFamily[pending.plan]);
     this.observations.set(pending.attackingId, off);
     const def = this.observations.get(pending.defendingId) ?? empty();
     const byCoverage = handoffCard ? def.defenseByHandoffResponse : def.defenseByCoverage;

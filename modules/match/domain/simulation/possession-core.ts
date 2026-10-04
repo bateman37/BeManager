@@ -12,7 +12,7 @@
 import type { Point2D } from "../geometry/point";
 import { timeToReach, distance, moveToward, pointShortOfTarget } from "../geometry/point";
 import { positionOnTrajectory, truncateTrajectory, type TrajectoryPoint } from "../geometry/trajectory";
-import { ATTACKED_HOOP, FREE_THROW_LINE_SPOT, COURT_WIDTH_METERS, isBehindThreePointLine, isLateralScreenSpot } from "../geometry/court";
+import { ATTACKED_HOOP, FREE_THROW_LINE_SPOT, FIBA_LANE_HALF_WIDTH_METERS, COURT_WIDTH_METERS, isBehindThreePointLine, isLateralScreenSpot } from "../geometry/court";
 import { MIDCOURT_LINE_X } from "../geometry/frame";
 import { createSeededRandom, type SeededRandom } from "../random/seeded-random";
 import { secondsToMs, type Milliseconds } from "../time/clock";
@@ -859,24 +859,40 @@ function projectSpainOverShownCoverages(ctx: CoreContext, scenario: ScenarioDefi
  * cambiar o saltar) y se proyecta en seco hasta la primera lectura, con la
  * misma ponderación por frecuencia (`shownCoverageWeights`, previa drop).
  */
+interface HandoffOverResponses {
+  readonly expectedValue: number;
+  readonly decisionSeconds: number;
+  readonly valueByResponse: Readonly<Partial<Record<DelayResponse, number>>>;
+  readonly weights: Readonly<Partial<Record<DefensiveCoverage, number>>>;
+  readonly base: FamilyOpportunity;
+}
+
+/**
+ * Sesión v2-8: la misma proyección sirve a las dos entregas en mano (Delay y
+ * la mano a mano central): ambas se juegan ante una respuesta a la entrega
+ * (hundirse, cambiar o saltar), no ante una cobertura de pantalla.
+ */
 function projectDelayOverShownCoverages(
   ctx: CoreContext,
   shown: Readonly<Partial<Record<DefensiveCoverage, ObservedOutcome>>> | undefined,
-): { readonly expectedValue: number; readonly decisionSeconds: number; readonly valueByResponse: Readonly<Partial<Record<DelayResponse, number>>>; readonly weights: Readonly<Partial<Record<DefensiveCoverage, number>>>; readonly base: FamilyOpportunity } {
+  run: (dry: CoreContext, response: DelayResponse) => PossessionCoreResult = runDelayPhase,
+): HandoffOverResponses {
   const weights = shownCoverageWeights<DefensiveCoverage>(shown, "drop");
   const byResponse = new Map<DelayResponse, FamilyOpportunity>();
   let expectedValue = 0;
   let decisionSeconds = 0;
   for (const [c, w] of Object.entries(weights) as [DefensiveCoverage, number][]) {
     const r = delayResponseFor(c);
-    if (!byResponse.has(r)) byResponse.set(r, familyOpportunity(projectFamilyRead(ctx, (dry) => runDelayPhase(dry, r))));
+    if (!byResponse.has(r)) byResponse.set(r, familyOpportunity(projectFamilyRead(ctx, (dry) => run(dry, r))));
     const o = byResponse.get(r)!;
     expectedValue += w * (o.viable ? o.value : 0);
-    decisionSeconds += w * (o.tDecisionSeconds ?? 0);
+    // Sin lectura proyectada (el reloj se acaba antes): no hay lectura antes del fin del reloj.
+    decisionSeconds += w * (o.tDecisionSeconds ?? ctx.shotClockMs / 1000);
   }
   const valueByResponse: Partial<Record<DelayResponse, number>> = {};
   for (const [r, o] of byResponse) valueByResponse[r] = o.viable ? o.value : 0;
-  return { expectedValue, decisionSeconds, valueByResponse, weights, base: byResponse.get("hundirse")! };
+  const base = byResponse.get("hundirse") ?? familyOpportunity(projectFamilyRead(ctx, (dry) => run(dry, "hundirse")));
+  return { expectedValue, decisionSeconds, valueByResponse, weights, base };
 }
 
 /**
@@ -1017,10 +1033,11 @@ export function projectOrganizedOpportunity(
   // ME-07B v2 §2.2/§5: el bloqueo se valora frente a la defensa observada, no solo contra drop.
   const bloqueo =
     planChoice === "mano_a_mano_sin_balon" ? null : projectBloqueoOverShownCoverages(ctx, scenario, linked.observations?.defenseByCoverage);
+  // Sesión v2-8: la mano a mano central también se proyecta frente a las respuestas a la entrega vistas.
   const handoff =
-    planChoice === "bloqueo_directo" || ctx.set.placement !== "central" ? null : familyOpportunity(projectFamilyRead(ctx, (dry) => runHandoffPhase(dry)));
-  if (handoff && (!bloqueo || handoff.value > bloqueo.expectedValue)) {
-    return { value: handoff.viable ? handoff.value : 0, plan: "mano_a_mano_sin_balon", bestReadOption: handoff.bestOptionId, decisionSeconds: handoff.tDecisionSeconds ?? 0, breakdown: breakdownOf({}, {}, handoff) };
+    planChoice === "bloqueo_directo" || ctx.set.placement !== "central" ? null : projectDelayOverShownCoverages(ctx, linked.observations?.defenseByHandoffResponse, runHandoffPhase);
+  if (handoff && (!bloqueo || handoff.expectedValue > bloqueo.expectedValue)) {
+    return { value: Math.max(0, handoff.expectedValue), plan: "mano_a_mano_sin_balon", bestReadOption: handoff.base.bestOptionId, decisionSeconds: handoff.decisionSeconds, breakdown: breakdownOf(handoff.valueByResponse, handoff.weights, handoff.base) };
   }
   // ME-07B v2 §4 (LAB-0.9): en Horns, la variante Spain compite (o se impone) con la misma proyección.
   const variant = input.chainedVariant ?? "ninguna";
@@ -1155,12 +1172,14 @@ export function computePossessionCore(
     const bloqueoOverCoverages = projectBloqueoOverShownCoverages(ctx, scenario, linked?.observations?.defenseByCoverage);
     const bloqueoOpportunity = bloqueoOverCoverages.drop;
     const bloqueoViable = bloqueoOpportunity.viable || bloqueoOverCoverages.expectedValue > 0;
-    const handoffOpportunity = familyOpportunity(projectFamilyRead(ctx, (dry) => runHandoffPhase(dry)));
+    // Sesión v2-8: la mano a mano se proyecta frente a las respuestas a la entrega que el rival ha mostrado.
+    const handoffOverResponses = projectDelayOverShownCoverages(ctx, linked?.observations?.defenseByHandoffResponse, runHandoffPhase);
+    const handoffOpportunity: FamilyOpportunity = { ...handoffOverResponses.base, viable: handoffOverResponses.base.viable || handoffOverResponses.expectedValue > 0 };
     // ME-07B v2 §5: el ataque combina esa proyección con lo que ya ha visto
     // en este partido de cada familia (puntos por uso), LAB-0.4.
     const seenFamily = linked?.observations?.offenseByFamily;
     const bloqueoBlended = bloqueoViable ? blendProjectionWithObservation(bloqueoOverCoverages.expectedValue, seenFamily?.bloqueo_directo) : -Infinity;
-    const handoffBlended = handoffOpportunity.viable ? blendProjectionWithObservation(handoffOpportunity.value, seenFamily?.mano_a_mano_sin_balon) : -Infinity;
+    const handoffBlended = handoffOpportunity.viable ? blendProjectionWithObservation(handoffOverResponses.expectedValue, seenFamily?.mano_a_mano_sin_balon) : -Infinity;
     // Empate exacto: regla estable vinculada a las opciones reales (no una
     // alternancia por número de posesión) — se conserva el bloqueo directo,
     // la familia central ya versionada.
@@ -1194,6 +1213,9 @@ export function computePossessionCore(
           values: {
             ...familyAuditValues(handoffOpportunity),
             cardId: "mano_a_mano_central",
+            projectedCoverage: "observada",
+            expectedValueOverShownResponses: handoffOverResponses.expectedValue,
+            ...Object.fromEntries(Object.entries(handoffOverResponses.valueByResponse).map(([r, v]) => [`valueAgainst_${r}`, v ?? null])),
             observedUses: seenFamily?.mano_a_mano_sin_balon?.uses ?? 0,
             observedPoints: seenFamily?.mano_a_mano_sin_balon?.points ?? 0,
             blendedValue: handoffBlended,
@@ -1217,14 +1239,18 @@ export function computePossessionCore(
 
   const coverageChoice: DefensiveCoverageChoice = ctx.input.coverage;
   let delayResponse: DelayResponse | null = null;
-  if (ctx.set.placement === "delay") {
+  // Sesión v2-8: la mano a mano central es también una entrega en mano y la defensa responde con
+  // las mismas tres respuestas que en Delay (antes elegía una cobertura de pantalla que la entrega
+  // solo consultaba para la trampa).
+  const handoffRunner = ctx.set.placement === "delay" ? runDelayPhase : resolvedPlan === "mano_a_mano_sin_balon" ? runHandoffPhase : null;
+  if (handoffRunner) {
     // LAB-0.10: ante la entrega en mano solo aplican tres respuestas (hundirse,
     // cambiar o saltar la entrega); en `auto`, la de menor concesión proyectada.
     const responses: readonly DelayResponse[] = ["hundirse", "cambiar_entrega", "saltar_entrega"];
     if (coverageChoice === "auto") {
-      // Sesión v2-6: lo que esta defensa ha concedido ante la entrega de Delay, no ante pantallas.
+      // Sesión v2-6: lo que esta defensa ha concedido ante la entrega, no ante pantallas.
       const seenCoverage = linked?.observations?.defenseByHandoffResponse;
-      const projected = responses.map((r) => familyOpportunity(projectFamilyRead(ctx, (dry) => runDelayPhase(dry, r))));
+      const projected = responses.map((r) => familyOpportunity(projectFamilyRead(ctx, (dry) => handoffRunner(dry, r))));
       const blended = projected.map((o, i) => blendProjectionWithObservation(o.viable ? o.value : 0, seenCoverage?.[DELAY_RESPONSE_COVERAGE[responses[i]!]]));
       let best = 0;
       for (let i = 1; i < responses.length; i++) if (blended[i]! < blended[best]!) best = i;
@@ -1251,7 +1277,7 @@ export function computePossessionCore(
       ctx.resolvedCoverage = coverageChoice;
       delayResponse = delayResponseFor(coverageChoice);
       if (coverageChoice !== "drop" && coverageChoice !== "cambio" && coverageChoice !== "show" && coverageChoice !== "trampa") {
-        event(ctx, 0, "reconocido", "coverage_not_applicable", ["D1", "D5"], "La orden es de pantalla, pero en Delay la acción es una entrega en mano: D5 se hunde entre O5 y el aro.", { coverage: coverageChoice, delayResponse });
+        event(ctx, 0, "reconocido", "coverage_not_applicable", [ctx.set.placement === "delay" ? "D1" : "D2", "D5"], "La orden es de pantalla, pero la acción es una entrega en mano: D5 se hunde entre O5 y el aro.", { coverage: coverageChoice, delayResponse });
       }
     }
   } else if (coverageChoice === "auto") {
@@ -1346,12 +1372,10 @@ export function computePossessionCore(
     });
   }
   const organized =
-    delayResponse
-      ? runDelayPhase(ctx, delayResponse)
+    delayResponse && handoffRunner
+      ? handoffRunner(ctx, delayResponse)
       : spainRead?.timing
       ? runSpainPhase(ctx, ctx.resolvedCoverage === "por_debajo" ? "por_debajo" : "por_encima", spainRead.timing)
-      : resolvedPlan === "mano_a_mano_sin_balon"
-      ? runHandoffPhase(ctx)
       : ctx.resolvedCoverage === "trampa"
         ? runTrapPhase(ctx)
         : ctx.resolvedCoverage === "cambio"
@@ -4259,7 +4283,10 @@ function runDelayPhase(ctx: CoreContext, response: DelayResponse): PossessionCor
   const offBallChoice: OffBallDefensiveCallChoice = ctx.input.offBallDefensiveCall ?? "guardar_espacio";
   const d1TrailFor = (call: OffBallDefensiveCall) => {
     const adjustment = call === "negar_primera_salida" ? -OFF_BALL_CALL_NAVIGATION_ADJUSTMENT_SECONDS : OFF_BALL_CALL_NAVIGATION_ADJUSTMENT_SECONDS;
-    return Math.max(tD1Recognize + timeToReach(ctx.positions.D1!, handoffPoint, d1Speed), tHandoffReady + Math.max(0, handoffScreenDelay + adjustment));
+    // Sesión v2-8: el retraso de la pantalla se suma a la llegada de D1 a la entrega (como D1 en el
+    // bloqueo directo, D3 en el indirecto y D2 en la mano a mano central): ir por detrás no le ahorra
+    // rodear a O5. Antes era `max(llegada, entrega + retraso)` y la pantalla no costaba nada a un D1 tardío.
+    return Math.max(tD1Recognize + timeToReach(ctx.positions.D1!, handoffPoint, d1Speed), tHandoffReady) + Math.max(0, handoffScreenDelay + adjustment);
   };
 
   // --- Respuesta de D5 a la entrega -----------------------------------------
@@ -4536,13 +4563,45 @@ function estimateCoverageChoice(ctx: CoreContext, scenario: ScenarioDefinition):
 }
 
 /**
- * Segunda familia posicional completa (ME-06 §3.1): mano a mano sin balón.
- * Reutiliza movimientos, tiempos de llegada, geometría de pase, oposición
- * `R_contest`, contacto y responsabilidades ya versionados (LAB-0.1/0.2/0.3);
- * ningún parámetro deportivo nuevo. IDs canónicos O1..O5/D1..D5, traducidos
- * a los reales del quinteto por `player()`, no nombres fijos.
+ * Segunda familia posicional completa (ME-06 §3.1): mano a mano central con
+ * indirecto en el lado débil. Rediseño acotado de la sesión v2-8, autorizado
+ * por Dennis («en la entrega de O5 a O2, el cuerpo de O5 debe poder actuar
+ * como pantalla real sobre D2»):
+ *
+ * - O5 recibe la entrada en la línea de tiros libres (no antes de llegar a
+ *   ella). O2 sube desde la esquina fuerte rodeando a O5 y recibe en su hombro
+ *   alto (punto de entrega a contacto de O5, lejos del aro); al salir dobla por
+ *   el otro hombro de O5 (punto de salida a contacto, en el lado contrario al
+ *   que vino). El cuerpo de O5 queda así entre D2, que persigue por detrás, y
+ *   la salida de O2: es la misma pantalla física que el bloqueo directo
+ *   (`screenInterceptDelaySeconds` T13/F05 de O5 frente a T16 de D2, ajuste por
+ *   peso) y solo cuenta si O5 está puesto (llegó al punto antes de
+ *   `SCREEN_SET_AFTER_ARRIVAL_SECONDS` de la entrega); una pantalla en
+ *   movimiento no retiene a nadie.
+ * - D2 reconoce el corte (M01/M05) y lo sigue por el mismo camino; si llega al
+ *   punto de entrega antes que O2 (con su frenada F03), lo ocupa y la entrega
+ *   queda negada. Si no, persigue por encima y rodea a O5 con el retraso de la
+ *   pantalla (la orden sin balón aprieta o concede ±0,15 s, como en Delay y en
+ *   el indirecto); desde el hombro de salida cierra los tiros de O2.
+ * - D5 responde a la entrega como en Delay (`DelayResponse`): hundirse (protege
+ *   el aro y concede la parada), cambiar (sale a O2 por el hombro de salida y
+ *   D2 se queda con O5) o saltar la entrega (si llega antes que O2 al hombro de
+ *   salida la niega y deja la pintura).
+ * - O2 lee al recibir (no espera al indirecto): aro, parada (T02/T03),
+ *   triple solo si el punto de entrega estuviera detrás del arco (aquí no lo
+ *   está), continuación de O5 al aro tras entregar, indirecto (O3 o O4) y salida.
+ *   Con la entrega negada, O5 se la queda: aro, puerta de atrás de O2,
+ *   indirecto y salida.
+ *
+ * Cada vía se valora con `bestContest`/`estimateContestLevel` y los mismos
+ * argumentos que después recibe `resolveShotAttempt` (sesión v2-7). El tipo de
+ * tiro del indirecto lo decide la zona real del punto (los puntos de ME-06
+ * están dentro del arco: antes se anotaban como triples). Ningún coeficiente
+ * nuevo; solo puntos derivados del radio de contacto ya versionado.
  */
-function runHandoffPhase(ctx: CoreContext): PossessionCoreResult {
+type HandoffResponse = DelayResponse;
+
+function runHandoffPhase(ctx: CoreContext, response: HandoffResponse): PossessionCoreResult {
   const o1 = player(ctx, "O1");
   const o2 = player(ctx, "O2");
   const o3 = player(ctx, "O3");
@@ -4552,6 +4611,9 @@ function runHandoffPhase(ctx: CoreContext): PossessionCoreResult {
   const d3 = player(ctx, "D3");
   const d4 = player(ctx, "D4");
   const d5 = player(ctx, "D5");
+  const clock = ctx.shotClockMs / 1000;
+  const r = COMBINED_CONTACT_RADIUS_METERS;
+  const swap: Partial<PossessionCoreResult> = response === "cambiar_entrega" ? { defensiveSwap: ["D2", "D5"] } : {};
   const offBallCallChoice: OffBallDefensiveCallChoice = ctx.input.offBallDefensiveCall ?? "guardar_espacio";
 
   event(
@@ -4560,15 +4622,20 @@ function runHandoffPhase(ctx: CoreContext): PossessionCoreResult {
     "reconocido",
     "handoff_action_started",
     ["O1", "O5", "O2", "O3", "O4"],
-    "Se organiza el mano a mano: O1 busca a O5 en el codo alto mientras O4 coloca un bloqueo indirecto para O3 en el lado débil.",
-    { offBallDefensiveCall: offBallCallChoice },
+    "Se organiza el mano a mano: O1 busca a O5 en el codo alto, O2 sube a por la entrega y O4 coloca un bloqueo indirecto para O3 en el lado débil.",
+    { offBallDefensiveCall: offBallCallChoice, response },
   );
 
-  // --- 1. Entrada: O1 encuentra a O5 en el codo alto (ME-06 §3.1.1) --------
-  const entryPoint = FREE_THROW_LINE_SPOT;
-  const tEntryArrival = PASS_RELEASE_SECONDS + distanceSeconds(ctx.positions.O1!, entryPoint);
-  const shotClockRemainingAtEntry = ctx.shotClockMs / 1000 - tEntryArrival;
-  if (shotClockRemainingAtEntry <= 0) {
+  // --- 1. Entrada: O1 encuentra a O5 en el codo alto del lado fuerte ----------
+  // ME-06 lo llamaba «codo alto» pero usaba el centro de la línea de tiros
+  // libres; el codo real es el extremo de esa línea (semianchura FIBA de la
+  // zona) del lado de O2, que es quien viene a por la entrega.
+  const strongSign = Math.sign(ctx.positions.O2!.y - FREE_THROW_LINE_SPOT.y) || -1;
+  const hub: Point2D = { x: FREE_THROW_LINE_SPOT.x, y: FREE_THROW_LINE_SPOT.y + strongSign * FIBA_LANE_HALF_WIDTH_METERS };
+  const tO5AtHub = timeToReach(ctx.positions.O5!, hub, attackerMoveSpeedMps(o5.attributes.F01));
+  // El pase llega cuando O5 ya está en el punto (nadie recibe donde todavía no está).
+  const tEntryArrival = Math.max(PASS_RELEASE_SECONDS + distanceSeconds(ctx.positions.O1!, hub), tO5AtHub);
+  if (clock - tEntryArrival <= 0) {
     if (ctx.linked) return linkedShotClockViolation(ctx, "O1");
     return finalize(ctx, { kind: "shot_clock_violation" }, { status: "dead", holderId: null, position: ctx.positions.O1! });
   }
@@ -4578,6 +4645,7 @@ function runHandoffPhase(ctx: CoreContext): PossessionCoreResult {
     ? { kind: "clean_reception" }
     : resolvePass(o1.attributes.T09, o5.attributes.T11, true, d5.attributes.T17, 1, ctx.rng);
   const entryCompletion = 1 - deflectionProbability(d5.attributes.T17, o1.attributes.T09);
+  setArrival(ctx, "O5", tO5AtHub, hub, 0);
   event(ctx, tEntryArrival, "ejecutado", "pass_released", ["O1", "O5"], "O1 busca a O5 en el codo alto.");
   if (entryPass.kind === "deflected_loose_ball") {
     auditDecision(ctx, tEntryArrival, {
@@ -4590,9 +4658,7 @@ function runHandoffPhase(ctx: CoreContext): PossessionCoreResult {
     });
     return resolveLooseBallAfterPass(ctx, tEntryArrival, "O1", "D5");
   }
-  const entryReadyDelay = entryPass.kind === "awkward_control" ? entryPass.extraDelaySeconds : 0;
-  const tO5Ready = tEntryArrival + entryReadyDelay;
-  setArrival(ctx, "O5", tO5Ready, entryPoint, 0);
+  const tO5Ready = tEntryArrival + (entryPass.kind === "awkward_control" ? entryPass.extraDelaySeconds : 0);
   event(ctx, tO5Ready, "concedido", "pass_received", ["O5"], "O5 recibe la entrada en el codo alto.");
   auditDecision(ctx, tO5Ready, {
     point: "entrada_mano_a_mano",
@@ -4600,449 +4666,443 @@ function runHandoffPhase(ctx: CoreContext): PossessionCoreResult {
     participants: ["O1", "O5"],
     chosenOptionId: "entrada_o5",
     factLinkKind: "pass_received",
-    options: [{ id: "entrada_o5", status: "elegida", reasonCode: "entry_pass_completed", values: { tO5Ready } }],
+    options: [{ id: "entrada_o5", status: "elegida", reasonCode: "entry_pass_completed", values: { tO5Ready, tO5AtHubSeconds: tO5AtHub } }],
   });
 
-  // --- 2. Mano a mano: O5 entrega a O2, que sube desde el lado fuerte
-  //        (ME-06 §3.1.2). D2 puede perseguir o negar la recepción; D5
-  //        puede contener o saltar a la pelota según la cobertura. --------
-  const handoffPoint = pointShortOfTarget(ctx.positions.O2!, entryPoint, COMBINED_CONTACT_RADIUS_METERS);
-  const tO2Arrival = timeToReach(ctx.positions.O2!, handoffPoint, attackerMoveSpeedMps(o2.attributes.F01));
-  setArrival(ctx, "O2", tO2Arrival, handoffPoint, 0);
-  const tHandoffReady = Math.max(tO5Ready, tO2Arrival);
+  // --- 2. Geometría de la entrega: hombro alto (entrega) y hombro de salida ---
+  const hubToHoop = distance(hub, ATTACKED_HOOP);
+  const towardHoop = { x: (ATTACKED_HOOP.x - hub.x) / hubToHoop, y: (ATTACKED_HOOP.y - hub.y) / hubToHoop };
+  const exchange: Point2D = { x: hub.x - towardHoop.x * r, y: hub.y - towardHoop.y * r };
+  // Lado por el que llega O2 (perpendicular al eje O5–aro); sale por el contrario.
+  const perp = { x: -towardHoop.y, y: towardHoop.x };
+  const approachSign = Math.sign((ctx.positions.O2!.x - hub.x) * perp.x + (ctx.positions.O2!.y - hub.y) * perp.y) || -1;
+  const exitPoint: Point2D = { x: hub.x - perp.x * r * approachSign, y: hub.y - perp.y * r * approachSign };
+  // Hombro de contacto: el del lado por el que llegan O2 y su perseguidor.
+  const contactPoint: Point2D = { x: hub.x + perp.x * r * approachSign, y: hub.y + perp.y * r * approachSign };
+  const exchangeToExit = distance(exchange, exitPoint);
+  // D5 sale al encuentro de O2 justo después del hombro de salida (saltar o cambiar).
+  const jumpPoint = moveToward(exitPoint, ATTACKED_HOOP, 1, r);
 
-  const d2Origin = ctx.positions.D2!;
+  // O2 rodea a O5 hasta el hombro alto.
+  const o2Speed = attackerMoveSpeedMps(o2.attributes.F01);
+  const o2Run = detourAround(ctx.positions.O2!, exchange, hub, r);
+  const tO2AtExchange = o2Run.length / o2Speed;
+  if (o2Run.waypoint) setArrival(ctx, "O2", distance(ctx.positions.O2!, o2Run.waypoint) / o2Speed, o2Run.waypoint, 0);
+  setArrival(ctx, "O2", tO2AtExchange, exchange, o2Run.waypoint ? distance(ctx.positions.O2!, o2Run.waypoint) / o2Speed : 0);
+  const tHandoffReady = Math.max(tO5Ready, tO2AtExchange);
+
+  // Pantalla del cuerpo de O5: solo retiene si O5 está puesto antes de la entrega.
+  const screenSet = tO5AtHub + SCREEN_SET_AFTER_ARRIVAL_SECONDS <= tHandoffReady;
+  const screenDelayRaw = screenInterceptDelaySeconds(o5.attributes.T13, o5.attributes.F05, d2.attributes.T16) + screenContactAdjustmentSeconds(o5.measures.weightKg - d2.measures.weightKg);
+
+  // D2 reconoce el corte de O2 y lo sigue por el mismo camino.
   const d2Speed = defenderLateralSpeedMps(d2.attributes.F04);
-  const d2Braking = closeoutBrakingExtraSeconds(d2.attributes.F03);
-  const d2RawArrival = timeToReach(d2Origin, handoffPoint, d2Speed);
-  const d2Arrival = Math.max(0, d2RawArrival - perimeterArrivalAdjustmentSeconds(d2.attributes.T22));
-  const d2Geometry: ContestGeometry = { originPos: d2Origin, destinationPos: handoffPoint, speedMps: d2Speed, brakingExtraSeconds: d2Braking };
-  setArrival(ctx, "D2", d2Arrival, handoffPoint, 0);
+  const tD2Recognize = recognitionLatencySeconds(d2.attributes.M01, d2.attributes.M05);
+  const d2Run = detourAround(ctx.positions.D2!, exchange, hub, r);
+  const tD2AtExchange = Math.max(tD2Recognize, tD2Recognize + d2Run.length / d2Speed - perimeterArrivalAdjustmentSeconds(d2.attributes.T22));
+  const d2Denies = tD2AtExchange + closeoutBrakingExtraSeconds(d2.attributes.F03) <= tO2AtExchange;
+  const tD2AtContact = Math.max(tD2Recognize, tD2Recognize + distance(ctx.positions.D2!, contactPoint) / d2Speed - perimeterArrivalAdjustmentSeconds(d2.attributes.T22));
 
-  // Cobertura sobre el mano a mano (ME-06 §3.1, respuesta defensiva): en
-  // drop, D5 protege el interior y no se suma a negar la entrega; en
-  // trampa, D5 sale a presionar la recepción junto a D2 si llega a tiempo,
-  // dejando un coste interior real y verificable (se registra abajo).
-  let d5CommittedToHandoffTrap = false;
-  let tD5RecoverToRim = 0;
-  if (ctx.resolvedCoverage === "trampa") {
-    const d5RawArrivalAtHandoff = timeToReach(ctx.positions.D5!, handoffPoint, defenderLateralSpeedMps(d5.attributes.F04));
-    const d5ArrivalAtHandoff = Math.max(0, d5RawArrivalAtHandoff - interiorArrivalAdjustmentSeconds(d5.attributes.T23));
-    if (d5ArrivalAtHandoff <= tHandoffReady + COMBINED_CONTACT_RADIUS_METERS / d2Speed) {
-      d5CommittedToHandoffTrap = true;
-      tD5RecoverToRim =
-        m09CoordinationLatencySeconds(d5.attributes.M09, d5.attributes.M09) +
-        timeToReach(handoffPoint, ATTACKED_HOOP, defenderLateralSpeedMps(d5.attributes.F04));
-      event(ctx, d5ArrivalAtHandoff, "concedido", "help_left_assignment", ["D5", "O5"], "D5 salta a presionar la recepción del mano a mano (trampa); deja el interior expuesto mientras recupera.");
-    }
-  }
+  // D5 lee el pase de entrada en el aire.
+  const d5Speed = defenderLateralSpeedMps(d5.attributes.F04);
+  const tD5Recognize = PASS_RELEASE_SECONDS + recognitionLatencySeconds(d5.attributes.M01, d5.attributes.M05);
+  const tD5AtJump = Math.max(tD5Recognize, tD5Recognize + distance(ctx.positions.D5!, jumpPoint) / d5Speed - perimeterArrivalAdjustmentSeconds(d5.attributes.T22));
+  const d5Jumps = response === "saltar_entrega" && tD5AtJump + closeoutBrakingExtraSeconds(d5.attributes.F03) <= tHandoffReady;
+  const denied = d2Denies || d5Jumps;
 
-  const d2PosAtHandoff = positionAtInstant(d2Geometry, d2Arrival, tHandoffReady);
-  const handoffDenied = distance(d2PosAtHandoff, handoffPoint) <= COMBINED_CONTACT_RADIUS_METERS || d5CommittedToHandoffTrap;
-
-  auditDecision(ctx, tHandoffReady, {
-    point: "transferencia_mano_a_mano",
-    holderId: "O5",
-    participants: ["O5", "O2", "D2", "D5"],
-    chosenOptionId: handoffDenied ? "entrega_negada" : "entrega_completada",
-    options: [
-      handoffDenied
-        ? { id: "entrega_negada", status: "elegida", reasonCode: "handoff_denied_defender_arrived", values: { d2ArrivalSeconds: d2Arrival, tHandoffReady, d5CommittedToHandoffTrap } }
-        : { id: "entrega_completada", status: "elegida", reasonCode: "handoff_completed", values: { d2ArrivalSeconds: d2Arrival, tHandoffReady, d5CommittedToHandoffTrap } },
-    ],
-  });
-
-  // --- 3. Simultáneamente: bloqueo indirecto de O4 para el corte de O3
-  //        desde el lado débil (ME-06 §3.1.3). La orden fija de defensa
-  //        sin balón desplaza la navegación real de D3 (T13/F05 la
-  //        pantalla; T21 el desmarque de O3; T16 la navegación de D3). --
+  // --- 3. Bloqueo indirecto de O4 para el corte de O3 (ME-06 §3.1.3) ---------
   const screenDelayBase = screenInterceptDelaySeconds(o4.attributes.T13, o4.attributes.F05, d3.attributes.T16);
   const tO4ScreenSet = timeToReach(ctx.positions.O4!, WEAK_SIDE_SCREEN_SPOT, attackerMoveSpeedMps(o4.attributes.F01));
-  setArrival(ctx, "O4", tO4ScreenSet, WEAK_SIDE_SCREEN_SPOT, 0);
-  event(ctx, tO4ScreenSet, "ejecutado", "screen_set", ["O4"], "O4 coloca un bloqueo indirecto legal para el corte de O3 en el lado débil.");
-
   const cutStart = Math.max(0, tO4ScreenSet - cutterStartTimeReductionSeconds(o3.attributes.T21));
   const tO3Cut = cutStart + timeToReach(ctx.positions.O3!, WEAK_SIDE_CUT_SPOT, attackerMoveSpeedMps(o3.attributes.F01));
   const d3RawArrival = timeToReach(ctx.positions.D3!, WEAK_SIDE_CUT_SPOT, defenderLateralSpeedMps(d3.attributes.F04));
-
-  // Evalúa, de forma pura (sin RNG ni hechos), qué concedería cada orden
-  // sin balón desde esta misma geometría real: la navegación de D3
-  // (T13/F05/T21/T16, igual que antes de ME-07A) y si D4 ayudaría a cerrar
-  // a O3 (`d4HelpMargin`). El valor de concesión reutiliza la fórmula de
-  // tiro exterior ya existente (three_point_base × T04, sin oposición),
-  // nunca un coeficiente nuevo.
-  function evaluateOffBallCall(call: OffBallDefensiveCall) {
-    const adjustment = call === "negar_primera_salida" ? -OFF_BALL_CALL_NAVIGATION_ADJUSTMENT_SECONDS : OFF_BALL_CALL_NAVIGATION_ADJUSTMENT_SECONDS;
-    const screenDelay = Math.max(0, screenDelayBase + adjustment);
+  const callAdjustment = (call: OffBallDefensiveCall) => (call === "negar_primera_salida" ? -OFF_BALL_CALL_NAVIGATION_ADJUSTMENT_SECONDS : OFF_BALL_CALL_NAVIGATION_ADJUSTMENT_SECONDS);
+  function pindownFor(call: OffBallDefensiveCall) {
+    const screenDelay = Math.max(0, screenDelayBase + callAdjustment(call));
     const tD3AtCut = cutStart + d3RawArrival + screenDelay;
     const cutWindowOpen = tD3AtCut > tO3Cut;
     const d4HelpMargin = tD3AtCut - tO3Cut;
     const d4Helps = call === "guardar_espacio" && d4HelpMargin > -0.5;
-    const o3Value = cutWindowOpen && !d4Helps ? 3 * shotProbability(THREE_POINT_BASE_PROBABILITY, o3.attributes.T04, 0) : 0;
-    const o4Value = d4Helps ? 3 * shotProbability(THREE_POINT_BASE_PROBABILITY, o4.attributes.T04, 0) : 0;
-    return { screenDelay, tD3AtCut, cutWindowOpen, d4HelpMargin, d4Helps, concessionValue: Math.max(o3Value, o4Value) };
+    return { screenDelay, tD3AtCut, cutWindowOpen, d4HelpMargin, d4Helps };
+  }
+  /**
+   * D2 se libera de la pantalla: llega al hombro de O5 por el que viene (o
+   * está allí cuando O2 sale con el balón) y la navega con el retraso de
+   * contacto, igual que D1 en el bloqueo directo y D3 en el indirecto (el
+   * retraso se suma: ir por detrás no le ahorra rodear a O5).
+   */
+  function d2ReleaseFor(call: OffBallDefensiveCall): number {
+    const navigation = screenSet ? Math.max(0, screenDelayRaw + callAdjustment(call)) : 0;
+    return Math.max(tD2AtContact, tHandoffReady) + navigation;
+  }
+  /** Persecución de D2 desde el hombro de contacto, rodeando a O5 hasta el punto de tiro (el tiempo cuenta el rodeo). */
+  function d2PursuitFor(call: OffBallDefensiveCall): ContestCandidate {
+    const release = d2ReleaseFor(call);
+    return {
+      id: "D2",
+      geometryTo: (spot) => ({
+        geometry: { originPos: contactPoint, destinationPos: spot, speedMps: d2Speed, brakingExtraSeconds: closeoutBrakingExtraSeconds(d2.attributes.F03) },
+        arrivalSeconds: Math.max(release, release + detourAround(contactPoint, spot, hub, r).length / d2Speed - perimeterArrivalAdjustmentSeconds(d2.attributes.T22)),
+      }),
+    };
   }
 
+  /** Tipo de tiro de recepción en un punto del indirecto: lo decide la zona real (LAB-0.5). */
+  const spotShotType = (spot: Point2D): ShotType => (isBehindThreePointLine(spot) ? "three_point" : isMidRangeZone(spot) ? "mid_range" : isFloaterZone(spot) ? "floater" : "close_finish");
+  const spotPoints = (type: ShotType) => (type === "three_point" ? 3 : 2);
+
+  /** Vías del indirecto (O3 tras el corte, O4 si D4 ayuda) y la salida, desde quien tenga el balón. */
+  function pindownOptions(call: OffBallDefensiveCall, holderSlot: "O2" | "O5", holderPos: Point2D, tDecision: number, completionBase: number): HandlerReadOption[] {
+    const holder = player(ctx, holderSlot);
+    const p = pindownFor(call);
+    const o3Contester = p.d4Helps ? "D4" : "D3";
+    const o3ContestGeometry: ContestGeometry = p.d4Helps
+      ? { originPos: ctx.positions.D4!, destinationPos: WEAK_SIDE_CUT_SPOT, speedMps: defenderLateralSpeedMps(d4.attributes.F04), brakingExtraSeconds: closeoutBrakingExtraSeconds(d4.attributes.F03) }
+      : { originPos: ctx.positions.D3!, destinationPos: WEAK_SIDE_CUT_SPOT, speedMps: defenderLateralSpeedMps(d3.attributes.F04), brakingExtraSeconds: closeoutBrakingExtraSeconds(d3.attributes.F03) };
+    // El pase sale al decidir y llega al cortador cuando él llega al punto (no antes).
+    const tPassArrivalO3 = Math.max(tO3Cut, tDecision + PASS_RELEASE_SECONDS + distanceSeconds(holderPos, WEAK_SIDE_CUT_SPOT));
+    const o3Type = spotShotType(WEAK_SIDE_CUT_SPOT);
+    const tO3Ready = tPassArrivalO3 + CATCH_AND_SHOOT_PREP_SECONDS;
+    const o3Opposition = estimateContestLevel(ctx, o3Contester, o3ContestGeometry, p.tD3AtCut, WEAK_SIDE_CUT_SPOT, tO3Ready, CATCH_AND_SHOOT_PREP_SECONDS);
+    const o3Value = p.cutWindowOpen && tO3Ready < clock ? spotPoints(o3Type) * shotProbability(shotBaseProbability(o3Type), shotSkill(o3, o3Type), o3Opposition) : -Infinity;
+    const d4CornerGeometry: ContestGeometry = { originPos: ctx.positions.D4!, destinationPos: WEAK_SIDE_SCREEN_SPOT, speedMps: defenderLateralSpeedMps(d4.attributes.F04), brakingExtraSeconds: closeoutBrakingExtraSeconds(d4.attributes.F03) };
+    const tPassArrivalO4 = Math.max(tO4ScreenSet, tDecision + PASS_RELEASE_SECONDS + distanceSeconds(holderPos, WEAK_SIDE_SCREEN_SPOT));
+    const o4Type = spotShotType(WEAK_SIDE_SCREEN_SPOT);
+    const tO4Ready = tPassArrivalO4 + CATCH_AND_SHOOT_PREP_SECONDS;
+    // D4 sale a cerrar a O4 cuando deja la ayuda sobre O3 (su llegada al corte).
+    const o4Opposition = estimateContestLevel(ctx, "D4", d4CornerGeometry, p.tD3AtCut, WEAK_SIDE_SCREEN_SPOT, tO4Ready, CATCH_AND_SHOOT_PREP_SECONDS);
+    const o4Value = p.d4Helps && tO4Ready < clock ? spotPoints(o4Type) * shotProbability(shotBaseProbability(o4Type), shotSkill(o4, o4Type), o4Opposition) : -Infinity;
+    const passTo = (receiver: "O3" | "O4", spot: Point2D, tArrival: number, deflectorId: string, shot: ShotAttemptArgs, text: string, receivedText: string) => (record: (factLinkKind?: string) => void) => {
+      const outcome = resolvePass(holder.attributes.T09, player(ctx, receiver).attributes.T11, true, player(ctx, deflectorId).attributes.T17, 1, ctx.rng);
+      event(ctx, tArrival, "ejecutado", "pass_released", [holderSlot, receiver], text);
+      record("pass_released");
+      if (outcome.kind === "deflected_loose_ball") return { ...resolveLooseBallAfterPass(ctx, tArrival, holderSlot, deflectorId), ...swap };
+      const delay = outcome.kind === "awkward_control" ? outcome.extraDelaySeconds : 0;
+      event(ctx, tArrival, "concedido", "pass_received", [receiver], receivedText);
+      return { ...resolveShotAttempt(ctx, { ...shot, tReady: shot.tReady + delay, prepSeconds: shot.prepSeconds + delay }), ...swap };
+    };
+    return [
+      {
+        id: "pase_o3",
+        value: o3Value,
+        completion: completionBase * (1 - deflectionProbability(d3.attributes.T17, holder.attributes.T09)),
+        kind: "pase",
+        values: { cutWindowOpen: p.cutWindowOpen, tD3AtCut: p.tD3AtCut, tO3Cut, opposition: o3Opposition, contesterId: realId(ctx, o3Contester), shotType: o3Type },
+        execute: passTo("O3", WEAK_SIDE_CUT_SPOT, tPassArrivalO3, "D3", { shooterId: "O3", shooterSkill: shotSkill(o3, o3Type), shotType: o3Type, shooterPos: WEAK_SIDE_CUT_SPOT, tReady: tO3Ready, prepSeconds: CATCH_AND_SHOOT_PREP_SECONDS, contesterId: o3Contester, contesterArrival: p.tD3AtCut, contesterGeometry: o3ContestGeometry }, `${holderSlot} pasa a O3, que sale del bloqueo indirecto.`, "O3 recibe tras el bloqueo indirecto."),
+      },
+      {
+        id: "continuar_o4",
+        value: o4Value,
+        completion: completionBase * (1 - deflectionProbability(d4.attributes.T17, holder.attributes.T09)),
+        kind: "pase",
+        values: { o4Open: p.d4Helps, d4HelpMargin: p.d4HelpMargin, opposition: o4Opposition, shotType: o4Type },
+        execute: passTo("O4", WEAK_SIDE_SCREEN_SPOT, tPassArrivalO4, "D4", { shooterId: "O4", shooterSkill: shotSkill(o4, o4Type), shotType: o4Type, shooterPos: WEAK_SIDE_SCREEN_SPOT, tReady: tO4Ready, prepSeconds: CATCH_AND_SHOOT_PREP_SECONDS, contesterId: "D4", contesterArrival: p.tD3AtCut, contesterGeometry: d4CornerGeometry }, `${holderSlot} continúa hacia O4, abierto tras la ayuda de D4.`, "O4 recibe en su propio punto de bloqueo."),
+      },
+      {
+        id: "pase_o1",
+        value: 0,
+        completion: 1,
+        kind: "salida",
+        values: {},
+        execute: (record) => {
+          const tOutlet = tDecision + PASS_RELEASE_SECONDS + distanceSeconds(holderPos, ctx.positions.O1!);
+          event(ctx, tOutlet, "concedido", "possession_continues", [holderSlot, "O1"], `${holderSlot} elige la salida segura hacia O1; el ataque conserva el control y se reorganiza.`);
+          record("possession_continues");
+          return { ...finalize(ctx, { kind: "possession_reorganized_control_kept", outletPlayerId: "O1" }, { status: "held", holderId: "O1", position: ctx.positions.O1! }), ...swap };
+        },
+      },
+    ];
+  }
+
+  const shoot = (args: ShotAttemptArgs) => (record: (factLinkKind?: string) => void) => {
+    record();
+    return { ...resolveShotAttempt(ctx, args), ...swap };
+  };
+  const d4Help = (tFrom: number) => chaser(ctx, "D4", ctx.positions.D4!, tFrom + recognitionLatencySeconds(d4.attributes.M01, d4.attributes.M05), (p) => interiorArrivalAdjustmentSeconds(p.attributes.T23));
+
+  function buildOptions(call: OffBallDefensiveCall): { options: HandlerReadOption[]; tDecision: number; holder: "O2" | "O5" } {
+    const tDecision = tHandoffReady;
+    if (!denied) {
+      // O2 recibe en el hombro alto y sale por el otro hombro de O5; O5 entrega y continúa al aro.
+      const tAtExit = tDecision + exchangeToExit / o2Speed;
+      const d2Pursuit = d2PursuitFor(call);
+      // Defensor de O5 en su continuación: una sola trayectoria hacia el aro desde
+      // que lee la continuación (como D5 en el drop del bloqueo directo): D5 si se
+      // hunde o salta tarde; D2 si cambian.
+      const o5Speed = attackerMoveSpeedMps(o5.attributes.F01);
+      const rollGuardId = response === "cambiar_entrega" ? "D2" : "D5";
+      const rollGuardOrigin = response === "cambiar_entrega" ? contactPoint : response === "hundirse" ? ctx.positions.D5! : jumpPoint;
+      const rollGuardDepart =
+        (response === "cambiar_entrega" ? Math.max(tD2AtContact, tHandoffReady) : response === "hundirse" ? tHandoffReady : Math.max(tD5AtJump, tHandoffReady)) +
+        recognitionLatencySeconds(player(ctx, rollGuardId).attributes.M01, player(ctx, rollGuardId).attributes.M05);
+      const rollGuardProfile = player(ctx, rollGuardId);
+      const rollGuardSpeed = defenderLateralSpeedMps(rollGuardProfile.attributes.F04);
+      const rollGuardGeometry: ContestGeometry = { originPos: rollGuardOrigin, destinationPos: ATTACKED_HOOP, speedMps: rollGuardSpeed, brakingExtraSeconds: closeoutBrakingExtraSeconds(rollGuardProfile.attributes.F03) };
+      const rollGuardArrival = Math.max(rollGuardDepart, rollGuardDepart + distance(rollGuardOrigin, ATTACKED_HOOP) / rollGuardSpeed - interiorArrivalAdjustmentSeconds(rollGuardProfile.attributes.T23));
+      const rollGuard: ContestCandidate = { id: rollGuardId, geometryTo: () => ({ geometry: rollGuardGeometry, arrivalSeconds: rollGuardArrival }) };
+      // Defensor de O2 tras la entrega: D2 por la pantalla, o D5 si ha cambiado.
+      const o2Guard: ContestCandidate = response === "cambiar_entrega" ? chaser(ctx, "D5", jumpPoint, Math.max(tD5AtJump, tDecision), (p) => perimeterArrivalAdjustmentSeconds(p.attributes.T22)) : d2Pursuit;
+      const rollPath = detourAround(hub, ATTACKED_HOOP, rollGuardOrigin, r);
+      const tRollWaypoint = rollPath.waypoint ? tHandoffReady + distance(hub, rollPath.waypoint) / o5Speed : tHandoffReady;
+      const tO5AtRim = tHandoffReady + rollPath.length / o5Speed;
+      const continuation = () => {
+        if (rollPath.waypoint) setArrival(ctx, "O5", tRollWaypoint, rollPath.waypoint, tHandoffReady);
+        setArrival(ctx, "O5", tO5AtRim, ATTACKED_HOOP, tRollWaypoint);
+        event(ctx, tHandoffReady, "ejecutado", "roll_continuation", ["O5"], "O5 entrega y continúa hacia el aro.", { rollSpot: ATTACKED_HOOP });
+      };
+      const withContinuation = (exec: HandlerReadOption["execute"]): HandlerReadOption["execute"] => (record) => {
+        continuation();
+        return exec(record);
+      };
+
+      const tRim = tAtExit + timeToReach(exitPoint, ATTACKED_HOOP, o2Speed) + CLOSE_FINISH_PREP_SECONDS;
+      const rim = bestContest(ctx, [o2Guard, rollGuard, d4Help(tDecision)], ATTACKED_HOOP, tRim, CLOSE_FINISH_PREP_SECONDS)!;
+      const rimValue = tRim < clock ? 2 * shotProbability(CLOSE_FINISH_BASE_PROBABILITY, o2.attributes.T01, rim.level) : -Infinity;
+      const protectorAtExit = response === "cambiar_entrega" ? jumpPoint : positionAtInstant(rollGuardGeometry, rollGuardArrival, tAtExit);
+      const pullUp = planPullUp(ctx, {
+        shooterId: "O2",
+        from: exitPoint,
+        tStart: tAtExit,
+        protectorPos: protectorAtExit,
+        standoffMeters: contestReachMeters(player(ctx, response === "cambiar_entrega" ? "D5" : rollGuardId).measures.wingspanCm) + 0.05,
+        contesters: [o2Guard, rollGuard],
+      });
+      const pullUpValue = pullUp && pullUp.tReady < clock ? pullUp.value : -Infinity;
+      // Triple al recibir: solo si el hombro de entrega está detrás del arco.
+      const tTriple = tDecision + movingShotPrepSeconds(o2.attributes.T06);
+      const triple = bestContest(ctx, [o2Guard, rollGuard], exchange, tTriple, movingShotPrepSeconds(o2.attributes.T06))!;
+      const tripleValue = isBehindThreePointLine(exchange) && tTriple < clock ? 3 * shotProbability(THREE_POINT_BASE_PROBABILITY, o2.attributes.T04, triple.level) : -Infinity;
+      const tRollArrival = Math.max(tO5AtRim, tDecision + PASS_RELEASE_SECONDS + distanceSeconds(exchange, ATTACKED_HOOP));
+      const tRollReady = tRollArrival + CLOSE_FINISH_PREP_SECONDS;
+      const roll = bestContest(ctx, [rollGuard, d4Help(tHandoffReady)], ATTACKED_HOOP, tRollReady, CLOSE_FINISH_PREP_SECONDS)!;
+      const rollValue = tRollReady < clock ? 2 * shotProbability(CLOSE_FINISH_BASE_PROBABILITY, o5.attributes.T01, roll.level) : -Infinity;
+      const options: HandlerReadOption[] = [
+        {
+          id: "finalizar_portador",
+          value: rimValue,
+          completion: entryCompletion,
+          kind: "tiro",
+          values: { contesterId: realId(ctx, rim.id), opposition: rim.level, readySeconds: tRim, d2ReleaseSeconds: d2ReleaseFor(call), response },
+          execute: withContinuation((record) => {
+            setArrival(ctx, "O2", tAtExit, exitPoint, tDecision);
+            return shoot({ shooterId: "O2", shooterSkill: o2.attributes.T01, shotType: "close_finish", shooterPos: ATTACKED_HOOP, tReady: tRim, prepSeconds: CLOSE_FINISH_PREP_SECONDS, contesterId: rim.id, contesterArrival: rim.arrival, contesterGeometry: rim.geometry })(record);
+          }),
+        },
+        {
+          id: "parada_o2",
+          value: pullUpValue,
+          completion: entryCompletion,
+          kind: "tiro",
+          values: { shotType: pullUp?.shotType ?? null, contesterId: pullUp ? realId(ctx, pullUp.contesterId) : null, opposition: pullUp?.opposition ?? null, d2ReleaseSeconds: d2ReleaseFor(call) },
+          execute: withContinuation((record) => {
+            const plan = pullUp!;
+            setArrival(ctx, "O2", tAtExit, exitPoint, tDecision);
+            setArrival(ctx, "O2", tAtExit + plan.travelSeconds, plan.spot, tAtExit);
+            return shoot({ shooterId: "O2", shooterSkill: shotSkill(o2, plan.shotType), shotType: plan.shotType, shooterPos: plan.spot, tReady: plan.tReady, prepSeconds: plan.prepSeconds, contesterId: plan.contesterId, contesterArrival: plan.contesterArrival, contesterGeometry: plan.contesterGeometry })(record);
+          }),
+        },
+        {
+          id: "triple_o2",
+          value: tripleValue,
+          completion: entryCompletion,
+          kind: "tiro",
+          values: { behindArc: isBehindThreePointLine(exchange), contesterId: realId(ctx, triple.id), opposition: triple.level, d2ReleaseSeconds: d2ReleaseFor(call) },
+          execute: withContinuation(shoot({ shooterId: "O2", shooterSkill: o2.attributes.T04, shotType: "three_point", shooterPos: exchange, tReady: tTriple, prepSeconds: movingShotPrepSeconds(o2.attributes.T06), contesterId: triple.id, contesterArrival: triple.arrival, contesterGeometry: triple.geometry })),
+        },
+        {
+          id: "continuacion_o5",
+          value: rollValue,
+          completion: entryCompletion * (1 - deflectionProbability(rollGuardProfile.attributes.T17, o2.attributes.T09)),
+          kind: "pase",
+          values: { contesterId: realId(ctx, roll.id), opposition: roll.level, rollerAtRimSeconds: tO5AtRim, guardId: realId(ctx, rollGuardId) },
+          execute: withContinuation((record) => {
+            const outcome = resolvePass(o2.attributes.T09, o5.attributes.T11, true, rollGuardProfile.attributes.T17, 1, ctx.rng);
+            event(ctx, tRollArrival, "ejecutado", "pass_released", ["O2", "O5"], "O2 devuelve el balón a O5, que continúa hacia el aro.");
+            record("pass_released");
+            if (outcome.kind === "deflected_loose_ball") return { ...resolveLooseBallAfterPass(ctx, tRollArrival, "O2", rollGuardId), ...swap };
+            const delay = outcome.kind === "awkward_control" ? outcome.extraDelaySeconds : 0;
+            event(ctx, tRollArrival, "concedido", "pass_received", ["O5"], "O5 recibe junto al aro.");
+            return { ...resolveShotAttempt(ctx, { shooterId: "O5", shooterSkill: o5.attributes.T01, shotType: "close_finish", shooterPos: ATTACKED_HOOP, tReady: tRollReady + delay, prepSeconds: CLOSE_FINISH_PREP_SECONDS + delay, contesterId: roll.id, contesterArrival: roll.arrival, contesterGeometry: roll.geometry }), ...swap };
+          }),
+        },
+        ...pindownOptions(call, "O2", exchange, tDecision, entryCompletion).map((o) => ({ ...o, execute: withContinuation(o.execute) })),
+      ];
+      return { options, tDecision, holder: "O2" };
+    }
+    // Entrega negada: O5 se la queda en el codo.
+    const tKeep = tDecision;
+    const d5Home = d5Jumps
+      ? chaser(ctx, "D5", jumpPoint, Math.max(tD5AtJump, tKeep) + recognitionLatencySeconds(d5.attributes.M01, d5.attributes.M05), (p) => interiorArrivalAdjustmentSeconds(p.attributes.T23))
+      : chaser(ctx, "D5", ctx.positions.D5!, tKeep, (p) => interiorArrivalAdjustmentSeconds(p.attributes.T23));
+    const keeperPath = detourAround(hub, ATTACKED_HOOP, d5Jumps ? jumpPoint : ctx.positions.D5!, r);
+    const tRim = tKeep + keeperPath.length / attackerMoveSpeedMps(o5.attributes.F01) + CLOSE_FINISH_PREP_SECONDS;
+    const rim = bestContest(ctx, [d5Home, d4Help(tKeep)], ATTACKED_HOOP, tRim, CLOSE_FINISH_PREP_SECONDS)!;
+    const rimValue = tRim < clock ? 2 * shotProbability(CLOSE_FINISH_BASE_PROBABILITY, o5.attributes.T01, rim.level) : -Infinity;
+    // Puerta de atrás: O2, con su defensor delante (o con D5 en su salida), corta al aro por el lado por el que vino.
+    const o2At = d2Denies ? moveToward(exchange, ctx.positions.O2!, 1, r) : exchange;
+    const blocker = d2Denies ? exchange : jumpPoint;
+    const backdoorPath = detourAround(o2At, ATTACKED_HOOP, blocker, r);
+    const tO2AtRim = tKeep + backdoorPath.length / o2Speed;
+    const tBackdoorArrival = Math.max(tO2AtRim, tKeep + PASS_RELEASE_SECONDS + distanceSeconds(hub, ATTACKED_HOOP));
+    const tBackdoorReady = tBackdoorArrival + CLOSE_FINISH_PREP_SECONDS;
+    const d2Chase = chaser(ctx, "D2", d2Denies ? exchange : ctx.positions.D2!, tKeep + recognitionLatencySeconds(d2.attributes.M01, d2.attributes.M05));
+    const backdoor = bestContest(ctx, [d2Chase, d5Home, d4Help(tKeep)], ATTACKED_HOOP, tBackdoorReady, CLOSE_FINISH_PREP_SECONDS)!;
+    const backdoorValue = tBackdoorReady < clock ? 2 * shotProbability(CLOSE_FINISH_BASE_PROBABILITY, o2.attributes.T01, backdoor.level) : -Infinity;
+    const options: HandlerReadOption[] = [
+      {
+        id: "finalizar_o5",
+        value: rimValue,
+        completion: entryCompletion,
+        kind: "tiro",
+        values: { contesterId: realId(ctx, rim.id), opposition: rim.level, readySeconds: tRim, d2Denies, d5Jumps },
+        execute: shoot({ shooterId: "O5", shooterSkill: o5.attributes.T01, shotType: "close_finish", shooterPos: ATTACKED_HOOP, tReady: tRim, prepSeconds: CLOSE_FINISH_PREP_SECONDS, contesterId: rim.id, contesterArrival: rim.arrival, contesterGeometry: rim.geometry }),
+      },
+      {
+        id: "puerta_atras_o2",
+        value: backdoorValue,
+        completion: entryCompletion * (1 - deflectionProbability((d2Denies ? d2 : d5).attributes.T17, o5.attributes.T09)),
+        kind: "pase",
+        values: { contesterId: realId(ctx, backdoor.id), opposition: backdoor.level, cutterAtRimSeconds: tO2AtRim },
+        execute: (record) => {
+          setArrival(ctx, "O2", tO2AtRim, ATTACKED_HOOP, tKeep);
+          event(ctx, tKeep, "ejecutado", "backdoor_cut", ["O2", d2Denies ? "D2" : "D5"], d2Denies ? "Con D2 en el punto de la entrega, O2 corta por la puerta de atrás hacia el aro." : "Con D5 en la salida de la entrega, O2 corta hacia el aro.");
+          const deflector = d2Denies ? "D2" : "D5";
+          const outcome = resolvePass(o5.attributes.T09, o2.attributes.T11, true, player(ctx, deflector).attributes.T17, 1, ctx.rng);
+          event(ctx, tBackdoorArrival, "ejecutado", "pass_released", ["O5", "O2"], "O5 encuentra a O2 en el corte hacia el aro.");
+          record("pass_released");
+          if (outcome.kind === "deflected_loose_ball") return { ...resolveLooseBallAfterPass(ctx, tBackdoorArrival, "O5", deflector), ...swap };
+          const delay = outcome.kind === "awkward_control" ? outcome.extraDelaySeconds : 0;
+          event(ctx, tBackdoorArrival, "concedido", "pass_received", ["O2"], "O2 recibe junto al aro.");
+          return { ...resolveShotAttempt(ctx, { shooterId: "O2", shooterSkill: o2.attributes.T01, shotType: "close_finish", shooterPos: ATTACKED_HOOP, tReady: tBackdoorReady + delay, prepSeconds: CLOSE_FINISH_PREP_SECONDS + delay, contesterId: backdoor.id, contesterArrival: backdoor.arrival, contesterGeometry: backdoor.geometry }), ...swap };
+        },
+      },
+      ...pindownOptions(call, "O5", hub, tKeep, entryCompletion),
+    ];
+    return { options, tDecision: tKeep, holder: "O5" };
+  }
+
+  // Orden sin balón (ME-06 §3.1; misma regla que Delay): en `auto`, la de menor concesión proyectada.
+  const cache = new Map<OffBallDefensiveCall, ReturnType<typeof buildOptions>>();
+  const optionsFor = (call: OffBallDefensiveCall) => {
+    const hit = cache.get(call);
+    if (hit) return hit;
+    const built = buildOptions(call);
+    cache.set(call, built);
+    return built;
+  };
+  const concessionOf = (call: OffBallDefensiveCall) => Math.max(0, ...optionsFor(call).options.map((o) => (Number.isFinite(o.value) ? o.value * o.completion : 0)));
   let offBallCall: OffBallDefensiveCall;
-  let offBallCallAutoOptions: readonly AuditOptionRecord[] | null = null;
+  let offBallAutoOptions: AuditOptionRecord[] | null = null;
   if (offBallCallChoice === "auto") {
-    const negar = evaluateOffBallCall("negar_primera_salida");
-    const guardar = evaluateOffBallCall("guardar_espacio");
-    // Empate exacto (o concesión indistinguible) conserva `guardar_espacio`
-    // como plan base (ME-07A §4): solo cambia si `negar_primera_salida`
-    // concede estrictamente menos.
-    offBallCall = negar.concessionValue < guardar.concessionValue ? "negar_primera_salida" : "guardar_espacio";
-    offBallCallAutoOptions = [
-      {
-        id: "negar_primera_salida",
-        status: offBallCall === "negar_primera_salida" ? "elegida" : "descartada_por_condicion",
-        reasonCode: offBallCall === "negar_primera_salida" ? "off_ball_call_lower_concession" : "off_ball_call_higher_concession",
-        values: { concessionValue: negar.concessionValue },
-      },
-      {
-        id: "guardar_espacio",
-        status: offBallCall === "guardar_espacio" ? "elegida" : "descartada_por_condicion",
-        reasonCode: offBallCall === "guardar_espacio" ? (negar.concessionValue === guardar.concessionValue ? "off_ball_call_tied_base_kept" : "off_ball_call_lower_concession") : "off_ball_call_higher_concession",
-        values: { concessionValue: guardar.concessionValue },
-      },
+    const negar = concessionOf("negar_primera_salida");
+    const guardar = concessionOf("guardar_espacio");
+    offBallCall = negar < guardar ? "negar_primera_salida" : "guardar_espacio";
+    offBallAutoOptions = [
+      { id: "negar_primera_salida", status: offBallCall === "negar_primera_salida" ? "elegida" : "descartada_por_condicion", reasonCode: offBallCall === "negar_primera_salida" ? "off_ball_call_lower_concession" : "off_ball_call_higher_concession", values: { concessionValue: negar } },
+      { id: "guardar_espacio", status: offBallCall === "guardar_espacio" ? "elegida" : "descartada_por_condicion", reasonCode: offBallCall === "guardar_espacio" ? (negar === guardar ? "off_ball_call_tied_base_kept" : "off_ball_call_lower_concession") : "off_ball_call_higher_concession", values: { concessionValue: guardar } },
     ];
   } else {
     offBallCall = offBallCallChoice;
   }
-  const chosenOffBallCall = evaluateOffBallCall(offBallCall);
-  const { screenDelay, tD3AtCut, cutWindowOpen, d4HelpMargin, d4Helps } = chosenOffBallCall;
+  const pin = pindownFor(offBallCall);
+  const tD2Release = d2ReleaseFor(offBallCall);
 
+  // --- Trayectorias y hechos de la entrega y del indirecto --------------------
+  if (d2Denies) {
+    if (d2Run.waypoint) setArrival(ctx, "D2", tD2Recognize + distance(ctx.positions.D2!, d2Run.waypoint) / d2Speed, d2Run.waypoint, tD2Recognize);
+    setArrival(ctx, "D2", tD2AtExchange, exchange, tD2Recognize);
+  } else {
+    // D2 llega al hombro de contacto de O5 y queda retenido hasta liberarse.
+    setArrival(ctx, "D2", tD2AtContact, contactPoint, tD2Recognize);
+    if (response !== "cambiar_entrega") {
+      const exitPath = detourAround(contactPoint, exitPoint, hub, r);
+      setArrival(ctx, "D2", tD2Release + exitPath.length / d2Speed, exitPoint, tD2Release);
+    }
+  }
+  if (response === "cambiar_entrega") {
+    setArrival(ctx, "D5", tD5AtJump, jumpPoint, tD5Recognize);
+    event(ctx, tD5Recognize, "reconocido", "switch_committed", ["D5", "D2"], "D5 canta el cambio en la entrega: sale a O2 por el hombro de salida y D2 se queda con O5.", { switchPoint: jumpPoint });
+  } else if (response === "saltar_entrega") {
+    setArrival(ctx, "D5", tD5AtJump, jumpPoint, tD5Recognize);
+    event(ctx, tD5AtJump, "ejecutado", "show_committed", ["D5"], d5Jumps ? "D5 salta a la salida de la entrega antes que O2 y la niega; deja la pintura." : "D5 sale a saltar la entrega, pero O2 llega antes; D5 queda fuera de la pintura.", { jumpPoint, arrivesAt: tD5AtJump, denied: d5Jumps });
+  }
+  auditDecision(ctx, tHandoffReady, {
+    point: "transferencia_mano_a_mano",
+    holderId: "O5",
+    participants: ["O5", "O2", "D2", "D5"],
+    chosenOptionId: denied ? "entrega_negada" : "entrega_completada",
+    options: [
+      {
+        id: denied ? "entrega_negada" : "entrega_completada",
+        status: "elegida",
+        reasonCode: denied ? "handoff_denied_defender_arrived" : "handoff_completed",
+        values: {
+          response,
+          d2Denies,
+          d5Jumps,
+          d2ArrivalSeconds: tD2AtExchange,
+          o2ArrivalSeconds: tO2AtExchange,
+          o5ReadySeconds: tO5Ready,
+          tHandoffReady,
+          screenSet,
+          screenDelaySeconds: screenSet ? screenDelayRaw : 0,
+          d2ContactSeconds: tD2AtContact,
+          d2ReleaseSeconds: tD2Release,
+          d5JumpArrivalSeconds: response === "hundirse" ? null : tD5AtJump,
+        },
+      },
+    ],
+  });
+  event(
+    ctx,
+    tHandoffReady,
+    denied ? "concedido" : "ejecutado",
+    denied ? "dho_denied" : "dho_completed",
+    ["O5", "O2"],
+    denied
+      ? d2Denies
+        ? "O5 se queda el balón: D2 llega antes que O2 al punto de la entrega."
+        : "O5 se queda el balón: D5 tapa la salida de la entrega."
+      : screenSet
+        ? `O5 entrega en mano a O2 y su cuerpo retiene a D2, que se libera de la pantalla ${(tD2Release - tHandoffReady).toFixed(2)} s después de la entrega.`
+        : `O5 entrega en mano a O2 sin estar puesto: su cuerpo no retiene a D2, que sigue a O2 ${(tD2Release - tHandoffReady).toFixed(2)} s después de la entrega.`,
+    { exchangePoint: exchange, exitPoint, denied, screenSet },
+  );
+
+  setArrival(ctx, "O4", tO4ScreenSet, WEAK_SIDE_SCREEN_SPOT, 0);
+  event(ctx, tO4ScreenSet, "ejecutado", "screen_set", ["O4"], "O4 coloca un bloqueo indirecto legal para el corte de O3 en el lado débil.");
   setArrival(ctx, "O3", tO3Cut, WEAK_SIDE_CUT_SPOT, cutStart);
-  event(ctx, tO3Cut, "ejecutado", "screen_navigated", ["O3", "D3"], `O3 corta tras el bloqueo indirecto; D3 navega con un retraso real de ${screenDelay.toFixed(2)} s.`, { screenDelay });
-  setArrival(ctx, "D3", tD3AtCut, WEAK_SIDE_CUT_SPOT, cutStart);
-
-  // D4 responde al bloqueador: en `guardar_espacio`, D4 está listo para
-  // ayudar a cerrar a O3 en cuanto D3 no lo deniega con margen real
-  // (`d4HelpMargin`, positivo cuando D3 llega después que O3): si ayuda,
-  // O3 recibe contestado (no un tiro libre) y O4 se abre en su propio
-  // punto de bloqueo (mismo patrón que la ayuda de D3/D4 del bloqueo
-  // directo). En `negar_primera_salida`, D4 nunca ayuda: sigue siempre al
-  // bloqueador, así que O3 recibe sin contestar si D3 lo pierde, pero O4
-  // no se abre nunca por esta vía.
-  const o4Open = d4Helps;
-  if (d4Helps) {
-    event(ctx, tD3AtCut, "concedido", "help_left_assignment", ["D4", "O4"], "D4 ayuda a cerrar a O3 en el corte; O4 queda libre en su propio punto de bloqueo.");
+  event(ctx, tO3Cut, "ejecutado", "screen_navigated", ["O3", "D3"], `O3 corta tras el bloqueo indirecto; D3 navega con un retraso real de ${pin.screenDelay.toFixed(2)} s.`, { screenDelay: pin.screenDelay });
+  setArrival(ctx, "D3", pin.tD3AtCut, WEAK_SIDE_CUT_SPOT, cutStart);
+  if (pin.d4Helps) {
+    event(ctx, pin.tD3AtCut, "concedido", "help_left_assignment", ["D4", "O4"], "D4 ayuda a cerrar a O3 en el corte; O4 queda libre en su propio punto de bloqueo.");
   }
-
-  if (offBallCallAutoOptions) {
-    auditDecision(ctx, tO3Cut, {
-      point: "seleccion_orden_sin_balon",
-      holderId: null,
-      participants: ["O3", "O4", "D3", "D4"],
-      chosenOptionId: offBallCall,
-      options: offBallCallAutoOptions,
-    });
+  if (offBallAutoOptions) {
+    auditDecision(ctx, tD2Recognize, { point: "seleccion_orden_sin_balon", holderId: null, participants: ["D2", "O2", "D3", "O3", "D4"], chosenOptionId: offBallCall, options: offBallAutoOptions });
   }
-
   auditDecision(ctx, tO3Cut, {
     point: "bloqueo_indirecto_o3",
     holderId: null,
     participants: ["O3", "O4", "D3", "D4"],
-    chosenOptionId: cutWindowOpen ? "corte_liberado" : "corte_negado",
+    chosenOptionId: pin.cutWindowOpen ? "corte_liberado" : "corte_negado",
     factLinkKind: "screen_navigated",
     options: [
-      cutWindowOpen
-        ? { id: "corte_liberado", status: "elegida", reasonCode: "cut_window_open", values: { tD3AtCut, tO3Cut, screenDelay } }
-        : { id: "corte_negado", status: "elegida", reasonCode: "cut_window_denied", values: { tD3AtCut, tO3Cut, screenDelay } },
-      o4Open
-        ? { id: "ayuda_d4_abre_o4", status: "elegida", reasonCode: "help_rotation_opened_o4", values: { d4HelpMargin } }
-        : { id: "ayuda_d4_abre_o4", status: "descartada_por_condicion", reasonCode: "help_rotation_not_available", values: { d4HelpMargin, offBallCall } },
+      pin.cutWindowOpen
+        ? { id: "corte_liberado", status: "elegida", reasonCode: "cut_window_open", values: { tD3AtCut: pin.tD3AtCut, tO3Cut, screenDelay: pin.screenDelay } }
+        : { id: "corte_negado", status: "elegida", reasonCode: "cut_window_denied", values: { tD3AtCut: pin.tD3AtCut, tO3Cut, screenDelay: pin.screenDelay } },
+      pin.d4Helps
+        ? { id: "ayuda_d4_abre_o4", status: "elegida", reasonCode: "help_rotation_opened_o4", values: { d4HelpMargin: pin.d4HelpMargin } }
+        : { id: "ayuda_d4_abre_o4", status: "descartada_por_condicion", reasonCode: "help_rotation_not_available", values: { d4HelpMargin: pin.d4HelpMargin, offBallCall } },
     ],
   });
 
-  // --- 4. Primera lectura real: el portador (O2 si la entrega se
-  //        completó; si no, O5 conserva el balón) elige entre finalizar,
-  //        pasar a O3, continuar a O4, o la seguridad a O1 (ME-06 §3.1.4).
-  const holderId = handoffDenied ? "O5" : "O2";
-  const holder = handoffDenied ? o5 : o2;
-  const holderPos = handoffDenied ? entryPoint : handoffPoint;
-  // El portador no decide hasta que también puede leer de verdad la salida
-  // del bloqueo/corte simultáneo (§3.1.3): si esa acción paralela tarda más
-  // que la entrega en resolverse, la lectura espera a la más lenta de las
-  // dos, en vez de decidir con el corte todavía en el aire.
-  const tDecision = Math.max(tHandoffReady, tO3Cut, tD3AtCut);
-
-  const shotClockRemainingSeconds = ctx.shotClockMs / 1000 - tDecision;
-  if (shotClockRemainingSeconds <= 0) {
-    if (ctx.linked) return linkedShotClockViolation(ctx, holderId);
-    return finalize(ctx, { kind: "shot_clock_violation" }, { status: "held", holderId, position: holderPos });
+  // --- 4. Primera lectura real de quien tiene el balón ------------------------
+  const { options, tDecision, holder } = optionsFor(offBallCall);
+  if (clock - tDecision <= 0) {
+    if (ctx.linked) return linkedShotClockViolation(ctx, holder);
+    return finalize(ctx, { kind: "shot_clock_violation" }, { status: "held", holderId: holder, position: holder === "O2" ? exchange : hub });
   }
-
-  // Vía "finalizar_portador": el portador conduce al aro. D5 protege el
-  // interior salvo que ya esté comprometido en la trampa del mano a mano,
-  // en cuyo caso recupera con el retraso real de coordinación (M09).
-  const d5FinishOrigin = d5CommittedToHandoffTrap ? handoffPoint : ctx.positions.D5!;
-  const d5FinishDepart = d5CommittedToHandoffTrap ? tHandoffReady : tDecision;
-  const d5FinishGeometry: ContestGeometry = {
-    originPos: d5FinishOrigin,
-    destinationPos: ATTACKED_HOOP,
-    speedMps: defenderLateralSpeedMps(d5.attributes.F04),
-    brakingExtraSeconds: closeoutBrakingExtraSeconds(d5.attributes.F03),
-  };
-  const holderTimeToHoop = timeToReach(holderPos, ATTACKED_HOOP, attackerMoveSpeedMps(holder.attributes.F01));
-  const tHolderFinishReady = tDecision + holderTimeToHoop + CLOSE_FINISH_PREP_SECONDS;
-  const d5RawArrivalAtRim = d5FinishDepart + timeToReach(d5FinishOrigin, ATTACKED_HOOP, defenderLateralSpeedMps(d5.attributes.F04));
-  const d5ArrivalAtRim = d5CommittedToHandoffTrap ? tHandoffReady + tD5RecoverToRim : Math.max(0, d5RawArrivalAtRim - interiorArrivalAdjustmentSeconds(d5.attributes.T23));
-  const d5PosAtHolderReady = positionAtInstant(d5FinishGeometry, d5ArrivalAtRim, tHolderFinishReady);
-  const d5TrulyBlockingFinish = distance(d5PosAtHolderReady, ATTACKED_HOOP) <= COMBINED_CONTACT_RADIUS_METERS;
-  const finishMarginSeconds = d5ArrivalAtRim - tHolderFinishReady;
-  // Sesión v2-7 (§2.2/§2.4): cada vía de esta lectura se valora con la
-  // oposición que resultará de la misma geometría con la que `resolveShotAttempt`
-  // resolverá el tiro (`estimateContestLevel`), igual que la primera lectura del
-  // bloqueo desde v2-3. Antes se usaba un umbral aparte (aro: margen ≥ 0,25 s;
-  // corte y continuación: sin oposición salvo ayuda de D4) y la ejecución
-  // encontraba al defensor ya colocado en el punto de tiro (la lectura espera a
-  // que D3 llegue al corte; D4 ayuda a 0,8 m del punto de O4): la lectura y la
-  // proyección de la familia prometían un triple abierto que nunca existía.
-  const finishOpposition: EffectiveOpposition = estimateContestLevel(ctx, "D5", d5FinishGeometry, d5ArrivalAtRim, ATTACKED_HOOP, tHolderFinishReady, CLOSE_FINISH_PREP_SECONDS);
-  const finishValue = !handoffDenied && !d5TrulyBlockingFinish
-    ? 2 * shotProbability(CLOSE_FINISH_BASE_PROBABILITY, holder.attributes.T01, finishOpposition)
-    : -Infinity;
-
-  // Vía "pase_o3": el corte quedó liberado.
-  const d4CornerGeometry: ContestGeometry = {
-    originPos: ctx.positions.D4!,
-    destinationPos: WEAK_SIDE_SCREEN_SPOT,
-    speedMps: defenderLateralSpeedMps(d4.attributes.F04),
-    brakingExtraSeconds: closeoutBrakingExtraSeconds(d4.attributes.F03),
-  };
-  // Cierre del tiro de O3 tras el corte: el mismo que usa la ejecución (D4 si
-  // ayudó, si no D3, que ya llegó al punto del corte).
-  const o3Contester = d4Helps ? "D4" : "D3";
-  const o3ContestGeometry: ContestGeometry = d4Helps
-    ? { originPos: ctx.positions.D4!, destinationPos: WEAK_SIDE_CUT_SPOT, speedMps: defenderLateralSpeedMps(d4.attributes.F04), brakingExtraSeconds: closeoutBrakingExtraSeconds(d4.attributes.F03) }
-    : { originPos: ctx.positions.D3!, destinationPos: WEAK_SIDE_CUT_SPOT, speedMps: defenderLateralSpeedMps(d3.attributes.F04), brakingExtraSeconds: closeoutBrakingExtraSeconds(d3.attributes.F03) };
-  const tPassArrivalO3 = tDecision + PASS_RELEASE_SECONDS + distanceSeconds(holderPos, WEAK_SIDE_CUT_SPOT);
-  const o3Opposition: EffectiveOpposition = estimateContestLevel(ctx, o3Contester, o3ContestGeometry, tD3AtCut, WEAK_SIDE_CUT_SPOT, tPassArrivalO3 + CATCH_AND_SHOOT_PREP_SECONDS, CATCH_AND_SHOOT_PREP_SECONDS);
-  const o3PassValue = cutWindowOpen ? 3 * shotProbability(THREE_POINT_BASE_PROBABILITY, o3.attributes.T04, o3Opposition) : -Infinity;
-
-  // Vía "continuar_o4": D4 ayudó a cerrar a O3; su cierre sobre O4 es el de la ejecución.
-  const tPassArrivalO4 = tDecision + PASS_RELEASE_SECONDS + distanceSeconds(holderPos, WEAK_SIDE_SCREEN_SPOT);
-  const o4Opposition: EffectiveOpposition = estimateContestLevel(ctx, "D4", d4CornerGeometry, tD3AtCut, WEAK_SIDE_SCREEN_SPOT, tPassArrivalO4 + CATCH_AND_SHOOT_PREP_SECONDS, CATCH_AND_SHOOT_PREP_SECONDS);
-  const o4PassValue = o4Open ? 3 * shotProbability(THREE_POINT_BASE_PROBABILITY, o4.attributes.T04, o4Opposition) : -Infinity;
-
-  // Vía "pase_o1": seguridad, siempre viable, sin puntos esperados.
-  const safeOutletValue = 0;
-
-  type HandoffReadOptionId = "finalizar_portador" | "pase_o3" | "continuar_o4" | "pase_o1";
-  const candidateValues: Readonly<Record<HandoffReadOptionId, number>> = {
-    finalizar_portador: finishValue,
-    pase_o3: o3PassValue,
-    continuar_o4: o4PassValue,
-    pase_o1: safeOutletValue,
-  };
-  const HANDOFF_READ_ORDER: readonly HandoffReadOptionId[] = ["finalizar_portador", "pase_o3", "continuar_o4", "pase_o1"];
-  if (ctx.projecting) {
-    const completionOf: Readonly<Record<HandoffReadOptionId, number>> = {
-      finalizar_portador: entryCompletion,
-      pase_o3: entryCompletion * (1 - deflectionProbability(d3.attributes.T17, holder.attributes.T09)),
-      continuar_o4: entryCompletion * (1 - deflectionProbability(d4.attributes.T17, holder.attributes.T09)),
-      pase_o1: 1,
-    };
-    throw new ReadProjectionReached({
-      tDecisionSeconds: tDecision,
-      options: HANDOFF_READ_ORDER.map((id) => ({ id, value: candidateValues[id], completion: completionOf[id] })),
-    });
-  }
-  const viableCandidates = HANDOFF_READ_ORDER.filter((id) => Number.isFinite(candidateValues[id]))
-    .map((id) => ({ id, value: candidateValues[id] }))
-    .sort((a, b) => b.value - a.value);
-  const topValue = viableCandidates[0]!.value;
-
-  // ME-07A §2 (regla piloto), generalizada a esta lectura fuera del bloqueo:
-  // dentro de `FIRST_READ_TIE_BAND_POINTS`, la prioridad de creación del
-  // entrenador favorece primero una vía compatible (aro: `finalizar_portador`;
-  // triple: `pase_o3`/`continuar_o4`, ambas de tres). Si sigue compitiendo un
-  // tiro real con la continuación seguridad (`pase_o1`), decide la nueva
-  // tendencia de tiro del jugador (ortogonal a `pnrTendency`, que conserva su
-  // papel específico solo en la primera lectura del bloqueo): `decidida`
-  // favorece el tiro, `prudente` conserva/pasa, `equilibrada` usa la misma
-  // `secondOptionProbability(M03)` ya versionada. Si compiten solo vías de
-  // tiro entre sí (aro vs triple, sin continuación real en banda), la
-  // elección sembrada entre mejor y alternativa resuelve igual que en el
-  // bloqueo directo cuando no hay `pnrTendency` de manejador aplicable.
-  let chosen: HandoffReadOptionId = viableCandidates[0]!.id;
-  let tieBandResolvedByPriority = false;
-  let tieBandResolvedByTendency = false;
-  let shotTendencyReasonCode: AuditReasonCode = "shot_tendency_seeded_choice";
-  let tieRngBefore: number | null = null;
-  let tieRngAfter: number | null = null;
-  if (viableCandidates.length > 1 && topValue - viableCandidates[1]!.value <= FIRST_READ_TIE_BAND_POINTS) {
-    const band = viableCandidates.filter((c) => topValue - c.value <= FIRST_READ_TIE_BAND_POINTS);
-    const creationPriority: OffensiveCreationPriority = ctx.input.creationPriority ?? "equilibrado";
-    let priorityBand: readonly { readonly id: HandoffReadOptionId; readonly value: number }[] | null = null;
-    if (creationPriority === "buscar_aro") {
-      priorityBand = band.filter((c) => c.id === "finalizar_portador").sort((a, b) => b.value - a.value);
-    } else if (creationPriority === "buscar_triple") {
-      priorityBand = band.filter((c) => c.id === "pase_o3" || c.id === "continuar_o4").sort((a, b) => b.value - a.value);
-    }
-    if (priorityBand && priorityBand.length > 0) {
-      tieBandResolvedByPriority = true;
-      chosen = priorityBand[0]!.id;
-    } else {
-      const shotBand = band.filter((c) => c.id !== "pase_o1").sort((a, b) => b.value - a.value);
-      const continuationInBand = band.some((c) => c.id === "pase_o1");
-      if (shotBand.length > 0 && continuationInBand) {
-        if (holder.shotTendency === "decidida") {
-          chosen = shotBand[0]!.id;
-          tieBandResolvedByTendency = true;
-          shotTendencyReasonCode = "shot_tendency_favors_shot";
-        } else if (holder.shotTendency === "prudente") {
-          chosen = "pase_o1";
-          tieBandResolvedByTendency = true;
-          shotTendencyReasonCode = "shot_tendency_favors_continuation";
-        } else {
-          tieRngBefore = rngStateOf(ctx.rng);
-          const preferContinuation = ctx.rng.next() < secondOptionProbability(holder.attributes.M03);
-          tieRngAfter = rngStateOf(ctx.rng);
-          chosen = preferContinuation ? "pase_o1" : shotBand[0]!.id;
-          tieBandResolvedByTendency = true;
-          shotTendencyReasonCode = "shot_tendency_seeded_choice";
-        }
-      } else if (shotBand.length > 1) {
-        tieRngBefore = rngStateOf(ctx.rng);
-        const preferSecondShot = ctx.rng.next() < secondOptionProbability(holder.attributes.M03);
-        tieRngAfter = rngStateOf(ctx.rng);
-        if (preferSecondShot) chosen = shotBand[1]!.id;
-        tieBandResolvedByTendency = true;
-        shotTendencyReasonCode = "shot_tendency_seeded_choice";
-      }
-    }
-  }
-
-  const handoffReadReasonCodes: Readonly<Record<HandoffReadOptionId, { chosen: AuditReasonCode; notViable: AuditReasonCode }>> = {
-    finalizar_portador: { chosen: "lane_open_before_help", notViable: handoffDenied ? "not_available" : "lane_closed_help_ready" },
-    pase_o3: { chosen: "cut_window_open", notViable: "cut_window_denied" },
-    continuar_o4: { chosen: "help_rotation_opened_o4", notViable: "help_rotation_not_available" },
-    pase_o1: { chosen: "safe_outlet_default", notViable: "not_available" },
-  };
-  const handoffReadValues: Readonly<Record<HandoffReadOptionId, Record<string, number | string | boolean | null>>> = {
-    finalizar_portador: { situationalValue: finishValue, holderTimeToHoopSeconds: holderTimeToHoop, d5TrulyBlockingFinish, finishMarginSeconds, opposition: finishOpposition },
-    pase_o3: { situationalValue: o3PassValue, cutWindowOpen, tD3AtCut, tO3Cut, opposition: o3Opposition, contesterId: realId(ctx, o3Contester) },
-    continuar_o4: { situationalValue: o4PassValue, o4Open, d4HelpMargin, opposition: o4Opposition },
-    pase_o1: { situationalValue: safeOutletValue },
-  };
-  function handoffReadOptionRecord(id: HandoffReadOptionId): AuditOptionRecord {
-    const value = candidateValues[id];
-    if (id === chosen) return { id, status: "elegida", reasonCode: handoffReadReasonCodes[id].chosen, values: handoffReadValues[id] };
-    if (!Number.isFinite(value)) return { id, status: "descartada_por_condicion", reasonCode: handoffReadReasonCodes[id].notViable, values: handoffReadValues[id] };
-    const inBand = topValue - value <= FIRST_READ_TIE_BAND_POINTS;
-    return {
-      id,
-      status: "descartada_por_condicion",
-      reasonCode: inBand && tieBandResolvedByPriority ? "creation_priority_resolved_band" : inBand && tieBandResolvedByTendency ? shotTendencyReasonCode : "situational_value_lower",
-      values: handoffReadValues[id],
-    };
-  }
-  const handoffReadOptions = HANDOFF_READ_ORDER.map(handoffReadOptionRecord);
-  void tieRngBefore;
-  void tieRngAfter;
-
-  if (chosen === "pase_o1") {
-    auditDecision(ctx, tDecision, {
-      point: "lectura_mano_a_mano",
-      holderId,
-      participants: [holderId, "O1"],
-      chosenOptionId: "pase_o1",
-      options: handoffReadOptions,
-    });
-    const tOutlet = tDecision + PASS_RELEASE_SECONDS + distanceSeconds(holderPos, ctx.positions.O1!);
-    event(ctx, tOutlet, "concedido", "possession_continues", [holderId, "O1"], `${holderId} elige la salida segura hacia O1; el ataque conserva el control y se reorganiza.`);
-    return finalize(
-      ctx,
-      { kind: "possession_reorganized_control_kept", outletPlayerId: "O1" },
-      { status: "held", holderId: "O1", position: ctx.positions.O1! },
-    );
-  }
-
-  if (chosen === "finalizar_portador") {
-    auditDecision(ctx, tDecision, {
-      point: "lectura_mano_a_mano",
-      holderId,
-      participants: [holderId, "D5"],
-      chosenOptionId: "finalizar_portador",
-      options: handoffReadOptions,
-    });
-    return resolveShotAttempt(ctx, {
-      shooterId: holderId,
-      shooterSkill: holder.attributes.T01,
-      shotType: "close_finish",
-      shooterPos: ATTACKED_HOOP,
-      tReady: tHolderFinishReady,
-      prepSeconds: CLOSE_FINISH_PREP_SECONDS,
-      contesterId: "D5",
-      contesterArrival: d5ArrivalAtRim,
-      contesterGeometry: d5FinishGeometry,
-    });
-  }
-
-  if (chosen === "pase_o3") {
-    const passOutcome = resolvePass(holder.attributes.T09, o3.attributes.T11, true, d3.attributes.T17, 1, ctx.rng);
-    event(ctx, tPassArrivalO3, "ejecutado", "pass_released", [holderId, "O3"], `${holderId} pasa a O3, liberado por el bloqueo/corte.`);
-    auditDecision(ctx, tDecision, {
-      point: "lectura_mano_a_mano",
-      holderId,
-      participants: [holderId, "O3", "D3"],
-      chosenOptionId: "pase_o3",
-      factLinkKind: "pass_released",
-      options: handoffReadOptions,
-    });
-    if (passOutcome.kind === "deflected_loose_ball") {
-      return resolveLooseBallAfterPass(ctx, tPassArrivalO3, holderId, "D3");
-    }
-    const readyDelay = passOutcome.kind === "awkward_control" ? passOutcome.extraDelaySeconds : 0;
-    const tPrepReadyO3 = tPassArrivalO3 + readyDelay + CATCH_AND_SHOOT_PREP_SECONDS;
-    event(ctx, tPassArrivalO3, "concedido", "pass_received", ["O3"], "O3 recibe liberado tras el bloqueo/corte.");
-    // Si D4 ayudó a cerrar (guardar_espacio con D3 batido), el contestador
-    // real del tiro de O3 es D4 rotando, no D3 (que ya perdió la carrera);
-    // si D3 lo deniega solo (negar_primera_salida o D3 gana con margen),
-    // el propio D3 es quien contesta al recuperar.
-    return resolveShotAttempt(ctx, {
-      shooterId: "O3",
-      shooterSkill: o3.attributes.T04,
-      shotType: "three_point",
-      shooterPos: WEAK_SIDE_CUT_SPOT,
-      tReady: tPrepReadyO3,
-      prepSeconds: CATCH_AND_SHOOT_PREP_SECONDS + readyDelay,
-      contesterId: o3Contester,
-      contesterArrival: tD3AtCut,
-      contesterGeometry: o3ContestGeometry,
-    });
-  }
-
-  // chosen === "continuar_o4"
-  const passOutcome = resolvePass(holder.attributes.T09, o4.attributes.T11, true, d4.attributes.T17, 1, ctx.rng);
-  event(ctx, tPassArrivalO4, "ejecutado", "pass_released", [holderId, "O4"], `${holderId} continúa hacia O4, abierto tras la ayuda de D4.`);
-  auditDecision(ctx, tDecision, {
-    point: "lectura_mano_a_mano",
-    holderId,
-    participants: [holderId, "O4", "D4"],
-    chosenOptionId: "continuar_o4",
-    factLinkKind: "pass_released",
-    options: handoffReadOptions,
-  });
-  if (passOutcome.kind === "deflected_loose_ball") {
-    return resolveLooseBallAfterPass(ctx, tPassArrivalO4, holderId, "D4");
-  }
-  const readyDelayO4 = passOutcome.kind === "awkward_control" ? passOutcome.extraDelaySeconds : 0;
-  const tPrepReadyO4 = tPassArrivalO4 + readyDelayO4 + CATCH_AND_SHOOT_PREP_SECONDS;
-  event(ctx, tPassArrivalO4, "concedido", "pass_received", ["O4"], "O4 recibe abierto en su propio punto de bloqueo.");
-  return resolveShotAttempt(ctx, {
-    shooterId: "O4",
-    shooterSkill: o4.attributes.T04,
-    shotType: "three_point",
-    shooterPos: WEAK_SIDE_SCREEN_SPOT,
-    tReady: tPrepReadyO4,
-    prepSeconds: CATCH_AND_SHOOT_PREP_SECONDS + readyDelayO4,
-    contesterId: "D4",
-    contesterArrival: tD3AtCut,
-    contesterGeometry: d4CornerGeometry,
-  });
+  return decideHandlerRead(ctx, "lectura_mano_a_mano", tDecision, holder === "O2" ? ["O2", "O5", "O3", "O4", "D2", "D5"] : ["O5", "O2", "O3", "O4", "D2", "D5"], options, holder);
 }
 
 /**

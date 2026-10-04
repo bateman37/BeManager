@@ -24,15 +24,14 @@ for (const s of [...scenario.offense, ...scenario.defense]) start[s.playerId] = 
 const binding = Object.fromEntries(Object.keys(start).map((k) => [k, k]));
 
 /**
- * Sesión v2-7: la mano a mano central se valora con la oposición real de su
- * ejecución (sus triples de recepción llegan contestados), así que con el
- * quinteto del fixture vale menos que el bloqueo incluso solo contra drop. El
- * caso construido debilita a los dos actores del bloqueo (O1 y O5 sin tiro) y
- * da a O4 el mejor triple para que la mano a mano gane contra drop y el
- * mecanismo (el cambio visto sube el bloqueo) siga siendo discriminante.
+ * Sesión v2-7: la mano a mano central se valoraba con la oposición real de su
+ * ejecución y quedaba siempre por debajo del bloqueo, así que el caso se
+ * construía debilitando a O1/O5. Sesión v2-8 (rediseño de la entrega: el cuerpo
+ * de O5 retiene a D2 y la defensa responde a la entrega): con el quinteto del
+ * fixture la mano a mano vale 1,016 frente a 0,883 del bloqueo contra drop y
+ * 1,049 del bloqueo contra un rival que cambia; el fixture ya es discriminante.
  */
-const withAttrs = (players: readonly PlayerProfile[], id: string, a: Partial<PlayerProfile["attributes"]>) => players.map((p) => (p.id === id ? { ...p, attributes: { ...p.attributes, ...a } } : p)) as PlayerProfile[];
-const OFFENSE = withAttrs(withAttrs(withAttrs(SIERRA_CLARA.players, "O1", { T01: 1, T02: 1, T03: 1, T04: 1 }), "O5", { T01: 1, T02: 1, T03: 1 }), "O4", { T04: 15 });
+const OFFENSE = [...SIERRA_CLARA.players] as PlayerProfile[];
 
 function project(shown: Partial<Record<DefensiveCoverage, ObservedOutcome>>) {
   return projectOrganizedOpportunity(
@@ -103,9 +102,11 @@ describe("ME-07B v2 §2.2/§5: en partido completo el ataque aprende la cobertur
     expect(weights[0]).toBe(0);
     for (let i = 1; i < weights.length; i++) expect(weights[i]!).toBeGreaterThanOrEqual(weights[i - 1]!);
     expect(weights[weights.length - 1]!).toBeGreaterThan(0.9);
-    for (const d of switching.slice(1)) {
+    // Sesión v2-8: lo que la defensa hace ante la mano a mano se guarda como respuesta a la entrega, no como
+    // cobertura de pantalla; el bloqueo pesa el cambio desde que el rival lo ha mostrado ante una pantalla.
+    for (const d of switching) {
       const b = d.options.find((o) => o.id === "bloqueo_directo")!.values!;
-      expect(typeof b.valueAgainst_cambio).toBe("number");
+      if (((b.coverageWeight_cambio as number | undefined) ?? 0) > 0) expect(typeof b.valueAgainst_cambio).toBe("number");
     }
     // Hay decisiones reales en las que la proyección contra el cambio cambia la familia elegida. Sesión v2-6:
     // son raras (la mano a mano central queda por debajo incluso del bloqueo solo contra drop casi siempre),
@@ -113,7 +114,8 @@ describe("ME-07B v2 §2.2/§5: en partido completo el ataque aprende la cobertur
     // Sesión v2-7: con la mano a mano valorada con la oposición real de su ejecución, el fixture no la
     // acerca nunca al bloqueo (0 de 2.271 decisiones, semillas 91–110); se usa un Sierra construido con
     // las finalizaciones y tiros de dos de todos rebajados a 5 (T01/T02/T03), que acerca las dos familias.
-    const closer = SIERRA_CLARA.players.map((p) => ({ ...p, attributes: { ...p.attributes, T01: 5, T02: 5, T03: 5 } })) as PlayerProfile[];
+    // Sesión v2-8: con la entrega rediseñada las dos familias vuelven a estar cerca con el fixture.
+    const closer = [...SIERRA_CLARA.players] as PlayerProfile[];
     let changed = 0;
     for (const seed of [91, 92, 93, 94, 95, 96]) {
       const ds = sierraFamilyDecisions(play(seed, "cambio", closer));

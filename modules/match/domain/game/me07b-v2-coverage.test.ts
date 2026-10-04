@@ -29,7 +29,12 @@ const r = playFullGame(
     away: { id: PUERTO_AMBAR.id, name: PUERTO_AMBAR.name, players: PUERTO_AMBAR.players, ...AUTO },
   }),
 );
-const coverage = r.audit!.decisions.filter((d) => d.point === "seleccion_cobertura");
+// Sesión v2-8: ante la mano a mano central (como ante Delay) la defensa elige una respuesta a la
+// entrega con su propia decisión `seleccion_cobertura` (las coberturas de pantalla quedan
+// `coverage_not_in_card`); estas pruebas son de las coberturas de pantalla.
+const allCoverage = r.audit!.decisions.filter((d) => d.point === "seleccion_cobertura");
+const coverage = allCoverage.filter((d) => !d.options.some((o) => o.reasonCode === "coverage_not_in_card"));
+const handoffResponses = allCoverage.filter((d) => d.options.some((o) => o.reasonCode === "coverage_not_in_card"));
 const teamOfPossession = new Map(r.possessions.map((p) => [p.index, p.teamId]));
 
 describe("ME-07B v2 §2.3: defensa auto con drop y trampa en competencia", () => {
@@ -80,6 +85,20 @@ describe("ME-07B v2 §2.3: defensa auto con drop y trampa en competencia", () =>
       const later = list[list.length - 1]!.options.map((o) => o.values!.observedUses as number);
       expect(later.reduce((a, b) => a + b, 0)).toBeGreaterThan(20);
     }
+  });
+
+  it("ante la entrega en mano la defensa elige la respuesta de menor concesión combinada entre las tres de la ficha", () => {
+    expect(handoffResponses.length).toBeGreaterThan(20);
+    const seen = new Set<string>();
+    for (const d of handoffResponses) {
+      const inCard = d.options.filter((o) => o.reasonCode !== "coverage_not_in_card");
+      expect(inCard.map((o) => o.id).sort()).toEqual(["cambio", "drop", "show"]);
+      const best = Math.min(...inCard.map((o) => o.values!.blendedValue as number));
+      expect(d.options.find((o) => o.id === d.chosenOptionId)!.values!.blendedValue as number).toBeCloseTo(best, 12);
+      seen.add(String(d.chosenOptionId));
+    }
+    // Más de una respuesta defendible aparece en el partido natural (sin cuotas: cada una por su concesión).
+    expect(seen.size).toBeGreaterThan(1);
   });
 
   it("el partido termina en final con acta conciliada", () => {

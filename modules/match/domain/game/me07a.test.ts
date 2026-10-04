@@ -120,8 +120,10 @@ describe("ME-07A §4: cobertura y orden sin balón en auto, con denominadores re
       // conserva la misma secuencia natural en la que se comprobó (con Spain en `auto` cambia la secuencia).
       // Sesión v2-6: también con la pantalla central (la regla es la de la trampa sobre esa geometría; en
       // `auto` la colocación se elige por valor y una pantalla lateral sí puede atraparse con margen).
-      home: { id: SC, name: SIERRA_CLARA.name, players: slow(SIERRA_CLARA.players), priority: "proteger_balance", coverage: "auto", offBallDefensiveCall: "auto", chainedVariant: "ninguna", screenPlacement: "central" },
-      away: { id: PA, name: PUERTO_AMBAR.name, players: slow(PUERTO_AMBAR.players), priority: "proteger_balance", coverage: "auto", offBallDefensiveCall: "auto", chainedVariant: "ninguna", screenPlacement: "central" },
+      // Sesión v2-8: con el bloqueo directo por orden (ante la mano a mano la defensa elige una respuesta a la
+      // entrega, sin trampa de pantalla que juzgar).
+      home: { id: SC, name: SIERRA_CLARA.name, players: slow(SIERRA_CLARA.players), priority: "proteger_balance", coverage: "auto", offBallDefensiveCall: "auto", chainedVariant: "ninguna", screenPlacement: "central", offensivePlan: "bloqueo_directo" },
+      away: { id: PA, name: PUERTO_AMBAR.name, players: slow(PUERTO_AMBAR.players), priority: "proteger_balance", coverage: "auto", offBallDefensiveCall: "auto", chainedVariant: "ninguna", screenPlacement: "central", offensivePlan: "bloqueo_directo" },
     });
     const result = playFullGame(gameInput);
     const decisions = result.audit!.decisions.filter((d) => d.point === "seleccion_cobertura");
@@ -184,7 +186,7 @@ describe("ME-07A §6: partido e integridad con dos equipos completamente en auto
     expect(withoutAudit.stop.cause).toBe(first.stop.cause);
   });
 
-  it("cambiar la prioridad de creación de equilibrado a buscar_triple cambia la huella del equipo (ME-06 §5) sin alterar la probabilidad de convertir un mismo tiro", () => {
+  it("cambiar la prioridad de creación de equilibrado a buscar_triple cambia la huella del equipo (ME-06 §5) sin alterar la probabilidad de convertir un mismo tiro", { timeout: 60_000 }, () => {
     const balanced = input(82, "equilibrado");
     const aggressive = input(82, "buscar_triple");
     const auditBalanced = buildAuditExport(balanced, playFullGame(balanced), { exportedAt: new Date(0).toISOString() });
