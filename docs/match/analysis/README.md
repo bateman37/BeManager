@@ -5,7 +5,7 @@
 **Debe leerse cuando:** una entrega cite un diagnóstico o necesites comparar el motor antes/después de un cambio.
 **No cubre:** el diseño (ver `docs/match/reference/`) ni lo implementado (ver `docs/match/README.md`).
 **Documentos relacionados:** `docs/match/README.md`, `docs/prompts/implementation/ME-07B-v2-capitulo-tactico-y-20-auditorias.md`.
-**Última actualización:** 2026-10-01 (ME-07B v2, sesión v2-6).
+**Última actualización:** 2026-10-04 (ME-07B v2, sesión v2-7).
 
 Los diagnósticos son evidencia fechada contra un commit concreto: no se
 reescriben cuando el motor cambia; una medición nueva va en su propio
@@ -28,3 +28,9 @@ documento o sección fechada.
   denominadores) y posesiones consecutivas de `/lab`
   (`scripts/me07b-v2-placement-gap.ts`, `me07b-v2-projection-calibration.ts`,
   `me07b-v2-possession-slice.ts`).
+- [`ME-07B-v2-mano-a-mano-delay-v2-7.md`](./ME-07B-v2-mano-a-mano-delay-v2-7.md)
+  — por qué la mano a mano central y Delay anotaban menos de lo proyectado:
+  ventana de medida, pérdidas, reloj, ayudas, oposición supuesta frente a
+  usada y segundas lecturas, con partidos dirigidos; defecto de la lectura de
+  la mano a mano corregido y mismas 20 semillas antes/después
+  (`scripts/me07b-v2-handoff-delay-gap.ts`).

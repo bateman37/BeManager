@@ -125,6 +125,18 @@ decisiones duraderas viven en `docs/decisions/`, no aquí.
   medida en `docs/match/analysis/ME-07B-v2-comparador-v2-6.md` y scripts
   `me07b-v2-placement-gap.ts`, `me07b-v2-projection-calibration.ts` y
   `me07b-v2-possession-slice.ts`. Semillas de escenario recalculadas con causa.
+- **§2.2 Lectura de la mano a mano con la oposición real (sesión v2-7).**
+  `pase_o3`, `continuar_o4` y `finalizar_portador` se valoran con
+  `estimateContestLevel` y los mismos argumentos que `resolveShotAttempt`
+  (antes un umbral propio: triples sin oposición que la ejecución resolvía
+  contestados, 199 de 200; lectura 1,17 frente a 0,63). La proyección de la
+  familia hereda el arreglo. Foto de las 20: mano a mano central 249 → 1 uso,
+  familia bloqueo 94,0 % → 99,3 %, Delay 33 (un partido) → 32 (tres). Delay
+  no tenía error sistemático (2.209 usos dirigidos). Nueva
+  `me07b-v2-handoff-read.test.ts`; script
+  `me07b-v2-handoff-delay-gap.ts`; análisis
+  `docs/match/analysis/ME-07B-v2-mano-a-mano-delay-v2-7.md`. Semillas de
+  escenario recalculadas con causa.
 - **Saques (stack, Iverson, box, diamond, elevator):** analizados, sin
   mecanismo nuevo; falta la primitiva de saque defendido (nota en la matriz).
 - **§2.2/§5 El ataque proyecta contra la defensa observada.** Selector de

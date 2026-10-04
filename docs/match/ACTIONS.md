@@ -377,7 +377,13 @@ compartido (`runHandoffPhase` junto a `runDropPhase`/`runTrapPhase` en
    creación del entrenador favorece primero aro (`finalizar_portador`) o
    triple (`pase_o3`/`continuar_o4`); si sigue compitiendo un tiro con la
    seguridad a O1, decide `shotTendency` del portador (no `pnrTendency`,
-   que conserva su papel específico en el bloqueo). Ver `AUDIT.md`.
+   que conserva su papel específico en el bloqueo). **ME-07B v2 sesión
+   v2-7:** cada vía de tiro se valora con la oposición que resultará de la
+   misma geometría con la que se resuelve (`estimateContestLevel` con el
+   mismo defensor, llegada, instante y preparación que `resolveShotAttempt`),
+   como la primera lectura del bloqueo; antes `pase_o3`/`continuar_o4` se
+   valoraban sin oposición y se ejecutaban siempre contestados (ver
+   `analysis/ME-07B-v2-mano-a-mano-delay-v2-7.md`). Ver `AUDIT.md`.
 
 **Selector de plan por equipo** (`offensivePlan`, `MatchInput`/
 `GameTeamInput`): `auto` (por defecto en partido), `bloqueo_directo` o

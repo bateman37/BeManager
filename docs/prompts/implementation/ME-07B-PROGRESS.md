@@ -926,3 +926,134 @@ npx tsx scripts/me07b-v2-placement-gap.ts
 Siguiente paso: la decisión de Dennis sobre el aprendizaje por ficha; después,
 diagnosticar dentro de la mano a mano central y de Delay la distancia entre
 lo proyectado y lo anotado.
+
+### Sesión v2-7 — 2026-10-04
+
+**Base:** `030056f`; rama `claude/me-07b-v2-capitulo-tactico`, **PR #11 Draft**
+(no se fusiona ni se marca Ready). Encargo de Dennis para esta ronda (literal):
+«Objetivo de esta ronda: averiguar por qué la mano a mano central y Delay
+producen menos puntos por uso de los que promete su proyección, mientras el
+bloqueo directo produce más. Comprueba primero que proyección y resultado
+miden el mismo tramo de posesión. Desglosa pérdidas, reloj, ayudas, calidad y
+ejecución del tiro, segundas lecturas y reorganizaciones. Para Delay, amplía
+la muestra con varias semillas y partidos dirigidos; sus 33 usos naturales en
+un solo partido no bastan para concluir que haya un error sistemático. Si
+identificas un defecto causal concreto, corrígelo y añade una prueba que
+falle antes del arreglo y pase después. Mantén acotado el cambio. Aún no
+implementes aprendizaje por colocación, ni ajustes valores para obtener un
+reparto deseado, ni añadas saques u otras tácticas. Tras el cambio, compara
+las mismas 20 semillas y revisa un tramo consecutivo auto/auto desde /lab si
+el entorno lo permite. Ejecuta las pruebas pertinentes durante el desarrollo
+y npm run check una vez al cerrar; repite el barrido de 180 solo si cambia el
+comportamiento del partido. Deja la PR en Draft y documenta causa,
+resultados, coste y pendientes. Si no encuentras una causa demostrable,
+entrega el diagnóstico sin introducir un arreglo especulativo.»
+
+**Resultado en una línea: defecto causal demostrado en la mano a mano central
+(su lectura prometía triples abiertos que la ejecución resolvía siempre
+contestados) y corregido; Delay no tiene error sistemático; el «exceso» del
+bloqueo es la ventana de medida.** Detalle en
+`docs/match/analysis/ME-07B-v2-mano-a-mano-delay-v2-7.md`.
+
+#### Hecho y verificado (con commits)
+1. `6b74634` — `scripts/me07b-v2-handoff-delay-gap.ts`: por uso organizado,
+   en la ventana de `settleObservation`, proyección (colocación, familia en
+   el instante real, ante la respuesta elegida), primera lectura real,
+   primer tiro (probabilidad y oposición usadas frente a las supuestas),
+   libres, resto, pérdidas, reloj y segundas lecturas; `--directed` juega
+   mano a mano, Delay y bloqueo central por orden en 20 semillas.
+2. `7f85c55` — **arreglo**: en `runHandoffPhase`, `pase_o3`, `continuar_o4` y
+   `finalizar_portador` se valoran con `estimateContestLevel` y los mismos
+   argumentos que `resolveShotAttempt` (calculados una vez, reutilizados en
+   la ejecución); `opposition` auditada. Sin coeficientes nuevos ni cambio de
+   geometría, ejecución o defensa. Prueba discriminante nueva
+   `me07b-v2-handoff-read.test.ts`: **falla antes** («guardar_espacio semilla
+   1 continuar_o4: expected 1.173 to be close to 0.633») y pasa después.
+3. Este commit — análisis v2-7 enlazado desde el índice, matriz, ACTIONS,
+   AUDIT, CHANGELOG y este progreso.
+
+#### Ventana de medida (lo primero que se comprobó)
+Misma decisión de partida (`seleccion_familia`) en proyección y resultado.
+La proyección es el primer tiro esperado de la primera lectura × completado
+de pases (cada desvío acaba en pérdida: el defensor que desvía recupera en
+0,00 s en todos los casos medidos); lo anotado suma además libres y lo que
+viene tras el primer tiro. Foto de las 20 antes del arreglo: bloqueo central
+proyección 0,926, anotado 1,058 = 0,907 (1.er tiro) + 0,070 (libres) + 0,081
+(resto): su «exceso» es la ventana. Mano a mano central 0,975 frente a 0,763
+= 0,494 + 0,044 + 0,225: la caída está entre la lectura (1,170) y el tiro
+real (0,632; oposición 1 en 199 de 200). La calibración v2-6 usaba la
+proyección de la colocación (1,027 frente a 0,975 de la familia): artefacto
+menor.
+
+#### Delay con muestra ampliada
+2.209 usos dirigidos (20 semillas, Sierra en impares y Puerto en pares):
+proyección 0,841 (colocación) / 0,821 (ante la respuesta elegida), anotado
+0,872; por partido anotado − proyectado +0,032 ± 0,026 (error típico), 7 de
+20 por debajo. Tras el arreglo (Delay no cambia de código): −0,018 ± 0,025,
+12 de 20. Oposición supuesta = usada en todas sus vías registradas; el poste
+sube de 0,771 a 1,018 por tiro (corte del ala débil) y lo compensa con 17 %
+de pérdidas, ya proyectadas. Los 33 usos de la semilla 86 (0,61 frente a
+0,77) eran ruido de un partido.
+
+#### Mismas 20 semillas (`030056f` → `7f85c55`)
+20/20 `final` y conciliadas en ambos. Familia bloqueo **94,0 % → 99,3 %**
+(4.704/4.737): la mano a mano central pasa de 249 usos a 1 porque, valorada
+con la oposición que de verdad encuentra, vale ~0,5 frente a ~0,9 del
+bloqueo. Delay 33 (un partido) → 32 (seed 96 Sierra 8, +3 88 Puerto 9, +5 104
+Puerto 15), con 0,906 anotados frente a 0,781 proyectados. Puntos: seed
+1.302/1.229 → 1.325/1.296; +3 895/658 → 934/633; +5 444/331 → 483/313. Tabla
+completa en el análisis v2-7. Es la consecuencia del arreglo, no un objetivo.
+
+#### `/lab` real (PostgreSQL 16 + Chromium, `next start`, árbol de `7f85c55`)
+`walk-v26.cjs` y `walk-v27-dho.cjs` en el scratchpad. Semilla 92 todo `auto`
+→ **103–121** (= dominio), conciliado; posesiones 101–120 consecutivas
+(mismo tramo que v2-6): lateral/central, drop/ICE/show, pase al roll y
+finalizar; ninguna mano a mano en el partido. Semilla 92 con mano a mano
+por orden en los dos → 119–98: 133 lecturas, 120 tiros con oposición
+supuesta = usada y lectura media 0,542 = tiro esperado 0,542. Sierra +3,
+semilla 88 → 140–121 (= dominio), Puerto con Delay 9 veces; perfiles
+restaurados al seed.
+
+#### Pruebas realmente pasadas
+`npx vitest run` completo (351) en `7f85c55`; `npm run check` completo (lint +
+typecheck + test + docs:check + build, 351 tests) en verde sobre el árbol final. Recalculadas con causa (cambia la secuencia natural):
+bocina con tiro anotado 540 → **148**, fallo sin rebote 31 → **21**, dos
+prórrogas/guardián 111 → **206** (ninguna en 1–205); ROT-3 natural de Sierra
+semilla 9 → mismo estado en **Puerto, semilla 74** (ninguna semilla 1–150
+repite el de Sierra); Delay en `auto` +3/86 → **+3/88**; M07 sobre 92–94
+(92+93 empatan 34/34; 91–98: 76 frente a 136); receptor del roll sin reloj
+**construido** (ninguna semilla 1–3000 drop/drop lo alcanza); la prueba de
+fichas juega la mano a mano central por orden; proyección frente a la
+defensa observada con casos construidos (el fixture no acerca nunca la mano
+a mano al bloqueo: 0 de 2.271 decisiones en 91–110); entrega de Delay
+decidida tras la bocina (semilla 92, posesión 160) sin hecho, preexistente.
+
+#### Regresión y coste
+`scripts/me07b-v2-stop-sweep.ts 1 60` en `7f85c55`: **180/180 `final`**, 0
+actas sin conciliar, 3 relevos de emergencia ROT-3 (+3 56; +5 7 y 9), ningún
+`menos_de_cinco` ni guardián. Coste de la foto de las 20 con auditoría,
+mismo equipo y en serie: seed 27,6 → 27,9 s, +3 20,0 → 14,5 s, +5 6,9 →
+8,0 s (total 54,5 → 50,5 s). Los partidos dirigidos (60) tardan ~4 min.
+
+#### No verificado / pendiente
+- **DECISIÓN REQUERIDA (Dennis):** la geometría sintética de la mano a mano
+  central (ME-06) no crea ninguna vía exterior abierta: la lectura espera a
+  que D3 llegue al corte y el punto del bloqueo de O4 está a 0,81 m de donde
+  ayuda D4. Si debe competir, hay que decidir su diseño. Sigue pendiente la
+  decisión v2-6 sobre el aprendizaje por ficha (no implementado).
+- La orden sin balón `auto` de la mano a mano compara concesiones con el
+  umbral antiguo; el cierre de D4 reutiliza `tD3AtCut` como llegada.
+- Pase desviado recuperado por el defensor en 0,00 s (preexistente).
+- Saques (pausados), `menos_de_cinco` y el resto de §4–§7 como en v2-6.
+
+#### Reanudar
+```bash
+cd BeManager && git fetch origin && git checkout claude/me-07b-v2-capitulo-tactico && git pull
+npm ci && npm run check
+npx tsx scripts/me07b-v2-stop-sweep.ts 1 60
+npx tsx scripts/me07b-v2-baseline-20.ts
+npx tsx scripts/me07b-v2-handoff-delay-gap.ts --photos
+npx tsx scripts/me07b-v2-handoff-delay-gap.ts --directed --seeds 1-20
+```
+Siguiente paso: las decisiones de Dennis (geometría de la mano a mano;
+aprendizaje por ficha); después, el resto de §4–§7.

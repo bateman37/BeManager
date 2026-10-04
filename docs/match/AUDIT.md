@@ -53,7 +53,10 @@ otra versión).
   `family_forced_by_plan` cuando el equipo fijó una familia), y para la
   mano a mano: `entrada_mano_a_mano`, `transferencia_mano_a_mano`,
   `bloqueo_indirecto_o3` y `lectura_mano_a_mano` — mismas reglas de
-  `status`/`reasonCode`/`factLink` que el resto del árbol.
+  `status`/`reasonCode`/`factLink` que el resto del árbol. Desde la sesión
+  v2-7 de ME-07B v2, las vías de tiro de `lectura_mano_a_mano` llevan
+  `opposition` (la oposición geométrica con la que se valoran, la misma que
+  usará `resolucion_tiro`) y `pase_o3` su `contesterId`.
 - **`input.teams[]`** ahora declara también `offensivePlan` y
   `offBallDefensiveCall` (la foto de cada equipo para todo el partido), y
   cada jugador del roster lleva `fixtureDiff`: diferencias reales por
