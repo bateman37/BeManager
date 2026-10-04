@@ -5,7 +5,7 @@
 **Debe leerse cuando:** vayas a implementar, probar o declarar jugable cualquier táctica de ME-07B.
 **No cubre:** el diseño de cada táctica (ver `reference/BeManager-capitulo-tacticas-integradas-al-motor-v1.md`) ni el detalle del árbol ya implementado (ver `ACTIONS.md`).
 **Documentos relacionados:** `ACTIONS.md`, `AUDIT.md`, `docs/prompts/implementation/ME-07B-v2-capitulo-tactico-y-20-auditorias.md`, `docs/prompts/implementation/ME-07B-PROGRESS.md`.
-**Última actualización:** 2026-10-04 (ME-07B v2, sesión v2-7: la lectura de la mano a mano se valora con la oposición real de su ejecución; Delay no tiene error sistemático; ver `analysis/ME-07B-v2-mano-a-mano-delay-v2-7.md`).
+**Última actualización:** 2026-10-04 (ME-07B v2, sesión v2-8: rediseño de la mano a mano central, el cuerpo de O5 como pantalla real sobre D2 y respuesta de D5 a la entrega; ver `analysis/ME-07B-v2-mano-a-mano-v2-8.md`).
 
 ## Reglas de estado
 
@@ -59,7 +59,7 @@ auditoría** · **Prueba** · **Estado**. «—» = no existe todavía.
 |---|---|---|---|---|---|---|---|---|
 | Bloqueo directo central | Familia | `offensivePlan`, `screenPlacement=central` | Ataque organizado | Pantalla del bloqueador asignado, lectura por valor frente al mejor cierre real (§2.4) | Salida segura | `seleccion_familia`, `colocacion_bloqueo`, `lectura_bloqueo_o1` | `me04b`, `me06`, `me07b-v2-reads.test.ts` | parcial: sin /lab v2-3; foto seed (v2-3) colocación central 1.175 / lateral 55 (Sierra) |
 | Bloqueo directo lateral | Familia / colocación | `screenPlacement` (`auto`/`central`/`lateral`, selector «Colocación del bloqueo» en `/lab`) | Ataque organizado con bloqueo directo permitido | Disposición LAB-0.7 (manejador en el ala, bloqueador fuera de la franja de la zona, short roll lateral); en `auto` el poseedor real elige colocación junto con creador y bloqueador por la misma proyección en seco | Central (la mano a mano solo se juega desde la central) | `colocacion_bloqueo`, `organized_entry.detail.placement`, `screen_set.detail.placement`, `seleccion_familia` (`family_not_in_lateral_placement`) | `lab-0-7-parameters.test.ts`, `me07b-v2-lateral-ice.test.ts` | parcial: ejecutable, negable (ICE) y elegido en `auto` (foto seed 55 Sierra / 32 Puerto); sin `/lab` recorrido; lado derecho y espaciado propio pendientes |
-| Mano a mano (DHO) | Familia | `offensivePlan` | Ataque organizado | Entrada a O5 en codo, entrega a O2 (central); desde v2-5 también la entrega de Delay: el manejador sigue su pase y el cuerpo del pívot es la pantalla (T13/F05/T16, peso) | O5 conserva | `entrada/transferencia_mano_a_mano`; `entrega_delay` | `me06-mano-a-mano.test.ts`, `me07b-v2-delay.test.ts` | parcial: la central, valorada desde v2-7 con la oposición real de su ejecución (sus triples de recepción llegan siempre contestados), casi no se elige en `auto` (1 de 4.737 organizaciones en la foto de las 20; nota v2-7); la de Delay es jugable por orden y compite en `auto` (32) |
+| Mano a mano (DHO) | Familia | `offensivePlan` | Ataque organizado | Central (rediseño v2-8): entrada a O5 en el codo alto real del lado fuerte; O2 rodea a O5 y recibe en su hombro alto; el cuerpo de O5 es pantalla real sobre D2 (T13/F05 frente a T16, peso, solo si O5 está puesto) sumada a la llegada de D2; D2 niega si llega antes; D5 responde a la entrega (hundirse/cambiar/saltar, por concesión); O2 lee aro, parada, triple solo detrás del arco, continuación de O5, indirecto y salida; negada: aro de O5, puerta de atrás de O2. Delay: el manejador sigue su pase y el cuerpo del pívot es la pantalla | O5 conserva; salida segura | `entrada/transferencia_mano_a_mano`, `seleccion_cobertura` (respuesta a la entrega), `lectura_mano_a_mano`, hechos `dho_completed`/`dho_denied`; `entrega_delay` | `me06-mano-a-mano.test.ts`, `me07b-v2-handoff-screen.test.ts`, `me07b-v2-handoff-read.test.ts`, `me07b-v2-delay.test.ts` | parcial (central): ejecución, negación y respuesta probadas con un solo cambio, proyección = ejecución (2.319 usos dirigidos: +0,010 ± 0,025 por partido) y elegida en `auto` (2.146 de 4.738 organizaciones de la foto de las 20); falta el recorrido de `/lab` de v2-8 para declararla jugable. Delay: jugable por orden y compite en `auto` |
 | Pindown | Familia | — | — | Solo el indirecto O4→O3 dentro del DHO | — | `bloqueo_indirecto_o3` | `me06` | pendiente como familia propia |
 | Poste alto / bajo / alto-bajo | Familia | — (dentro de Delay) | Entrada al poste bajo desde la entrega (O1) o desde arriba (O5, alto-bajo) | El poste lee tras reconocer (M01/M05) y girar: aro rodeando a D4, gancho (T02), salida a la esquina, corte del ala débil, repostear; la ayuda «dig» de la esquina lo dobla si llega antes del giro (presión T07/T15) | Repostear y reorganizar | `lectura_poste`, `respuesta_poste` | `me07b-v2-delay.test.ts` | parcial: solo poste bajo dentro de Delay; sin poste alto propio ni trabajo de espaldas (back-down) |
 | Corte | Familia | — | — | Corte de O3 dentro del DHO (central); en Delay, corte del ala débil al recibir el poste, rodeando a su defensor, y puerta de atrás de O1 si la entrega está negada | — | `weak_side_cut`, `backdoor_cut`, `lectura_poste` (`corte_o3`), `lectura_delay_pivote` (`puerta_atras_o1`) | `me06`, `me07b-v2-delay.test.ts` | parcial: solo dentro de fichas; sin familia propia |
@@ -93,9 +93,9 @@ auditoría** · **Prueba** · **Estado**. «—» = no existe todavía.
 | Re-screen | Lectura | — | Primera lectura negada | Segunda entrada del bloqueo (ME-04) | Tiro forzado | `segunda_entrada` | `me04.test.ts` | parcial: 0 naturales |
 | Slip | Lectura | — | — | — | — | — | — | pendiente |
 | Ghost | Lectura | — | — | — | — | — | — | pendiente |
-| Keeper | Lectura | — | Entrega negada | O5 conserva y lee (central); en Delay, si D5 salta la entrega, O5 se la queda con la pintura vacía: aro, puerta de atrás, alto-bajo o invertir | — | `transferencia_mano_a_mano`, `lectura_delay_pivote` | `me06`, `me07b-v2-delay.test.ts` | parcial: solo por negación, no elección |
+| Keeper | Lectura | — | Entrega negada | O5 conserva y lee (central desde v2-8: aro, puerta de atrás de O2, indirecto o salida, si D2 llega antes al punto o D5 tapa la salida); en Delay, si D5 salta la entrega, O5 se la queda con la pintura vacía: aro, puerta de atrás, alto-bajo o invertir | — | `transferencia_mano_a_mano`, `lectura_mano_a_mano`, `lectura_delay_pivote` | `me06`, `me07b-v2-handoff-screen.test.ts`, `me07b-v2-delay.test.ts` | parcial: solo por negación, no elección |
 | Curl | Lectura | — | — | — | — | — | — | pendiente |
-| Backdoor | Lectura | — | Entrega de Delay negada (D5 en el punto de la entrega) | O1 corta al aro rodeando a D5; D1 persigue desde atrás, D4 ayuda | Otra vía del pívot | `backdoor_cut`, `lectura_delay_pivote` (`puerta_atras_o1`) | `me07b-v2-delay.test.ts` | parcial: solo ante la entrega negada; sin backdoor ante deny/top-lock |
+| Backdoor | Lectura | — | Entrega negada (Delay: D5 en el punto; central desde v2-8: D2 por delante en el punto de la entrega o D5 en la salida) | El receptor negado corta al aro rodeando a quien le niega; su defensor persigue desde atrás, la ayuda llega de D4/D5 | Otra vía del poseedor | `backdoor_cut`, `lectura_delay_pivote` (`puerta_atras_o1`), `lectura_mano_a_mano` (`puerta_atras_o2`) | `me07b-v2-delay.test.ts`, `me07b-v2-handoff-screen.test.ts` | parcial: solo ante la entrega negada; sin backdoor ante deny/top-lock de una recepción sin entrega |
 | Tiro temprano/penetración del base libre | Lectura | — | 1ª lectura del bloqueo | Finalizar, triple con cierre de D1, tiro parado (T03) o floater (T02) antes del protector (§2.4) | Pase / salida | `lectura_bloqueo_o1` (`parada_o1`, `flotadora_o1`) | `me04b`, `me07b-v2-reads.test.ts` | parcial: sin /lab v2-2 |
 
 ## Ataque — continuaciones
@@ -161,6 +161,16 @@ rinde lo proyectado (anotado − proyectado +0,03 ± 0,03 por partido); se
 elige en `auto` 32 veces en tres partidos. Cifras en
 `analysis/ME-07B-v2-mano-a-mano-delay-v2-7.md`. No cambia el estado de
 ninguna fila.
+
+**Nota v2-8 (rediseño de la mano a mano central, decisión de Dennis).** El
+cuerpo de O5 es una pantalla real sobre D2 (misma primitiva y misma suma del
+retraso que el bloqueo directo y el indirecto, ahora también en Delay); la
+defensa responde a la entrega como en Delay; el tipo de tiro del indirecto lo
+decide su zona real (sus puntos estaban dentro del arco y se anotaban como
+triples). Con un solo cambio, bloqueador, receptor, defensor y respuesta
+mueven cada uno un intermedio explicable; proyección = ejecución. Foto de las
+20: familia bloqueo 99,3 % → 54,7 %. Cifras en
+`analysis/ME-07B-v2-mano-a-mano-v2-8.md`.
 
 **Nota v2-5 (Horns→Spain y Delay→DHO con poste, jugables).** *Spain*
 (LAB-0.9): desde Horns, el segundo cuerno pone un bloqueo ciego a D5 (a

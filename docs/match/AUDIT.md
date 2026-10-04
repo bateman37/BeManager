@@ -11,9 +11,9 @@ hechos (ver `MODEL.md`) ni el acta (ver `BOXSCORE.md`): este documento solo
 describe cómo se observa y se exporta lo que esos documentos ya definen.
 **Documentos relacionados:** `MODEL.md`, `ACTIONS.md`, `BOXSCORE.md`,
 `docs/decisions/DECISION-REQUERIDA-ME-04-alcance-natural-faltas-y-segunda-entrada.md`.
-**Última actualización:** 2026-10-01 (ME-07B v2, sesión v2-5: puntos y
-hechos de Horns→Spain y de Delay, configuración `chainedVariant`/
-`backScreenCall` exportada).
+**Última actualización:** 2026-10-04 (ME-07B v2, sesión v2-8: valores de la
+entrega con pantalla del cuerpo de O5 y respuesta de D5 en la mano a mano
+central).
 
 ## Qué es y qué no es
 
@@ -56,7 +56,22 @@ otra versión).
   `status`/`reasonCode`/`factLink` que el resto del árbol. Desde la sesión
   v2-7 de ME-07B v2, las vías de tiro de `lectura_mano_a_mano` llevan
   `opposition` (la oposición geométrica con la que se valoran, la misma que
-  usará `resolucion_tiro`) y `pase_o3` su `contesterId`.
+  usará `resolucion_tiro`) y `pase_o3` su `contesterId`. **Sesión v2-8**
+  (rediseño de la entrega): `transferencia_mano_a_mano` registra `response`
+  (hundirse/cambiar_entrega/saltar_entrega), `d2Denies`, `d5Jumps`,
+  llegadas de O2 y D2, `o5ReadySeconds`, `tHandoffReady`, `screenSet`,
+  `screenDelaySeconds`, `d2ContactSeconds` y `d2ReleaseSeconds`; la defensa
+  audita su respuesta en `seleccion_cobertura` (como Delay: las coberturas
+  de pantalla quedan `coverage_not_in_card`); `lectura_mano_a_mano` la decide
+  `decideHandlerRead` (motivos `read_value_higher/lower`,
+  `read_option_not_viable`, `tie_band_resolved_by_tendency`) con las vías
+  `finalizar_portador`, `parada_o2`, `triple_o2`, `continuacion_o5`,
+  `pase_o3`, `continuar_o4`, `pase_o1` (entrega completada) o
+  `finalizar_o5`, `puerta_atras_o2`, `pase_o3`, `continuar_o4`, `pase_o1`
+  (negada), cada una con `situationalValue`, `completion`, `opposition`,
+  `contesterId` y, en el indirecto, `shotType`. Hechos nuevos en la central:
+  `dho_completed`/`dho_denied`, `switch_committed`, `show_committed`,
+  `roll_continuation`, `backdoor_cut`.
 - **`input.teams[]`** ahora declara también `offensivePlan` y
   `offBallDefensiveCall` (la foto de cada equipo para todo el partido), y
   cada jugador del roster lleva `fixtureDiff`: diferencias reales por

@@ -125,6 +125,20 @@ decisiones duraderas viven en `docs/decisions/`, no aquí.
   medida en `docs/match/analysis/ME-07B-v2-comparador-v2-6.md` y scripts
   `me07b-v2-placement-gap.ts`, `me07b-v2-projection-calibration.ts` y
   `me07b-v2-possession-slice.ts`. Semillas de escenario recalculadas con causa.
+- **Rediseño de la mano a mano central (sesión v2-8, decisión de Dennis).**
+  O5 recibe en el codo alto real del lado fuerte y O2 recibe en su hombro
+  alto rodeándolo; el cuerpo de O5 es pantalla real sobre D2 (T13/F05 frente a
+  T16 y peso, solo si O5 está puesto, sumada a la llegada de D2); D2 niega si
+  llega antes; D5 responde a la entrega (hundirse/cambiar/saltar) como en
+  Delay; O2 lee al recibir (aro, parada, triple solo detrás del arco,
+  continuación de O5, indirecto, salida). Los tiros del indirecto se anotaban
+  como triples desde puntos dentro del arco: ahora el tipo lo decide la zona.
+  Delay suma también el retraso de pantalla a la llegada de D1. Foto de las
+  20: familia bloqueo 99,3 % → 54,7 %; dirigidos: mano a mano proyectada
+  0,998, anotada 1,006. Nueva `me07b-v2-handoff-screen.test.ts`; reescritas
+  `me07b-v2-handoff-read.test.ts` y `me06-mano-a-mano.test.ts`; análisis
+  `docs/match/analysis/ME-07B-v2-mano-a-mano-v2-8.md`. Semillas de escenario
+  recalculadas con causa.
 - **§2.2 Lectura de la mano a mano con la oposición real (sesión v2-7).**
   `pase_o3`, `continuar_o4` y `finalizar_portador` se valoran con
   `estimateContestLevel` y los mismos argumentos que `resolveShotAttempt`

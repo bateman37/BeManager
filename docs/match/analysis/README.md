@@ -34,3 +34,8 @@ documento o sección fechada.
   usada y segundas lecturas, con partidos dirigidos; defecto de la lectura de
   la mano a mano corregido y mismas 20 semillas antes/después
   (`scripts/me07b-v2-handoff-delay-gap.ts`).
+- [`ME-07B-v2-mano-a-mano-v2-8.md`](./ME-07B-v2-mano-a-mano-v2-8.md)
+  — rediseño de la mano a mano central (el cuerpo de O5 como pantalla real
+  sobre D2, respuesta de D5 a la entrega): pruebas de un solo cambio,
+  proyección frente a ejecución, mismas 20 semillas, partidos dirigidos y la
+  siguiente causa medida (el comparador no proyecta el rebote ofensivo).

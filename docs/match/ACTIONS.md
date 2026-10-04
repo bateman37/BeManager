@@ -5,7 +5,7 @@
 **Debe leerse cuando:** vayas a modificar `possession-core.ts` o a añadir una tercera acción táctica, otra cobertura u otra orden defensiva.
 **No cubre:** ninguna otra familia táctica (poste, zonas, todas las variantes de mano a mano) ni otras coberturas de bloqueo (switch, ICE/veer...): llegan en entregas posteriores (ver `docs/match/roadmap.md`). La transición de ME-03 no es una táctica nueva: solo decide si existe ventana y reutiliza las ejecuciones ya existentes (sección final).
 **Documentos relacionados:** `docs/match/reference/BeManager-capitulo-tacticas-integradas-al-motor-v1.md`, `CAPABILITIES.md`, `RULES.md`.
-**Última actualización:** 2026-10-01 (ME-07B v2, sesión v2-5: fichas Horns→Spain, LAB-0.9, y Delay→DHO con poste, LAB-0.10).
+**Última actualización:** 2026-10-04 (ME-07B v2, sesión v2-8: rediseño de la mano a mano central, el cuerpo de O5 como pantalla real sobre D2).
 
 ## Disposición y roles fijos
 
@@ -346,14 +346,31 @@ Misma disposición 4-out/1-in y roles funcionales; extiende el núcleo
 compartido (`runHandoffPhase` junto a `runDropPhase`/`runTrapPhase` en
 `possession-core.ts`, ADR-0005/0006), no un módulo paralelo. Secuencia real:
 
-1. **Entrada:** O1 encuentra a O5 en el codo alto (`FREE_THROW_LINE_SPOT`,
-   reutilizado). Pase real (T09/T11), negable por D5; si se desvía o el
-   reloj no llega, sanción o balón suelto, nunca teletransporte.
-2. **Mano a mano:** O5 entrega a O2, que sube desde el lado fuerte con
-   tiempo de movimiento y recepción reales. D2 puede llegar a negar la
-   entrega; en `trampa`, D5 puede saltar a presionarla junto a D2 (deja el
-   interior expuesto, con el retraso real de coordinación M09 al
-   recuperar). Si se niega, O5 conserva el balón y su propia lectura.
+1. **Entrada:** O1 encuentra a O5 en el **codo alto del lado fuerte**
+   (desde la sesión v2-8: extremo de la línea de tiros libres, semianchura
+   FIBA de la zona, del lado de O2; antes el centro de la línea con el mismo
+   nombre). El pase llega cuando O5 ya está en el punto. Pase real
+   (T09/T11), negable por D5; si se desvía o el reloj no llega, sanción o
+   balón suelto, nunca teletransporte.
+2. **Entrega con pantalla del cuerpo de O5 (rediseño v2-8, decisión de
+   Dennis).** O2 sube desde la esquina fuerte rodeando a O5 y recibe en su
+   hombro alto (a contacto, lejos del aro: 7,0 m, detrás del arco); sale por
+   el hombro contrario. D2 reconoce el corte (M01/M05) y lo sigue: si llega
+   antes que O2 al punto de la entrega (con su frenada F03) lo ocupa y la
+   **niega**; si no, llega al hombro de contacto de O5 y queda retenido el
+   retraso de pantalla del bloqueo directo (`screenInterceptDelaySeconds`
+   T13/F05 de O5 frente a T16 de D2 + peso; ±0,15 s por la orden sin balón)
+   **sumado** a su llegada, como D1 y D3; solo si O5 está **puesto**
+   (`SCREEN_SET_AFTER_ARRIVAL_SECONDS` antes de la entrega): una entrega en
+   cuanto O5 llega no retiene. Desde ahí persigue rodeando a O5. **D5
+   responde a la entrega** con las tres respuestas de Delay (hundirse,
+   cambiar, saltar la entrega), elegidas en `auto` por menor concesión
+   proyectada y lo visto ante entregas (`defenseByHandoffResponse`, común
+   con Delay); hundirse es una sola trayectoria de retirada al aro cuando O5
+   continúa; cambiar saca a D5 a O2 por el hombro de salida y deja a D2 con
+   O5 (persiste); saltar niega la entrega si D5 llega antes que O2 a la
+   salida. Antes D2 corría recto al punto y la defensa usaba una cobertura de
+   pantalla que la entrega solo consultaba para la trampa.
 3. **Bloqueo/corte simultáneo:** O4 coloca un bloqueo indirecto legal
    (T13/F05) para que O3 corte desde el lado débil (T21 activa por
    primera vez su desmarque, `cutterStartTimeReductionSeconds`); D3
@@ -367,23 +384,18 @@ compartido (`runHandoffPhase` junto a `runDropPhase`/`runTrapPhase` en
    elige la que concede menos (triple de O3 sin ayuda, o de O4 si D4
    abre); empate conserva `guardar_espacio`. Auditado en
    `seleccion_orden_sin_balon`.
-4. **Primera lectura real** (portador: O2 si la entrega se completó; si
-   no, O5): entre finalizar (mismo modelo de contención real que el
-   bloqueo directo), pasar a O3 (si el corte quedó libre), continuar a O4
-   (si D4 ayudó) o la seguridad a O1, por el mismo valor situacional que
-   el bloqueo directo. Hasta ME-06 esta lectura no tenía banda de empate
-   propia (siempre ganaba el valor mayor). **ME-07A §2** añade la misma
-   `FIRST_READ_TIE_BAND_POINTS`: dentro de la banda, la prioridad de
-   creación del entrenador favorece primero aro (`finalizar_portador`) o
-   triple (`pase_o3`/`continuar_o4`); si sigue compitiendo un tiro con la
-   seguridad a O1, decide `shotTendency` del portador (no `pnrTendency`,
-   que conserva su papel específico en el bloqueo). **ME-07B v2 sesión
-   v2-7:** cada vía de tiro se valora con la oposición que resultará de la
-   misma geometría con la que se resuelve (`estimateContestLevel` con el
-   mismo defensor, llegada, instante y preparación que `resolveShotAttempt`),
-   como la primera lectura del bloqueo; antes `pase_o3`/`continuar_o4` se
-   valoraban sin oposición y se ejecutaban siempre contestados (ver
-   `analysis/ME-07B-v2-mano-a-mano-delay-v2-7.md`). Ver `AUDIT.md`.
+4. **Primera lectura real**, al recibir (ya no espera al indirecto).
+   Entrega completada (O2; O5 continúa al aro): `finalizar_portador`,
+   `parada_o2` (T02/T03, `planPullUp` frente a quien protege el aro),
+   `triple_o2` (solo si el hombro de entrega está detrás del arco),
+   `continuacion_o5`, `pase_o3`, `continuar_o4` y `pase_o1`. Entrega negada
+   (O5): `finalizar_o5`, `puerta_atras_o2`, indirecto y `pase_o1`. Cada vía
+   se valora con `bestContest`/`estimateContestLevel` y los mismos argumentos
+   que recibe `resolveShotAttempt` (v2-7); el tipo de tiro del indirecto lo
+   decide la zona real del punto (los puntos de ME-06 están a 6,6 y 5,8 m,
+   dentro del arco: hasta v2-8 se anotaban como triples). Decide
+   `decideHandlerRead` (banda de empate por `shotTendency`, como Delay). Ver
+   `analysis/ME-07B-v2-mano-a-mano-v2-8.md` y `AUDIT.md`.
 
 **Selector de plan por equipo** (`offensivePlan`, `MatchInput`/
 `GameTeamInput`): `auto` (por defecto en partido), `bloqueo_directo` o
