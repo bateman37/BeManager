@@ -4791,7 +4791,15 @@ function runHandoffPhase(ctx: CoreContext): PossessionCoreResult {
   const d5PosAtHolderReady = positionAtInstant(d5FinishGeometry, d5ArrivalAtRim, tHolderFinishReady);
   const d5TrulyBlockingFinish = distance(d5PosAtHolderReady, ATTACKED_HOOP) <= COMBINED_CONTACT_RADIUS_METERS;
   const finishMarginSeconds = d5ArrivalAtRim - tHolderFinishReady;
-  const finishOpposition: EffectiveOpposition = finishMarginSeconds >= 0.25 ? 0 : 1;
+  // Sesión v2-7 (§2.2/§2.4): cada vía de esta lectura se valora con la
+  // oposición que resultará de la misma geometría con la que `resolveShotAttempt`
+  // resolverá el tiro (`estimateContestLevel`), igual que la primera lectura del
+  // bloqueo desde v2-3. Antes se usaba un umbral aparte (aro: margen ≥ 0,25 s;
+  // corte y continuación: sin oposición salvo ayuda de D4) y la ejecución
+  // encontraba al defensor ya colocado en el punto de tiro (la lectura espera a
+  // que D3 llegue al corte; D4 ayuda a 0,8 m del punto de O4): la lectura y la
+  // proyección de la familia prometían un triple abierto que nunca existía.
+  const finishOpposition: EffectiveOpposition = estimateContestLevel(ctx, "D5", d5FinishGeometry, d5ArrivalAtRim, ATTACKED_HOOP, tHolderFinishReady, CLOSE_FINISH_PREP_SECONDS);
   const finishValue = !handoffDenied && !d5TrulyBlockingFinish
     ? 2 * shotProbability(CLOSE_FINISH_BASE_PROBABILITY, holder.attributes.T01, finishOpposition)
     : -Infinity;
@@ -4803,11 +4811,20 @@ function runHandoffPhase(ctx: CoreContext): PossessionCoreResult {
     speedMps: defenderLateralSpeedMps(d4.attributes.F04),
     brakingExtraSeconds: closeoutBrakingExtraSeconds(d4.attributes.F03),
   };
-  const o3Opposition: EffectiveOpposition = d4Helps ? 1 : 0;
+  // Cierre del tiro de O3 tras el corte: el mismo que usa la ejecución (D4 si
+  // ayudó, si no D3, que ya llegó al punto del corte).
+  const o3Contester = d4Helps ? "D4" : "D3";
+  const o3ContestGeometry: ContestGeometry = d4Helps
+    ? { originPos: ctx.positions.D4!, destinationPos: WEAK_SIDE_CUT_SPOT, speedMps: defenderLateralSpeedMps(d4.attributes.F04), brakingExtraSeconds: closeoutBrakingExtraSeconds(d4.attributes.F03) }
+    : { originPos: ctx.positions.D3!, destinationPos: WEAK_SIDE_CUT_SPOT, speedMps: defenderLateralSpeedMps(d3.attributes.F04), brakingExtraSeconds: closeoutBrakingExtraSeconds(d3.attributes.F03) };
+  const tPassArrivalO3 = tDecision + PASS_RELEASE_SECONDS + distanceSeconds(holderPos, WEAK_SIDE_CUT_SPOT);
+  const o3Opposition: EffectiveOpposition = estimateContestLevel(ctx, o3Contester, o3ContestGeometry, tD3AtCut, WEAK_SIDE_CUT_SPOT, tPassArrivalO3 + CATCH_AND_SHOOT_PREP_SECONDS, CATCH_AND_SHOOT_PREP_SECONDS);
   const o3PassValue = cutWindowOpen ? 3 * shotProbability(THREE_POINT_BASE_PROBABILITY, o3.attributes.T04, o3Opposition) : -Infinity;
 
-  // Vía "continuar_o4": D4 ayudó a cerrar a O3 y O4 quedó libre.
-  const o4PassValue = o4Open ? 3 * shotProbability(THREE_POINT_BASE_PROBABILITY, o4.attributes.T04, 0) : -Infinity;
+  // Vía "continuar_o4": D4 ayudó a cerrar a O3; su cierre sobre O4 es el de la ejecución.
+  const tPassArrivalO4 = tDecision + PASS_RELEASE_SECONDS + distanceSeconds(holderPos, WEAK_SIDE_SCREEN_SPOT);
+  const o4Opposition: EffectiveOpposition = estimateContestLevel(ctx, "D4", d4CornerGeometry, tD3AtCut, WEAK_SIDE_SCREEN_SPOT, tPassArrivalO4 + CATCH_AND_SHOOT_PREP_SECONDS, CATCH_AND_SHOOT_PREP_SECONDS);
+  const o4PassValue = o4Open ? 3 * shotProbability(THREE_POINT_BASE_PROBABILITY, o4.attributes.T04, o4Opposition) : -Infinity;
 
   // Vía "pase_o1": seguridad, siempre viable, sin puntos esperados.
   const safeOutletValue = 0;
@@ -4905,9 +4922,9 @@ function runHandoffPhase(ctx: CoreContext): PossessionCoreResult {
     pase_o1: { chosen: "safe_outlet_default", notViable: "not_available" },
   };
   const handoffReadValues: Readonly<Record<HandoffReadOptionId, Record<string, number | string | boolean | null>>> = {
-    finalizar_portador: { situationalValue: finishValue, holderTimeToHoopSeconds: holderTimeToHoop, d5TrulyBlockingFinish, finishMarginSeconds },
-    pase_o3: { situationalValue: o3PassValue, cutWindowOpen, tD3AtCut, tO3Cut },
-    continuar_o4: { situationalValue: o4PassValue, o4Open, d4HelpMargin },
+    finalizar_portador: { situationalValue: finishValue, holderTimeToHoopSeconds: holderTimeToHoop, d5TrulyBlockingFinish, finishMarginSeconds, opposition: finishOpposition },
+    pase_o3: { situationalValue: o3PassValue, cutWindowOpen, tD3AtCut, tO3Cut, opposition: o3Opposition, contesterId: realId(ctx, o3Contester) },
+    continuar_o4: { situationalValue: o4PassValue, o4Open, d4HelpMargin, opposition: o4Opposition },
     pase_o1: { situationalValue: safeOutletValue },
   };
   function handoffReadOptionRecord(id: HandoffReadOptionId): AuditOptionRecord {
@@ -4966,7 +4983,6 @@ function runHandoffPhase(ctx: CoreContext): PossessionCoreResult {
 
   if (chosen === "pase_o3") {
     const passOutcome = resolvePass(holder.attributes.T09, o3.attributes.T11, true, d3.attributes.T17, 1, ctx.rng);
-    const tPassArrivalO3 = tDecision + PASS_RELEASE_SECONDS + distanceSeconds(holderPos, WEAK_SIDE_CUT_SPOT);
     event(ctx, tPassArrivalO3, "ejecutado", "pass_released", [holderId, "O3"], `${holderId} pasa a O3, liberado por el bloqueo/corte.`);
     auditDecision(ctx, tDecision, {
       point: "lectura_mano_a_mano",
@@ -4993,17 +5009,14 @@ function runHandoffPhase(ctx: CoreContext): PossessionCoreResult {
       shooterPos: WEAK_SIDE_CUT_SPOT,
       tReady: tPrepReadyO3,
       prepSeconds: CATCH_AND_SHOOT_PREP_SECONDS + readyDelay,
-      contesterId: d4Helps ? "D4" : "D3",
+      contesterId: o3Contester,
       contesterArrival: tD3AtCut,
-      contesterGeometry: d4Helps
-        ? { originPos: ctx.positions.D4!, destinationPos: WEAK_SIDE_CUT_SPOT, speedMps: defenderLateralSpeedMps(d4.attributes.F04), brakingExtraSeconds: closeoutBrakingExtraSeconds(d4.attributes.F03) }
-        : { originPos: ctx.positions.D3!, destinationPos: WEAK_SIDE_CUT_SPOT, speedMps: defenderLateralSpeedMps(d3.attributes.F04), brakingExtraSeconds: closeoutBrakingExtraSeconds(d3.attributes.F03) },
+      contesterGeometry: o3ContestGeometry,
     });
   }
 
   // chosen === "continuar_o4"
   const passOutcome = resolvePass(holder.attributes.T09, o4.attributes.T11, true, d4.attributes.T17, 1, ctx.rng);
-  const tPassArrivalO4 = tDecision + PASS_RELEASE_SECONDS + distanceSeconds(holderPos, WEAK_SIDE_SCREEN_SPOT);
   event(ctx, tPassArrivalO4, "ejecutado", "pass_released", [holderId, "O4"], `${holderId} continúa hacia O4, abierto tras la ayuda de D4.`);
   auditDecision(ctx, tDecision, {
     point: "lectura_mano_a_mano",

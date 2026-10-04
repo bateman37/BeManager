@@ -199,8 +199,9 @@ describe("ME-04 (2): bocina, tiro en el aire, reset del reloj de lanzamiento y r
     // Horns (LAB-0.8) y la proyección frente a la defensa observada (v2-4) a la 787;
     // la elección de ficha por valor (sesión v2-6: la banda ya no desempata entre
     // fichas, primera lectura como frontera, Delay en `auto`) a la 560, y el plan
-    // elegido por valor dentro de la central (la banda no cruza de plan) a la 540.
-    const r = game(540);
+    // elegido por valor dentro de la central (la banda no cruza de plan) a la 540, y
+    // la lectura de la mano a mano valorada con la oposición real de su ejecución (v2-7) a la 148.
+    const r = game(148);
     const i = r.events.findIndex((e) => e.kind === "buzzer" && e.detail.shotInFlight === true);
     expect(i).toBeGreaterThan(0);
     const buzzer = r.events[i]!;
@@ -220,8 +221,8 @@ describe("ME-04 (2): bocina, tiro en el aire, reset del reloj de lanzamiento y r
     // soltado a tiempo sin rebote inventado tras la bocina final.
     // ME-07B v2 §2.1 (cierre de rebote y caída del tirador) desplaza ese
     // caso a la semilla 53, y §2.3 (defensa auto con trampa en competencia)
-    // a la 14, y §2.4 (asignación de creador/bloqueador y lectura del receptor) a la 60; §2.5 (faltas por contacto) a la 49; LAB-0.7 (bloqueo lateral, ICE) a la 69; la ficha Horns (LAB-0.8) y la proyección frente a la defensa observada (v2-4) a la 86; la elección de ficha por valor (sesión v2-6) a la 41 y el plan por valor dentro de la central (v2-6) a la 31.
-    const r = game(31);
+    // a la 14, y §2.4 (asignación de creador/bloqueador y lectura del receptor) a la 60; §2.5 (faltas por contacto) a la 49; LAB-0.7 (bloqueo lateral, ICE) a la 69; la ficha Horns (LAB-0.8) y la proyección frente a la defensa observada (v2-4) a la 86; la elección de ficha por valor (sesión v2-6) a la 41 y el plan por valor dentro de la central (v2-6) a la 31 y la lectura de la mano a mano con la oposición real (v2-7) a la 21.
+    const r = game(21);
     const i = r.events.findIndex((e) => e.kind === "buzzer" && e.detail.shotInFlight === true);
     const next = r.events.slice(i + 1, i + 4).map((e) => e.kind);
     expect(next).toEqual(["field_goal_attempt", "possession_ended", "period_ended"]);
@@ -621,8 +622,9 @@ describe("ME-04 (6): empate → prórroga, empate en prórroga → otra; guardi�
     // (faltas por contacto real) a la 232, LAB-0.7 (bloqueo lateral, ICE) a la 246 y
     // la ficha Horns (LAB-0.8) con la proyección frente a la defensa observada (v2-4) a la 984 y
     // la variante Horns→Spain en `auto` (LAB-0.9, v2-5) a la 1718 (ninguna en 1–1717) y la
-    // elección de ficha y plan por valor con Delay en `auto` (sesión v2-6) a la 111 (ninguna en 1–110).
-    const r = game(111);
+    // elección de ficha y plan por valor con Delay en `auto` (sesión v2-6) a la 111 (ninguna en 1–110), y la
+    // lectura de la mano a mano valorada con la oposición real de su ejecución (v2-7) a la 206 (ninguna en 1–205).
+    const r = game(206);
     expect(r.periods.map((p) => p.label)).toEqual(["C1", "C2", "C3", "C4", "Prórroga 1", "Prórroga 2"]);
     const endOf = (period: number) => r.events.find((e) => e.kind === "period_ended" && e.period === period)!;
     expect(endOf(4).score[SC]).toBe(endOf(4).score[PA]);
@@ -640,7 +642,7 @@ describe("ME-04 (6): empate → prórroga, empate en prórroga → otra; guardi�
   });
 
   it("el guardián de prórrogas señala la anomalía sin cerrar el empate ni inventar ganador", () => {
-    const r = game(111, BASE, { maxOvertimes: 1 });
+    const r = game(206, BASE, { maxOvertimes: 1 });
     expect(r.stop.cause).toBe("guardian");
     expect(r.winnerTeamId).toBeNull();
     expect(r.finalScore[SC]).toBe(r.finalScore[PA]);

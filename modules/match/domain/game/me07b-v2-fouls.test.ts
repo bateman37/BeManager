@@ -90,7 +90,9 @@ describe("ME-07B v2 §2.5: faltas por contacto real en balón vivo", () => {
   it("solo cambiar M07 de los defensores de Puerto cambia cuántas faltas comete Puerto (disciplina alta < baja)", () => {
     const withM07 = (v: number) => PUERTO_AMBAR.players.map((p) => ({ ...p, attributes: { ...p.attributes, M07: v } }));
     const count = (m07: number) =>
-      [92, 93].reduce((n, seed) => n + play(seed, withM07(m07)).fouls.filter((f) => f.teamId === PUERTO_AMBAR.id).length, 0);
+      // Sesión v2-7: con la secuencia natural nueva 92+93 empatan (34/34; 91–98: 76 frente a 136), así que
+      // se suman las tres semillas consecutivas del bloque (92–94: 43 frente a 52).
+      [92, 93, 94].reduce((n, seed) => n + play(seed, withM07(m07)).fouls.filter((f) => f.teamId === PUERTO_AMBAR.id).length, 0);
     expect(count(15)).toBeLessThan(count(1));
   });
 });

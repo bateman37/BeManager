@@ -7,6 +7,7 @@ import { blendProjectionWithObservation, OBSERVATION_PRIOR_WEIGHT_USES } from ".
 import { SIERRA_CLARA, PUERTO_AMBAR } from "../players/lab-roster-fixture";
 import type { DefensiveCoverage, DefensiveCoverageChoice } from "../lab/match-input";
 import type { ObservedOutcome } from "../lab/lab-0-4-parameters";
+import type { PlayerProfile } from "../players/player-profile";
 
 vi.setConfig({ testTimeout: 120_000 });
 
@@ -22,9 +23,20 @@ const start: Record<string, { x: number; y: number }> = {};
 for (const s of [...scenario.offense, ...scenario.defense]) start[s.playerId] = s.initialPosition;
 const binding = Object.fromEntries(Object.keys(start).map((k) => [k, k]));
 
+/**
+ * Sesión v2-7: la mano a mano central se valora con la oposición real de su
+ * ejecución (sus triples de recepción llegan contestados), así que con el
+ * quinteto del fixture vale menos que el bloqueo incluso solo contra drop. El
+ * caso construido debilita a los dos actores del bloqueo (O1 y O5 sin tiro) y
+ * da a O4 el mejor triple para que la mano a mano gane contra drop y el
+ * mecanismo (el cambio visto sube el bloqueo) siga siendo discriminante.
+ */
+const withAttrs = (players: readonly PlayerProfile[], id: string, a: Partial<PlayerProfile["attributes"]>) => players.map((p) => (p.id === id ? { ...p, attributes: { ...p.attributes, ...a } } : p)) as PlayerProfile[];
+const OFFENSE = withAttrs(withAttrs(withAttrs(SIERRA_CLARA.players, "O1", { T01: 1, T02: 1, T03: 1, T04: 1 }), "O5", { T01: 1, T02: 1, T03: 1 }), "O4", { T04: 15 });
+
 function project(shown: Partial<Record<DefensiveCoverage, ObservedOutcome>>) {
   return projectOrganizedOpportunity(
-    { scenarioId: "drop_con_ayuda", coverage: "auto", seed: 1, rulesetVersion: "FIBA-2026", labParametersVersion: "LAB-0.2", offensePlayers: SIERRA_CLARA.players, defensePlayers: PUERTO_AMBAR.players, offensivePlan: "auto", screenPlacement: "central" },
+    { scenarioId: "drop_con_ayuda", coverage: "auto", seed: 1, rulesetVersion: "FIBA-2026", labParametersVersion: "LAB-0.2", offensePlayers: OFFENSE, defensePlayers: PUERTO_AMBAR.players, offensivePlan: "auto", screenPlacement: "central" },
     { binding, startPositions: start, shotClockMs: 20_000, gameClockMs: 400_000, attackingPriority: "proteger_balance", observations: { offenseByFamily: {}, defenseByCoverage: shown } },
   );
 }
@@ -49,13 +61,13 @@ describe("ME-07B v2 §2.2/§5: proyección del ataque frente a la defensa observ
   });
 });
 
-function play(seed: number, coverage: DefensiveCoverageChoice): GameResult {
+function play(seed: number, coverage: DefensiveCoverageChoice, sierra: readonly PlayerProfile[] = SIERRA_CLARA.players): GameResult {
   const common = { priority: "proteger_balance" as const, offBallDefensiveCall: "auto" as const, offensivePlan: "auto" as const, creationPriority: "equilibrado" as const };
   return playFullGame(
     buildGameInput({
       seed,
       auditEnabled: true,
-      home: { id: SIERRA_CLARA.id, name: SIERRA_CLARA.name, players: SIERRA_CLARA.players, ...common, coverage: "auto", screenPlacement: "central" },
+      home: { id: SIERRA_CLARA.id, name: SIERRA_CLARA.name, players: sierra, ...common, coverage: "auto", screenPlacement: "central" },
       away: { id: PUERTO_AMBAR.id, name: PUERTO_AMBAR.name, players: PUERTO_AMBAR.players, ...common, coverage, screenPlacement: "auto" },
     }),
   );
@@ -98,9 +110,13 @@ describe("ME-07B v2 §2.2/§5: en partido completo el ataque aprende la cobertur
     // Hay decisiones reales en las que la proyección contra el cambio cambia la familia elegida. Sesión v2-6:
     // son raras (la mano a mano central queda por debajo incluso del bloqueo solo contra drop casi siempre),
     // así que se cuentan en las seis semillas medidas (91–96: 1 de 682), sin escoger la que lo muestra.
+    // Sesión v2-7: con la mano a mano valorada con la oposición real de su ejecución, el fixture no la
+    // acerca nunca al bloqueo (0 de 2.271 decisiones, semillas 91–110); se usa un Sierra construido con
+    // las finalizaciones y tiros de dos de todos rebajados a 5 (T01/T02/T03), que acerca las dos familias.
+    const closer = SIERRA_CLARA.players.map((p) => ({ ...p, attributes: { ...p.attributes, T01: 5, T02: 5, T03: 5 } })) as PlayerProfile[];
     let changed = 0;
     for (const seed of [91, 92, 93, 94, 95, 96]) {
-      const ds = seed === 92 ? switching : sierraFamilyDecisions(play(seed, "cambio"));
+      const ds = sierraFamilyDecisions(play(seed, "cambio", closer));
       changed += ds.filter((d) => dropOnlyChoice(d) !== d.chosenOptionId).length;
     }
     expect(changed).toBeGreaterThan(0);

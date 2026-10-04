@@ -135,7 +135,12 @@ describe("ME-07B v2 §4: ficha Delay→DHO con poste — ejecución y cadena aud
       expect(v.handoffScreenDelay as number).toBeGreaterThan(0);
       expect(v.d1BackSeconds as number).toBeGreaterThan(v.handoffReadySeconds as number);
     }
-    expect(sierraEvents(g.r, "dho_completed").length).toBe(done.length);
+    // Una entrega decidida después de la bocina del período (la acción ya no ocurre: sus hechos se
+    // descartan, la auditoría del núcleo la conserva) no tiene hecho; sesión v2-7, semilla 92 posesión 160.
+    const endOf = new Map(g.r.possessions.map((p) => [p.index, p.endMs ?? Infinity]));
+    const played = done.filter((d) => d.atMs <= endOf.get(d.possessionIndex!)!);
+    expect(done.length - played.length).toBeLessThanOrEqual(1);
+    expect(sierraEvents(g.r, "dho_completed").length).toBe(played.length);
     const reads = new Set(playbookCard("delay_mano_a_mano").reads);
     const shots = sierraShots(g);
     expect(shots.length).toBeGreaterThan(60);

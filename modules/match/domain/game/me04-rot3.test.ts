@@ -146,7 +146,7 @@ describe("ME-04-ROT-3: relevo de emergencia sin nadie que declare el rol del exc
     expect(plan.unresolved).toEqual([{ outId: "A1", role: 1, kind: "menos_de_cinco", eligible: 4 }]);
   });
 
-  it("partido completo natural (semilla 9): los pívots declarados de Sierra excluidos; termina final con acta conciliada, registra quién y por qué, el excluido no vuelve y los perfiles no cambian", () => {
+  it("partido completo natural (semilla 74): los pívots declarados de Puerto excluidos; termina final con acta conciliada, registra quién y por qué, el excluido no vuelve y los perfiles no cambian", () => {
     // La semilla 39 (dos bases declarados excluidos) se verificó de punta a
     // punta en `399d8e6` (final 110–101, entra SC08 de base) y la 23 (Sierra,
     // rol 5) tras LAB-0.7; la ficha Horns (LAB-0.8) y la proyección del ataque
@@ -155,16 +155,20 @@ describe("ME-04-ROT-3: relevo de emergencia sin nadie que declare el rol del exc
     // reales). La 146 y después la 5 (Puerto, rol 3) lo alcanzaban hasta la
     // sesión v2-6; con la ficha y el plan elegidos por valor y Delay en `auto`
     // ninguna semilla de 1–150 deja sin alero a Puerto, y la 9 deja sin pívot
-    // declarado a Sierra (rol 5: entra O4, que declara el 4).
-    const home = structuredClone(SIERRA_CLARA.players);
-    const homeBefore = JSON.stringify(home);
+    // declarado a Sierra (rol 5: entra O4, que declara el 4). Sesión v2-7 (la
+    // lectura de la mano a mano se valora con la oposición real de su ejecución
+    // y cambia la secuencia natural): en 1–150 ninguna semilla repite ese estado
+    // de Sierra; la 74 es el mismo caso en Puerto (sus pívots declarados
+    // excluidos; entra D4, que declara el 4, sin reajustes en pista).
+    const away = structuredClone(PUERTO_AMBAR.players);
+    const awayBefore = JSON.stringify(away);
     const gameInput = buildGameInput({
-      seed: 9,
+      seed: 74,
       auditEnabled: true,
-      home: { id: SC, name: SIERRA_CLARA.name, players: home, ...common },
-      away: { id: PA, name: PUERTO_AMBAR.name, players: PUERTO_AMBAR.players, ...common },
+      home: { id: SC, name: SIERRA_CLARA.name, players: SIERRA_CLARA.players, ...common },
+      away: { id: PA, name: PUERTO_AMBAR.name, players: away, ...common },
     });
-    const rolesBefore = JSON.stringify(gameInput.teams[0].declaredRoles);
+    const rolesBefore = JSON.stringify(gameInput.teams[1].declaredRoles);
     const r = playFullGame(gameInput);
     expect(r.stop.cause).toBe("final");
     const checks = reconcileBoxScore({ box: r.box, finalScore: r.finalScore, effectivePlayedMs: r.effectivePlayedMs, engineMinutesMs: r.engineMinutesMs, teamIds: [SC, PA] });
@@ -174,33 +178,33 @@ describe("ME-04-ROT-3: relevo de emergencia sin nadie que declare el rol del exc
     expect(emergencies).toHaveLength(1);
     const sub = emergencies[0]!;
     // Todos los inscritos que declaran el rol 5 están excluidos.
-    const declare5 = Object.entries(gameInput.teams[0].declaredRoles).filter(([, roles]) => roles.includes(5)).map(([id]) => id);
+    const declare5 = Object.entries(gameInput.teams[1].declaredRoles).filter(([, roles]) => roles.includes(5)).map(([id]) => id);
     expect(declare5.length).toBeGreaterThan(1);
-    expect(declare5).toContain("SC11");
+    expect(declare5).toContain("PA11");
     for (const id of declare5) expect(r.box.players[id]!.pf).toBe(5);
-    // Asignación elegida: entra O4 [4] como pívot (único fuera de rol), sin reajustes en pista.
-    expect(sub).toMatchObject({ teamId: SC, outId: "SC11", inId: "O4", role: 5, reason: "exclusion" });
+    // Asignación elegida: entra D4 [4] como pívot (único fuera de rol), sin reajustes en pista.
+    expect(sub).toMatchObject({ teamId: PA, outId: "PA11", inId: "D4", role: 5, reason: "exclusion" });
     expect(sub.emergency!.moves).toEqual([]);
-    expect(sub.emergency!.outOfRole).toEqual([expect.objectContaining({ playerId: "O4", role: 5, declaredRoles: [4] })]);
+    expect(sub.emergency!.outOfRole).toEqual([expect.objectContaining({ playerId: "D4", role: 5, declaredRoles: [4] })]);
     expect(sub.emergency!.declaredKept).toBe(4);
     expect(sub.emergency!.decidedBy).toBe("capacidad_pertinente");
     // La capacidad pertinente del puesto excepcional es la del rol 5 con sus atributos reales.
-    const o4 = SIERRA_CLARA.players.find((p) => p.id === "O4")!;
-    expect(sub.emergency!.outOfRole[0]!.fit).toBeCloseTo(emergencyRoleFit(o4.attributes, 5), 9);
+    const d4 = PUERTO_AMBAR.players.find((p) => p.id === "D4")!;
+    expect(sub.emergency!.outOfRole[0]!.fit).toBeCloseTo(emergencyRoleFit(d4.attributes, 5), 9);
 
     // Hecho y decisión auditada (ME-07B-AUDIT-1) con quién, alternativas y criterio.
     const fact = r.events.find((e) => e.kind === "substitution" && e.atMs === sub.atMs && e.text.includes("ME-04-ROT-3"));
-    expect(fact?.text).toContain("entra O4 como rol 5");
-    const decision = r.audit!.decisions.find((d) => d.point === "sustitucion" && d.chosenOptionId === "O4" && d.factLink?.atMs === sub.atMs);
+    expect(fact?.text).toContain("entra D4 como rol 5");
+    const decision = r.audit!.decisions.find((d) => d.point === "sustitucion" && d.chosenOptionId === "D4" && d.factLink?.atMs === sub.atMs);
     expect(decision).toBeDefined();
     expect(decision!.factLink).toEqual({ atMs: sub.atMs, kind: "substitution" });
     expect(decision!.note).toContain("capacidad_pertinente");
-    expect(decision!.options.find((o) => o.id === "O4")).toMatchObject({ status: "elegida", reasonCode: "emergency_fill_chosen", values: expect.objectContaining({ declaredKept: 4, outOfRole: "O4:5:[4]" }) });
+    expect(decision!.options.find((o) => o.id === "D4")).toMatchObject({ status: "elegida", reasonCode: "emergency_fill_chosen", values: expect.objectContaining({ declaredKept: 4, outOfRole: "D4:5:[4]" }) });
     expect(decision!.options.filter((o) => o.status !== "elegida").every((o) => o.reasonCode === "emergency_fill_lower_role_fit")).toBe(true);
     for (const out of declare5) expect(decision!.options.map((o) => o.id)).not.toContain(out);
     expect(decision!.rngStateBefore).toBeNull();
-    const after = r.events.find((e) => e.atMs >= sub.atMs && e.kind !== "substitution" && e.onCourtIds.includes("O4"));
-    expect(after?.onCourtIds).not.toContain("SC11");
+    const after = r.events.find((e) => e.atMs >= sub.atMs && e.kind !== "substitution" && e.onCourtIds.includes("D4"));
+    expect(after?.onCourtIds).not.toContain("PA11");
 
     // Ningún excluido vuelve a entrar ni actúa después de su exclusión.
     for (const out of declare5) {
@@ -209,8 +213,8 @@ describe("ME-04-ROT-3: relevo de emergencia sin nadie que declare el rol del exc
       expect(r.events.some((e) => e.atMs > dq.atMs && e.kind !== "substitution" && e.actors.includes(out))).toBe(false);
     }
     // No se tocan roles persistidos ni atributos: la entrada es la misma.
-    expect(JSON.stringify(home)).toBe(homeBefore);
-    expect(JSON.stringify(gameInput.teams[0].declaredRoles)).toBe(rolesBefore);
-    expect(gameInput.teams[0].declaredRoles.O4).toEqual([4]);
+    expect(JSON.stringify(away)).toBe(awayBefore);
+    expect(JSON.stringify(gameInput.teams[1].declaredRoles)).toBe(rolesBefore);
+    expect(gameInput.teams[1].declaredRoles.D4).toEqual([4]);
   });
 });

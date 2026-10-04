@@ -2,7 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import { playFullGame } from "./play-full-game";
 import { buildGameInput, type GameInput, type GameResult } from "./game-model";
 import { buildAuditExport } from "../audit/build-audit-export";
-import { projectOrganizedOpportunity } from "../simulation/possession-core";
+import { computePossessionCore, projectOrganizedOpportunity } from "../simulation/possession-core";
+import { getScenario } from "../lab/scenario";
+import { createResumableRandom } from "../random/seeded-random";
+import { createRecordingAuditCollector } from "../audit/audit-collector";
 import { DELAY_TARGETS } from "../lab/lab-0-10-parameters";
 import { SIERRA_CLARA, PUERTO_AMBAR } from "../players/lab-roster-fixture";
 import { ACTIVE_ATTRIBUTE_IDS, RATING_MAX, type Rating } from "../players/attribute";
@@ -49,11 +52,13 @@ function natural(seed: number, sierra: readonly PlayerProfile[]): { gi: GameInpu
 }
 
 describe("ME-07B v2 §2.2 (v2-6): la ficha se elige por valor y Delay compite en auto", () => {
-  // Foto Sierra +3, semilla 86 (de las 20): Puerto ataca contra una defensa
-  // mejorada que concede menos al bloqueo y Delay llega a valer más que las tres
-  // colocaciones del bloqueo (33 veces en ese partido; es el único de los 20 en
-  // que ocurre, ver `scripts/me07b-v2-placement-gap.ts`).
-  const { gi, r } = natural(86, plus(SIERRA_CLARA.players, 3));
+  // Foto Sierra +3 (de las 20): Puerto ataca contra una defensa mejorada que
+  // concede menos al bloqueo y Delay llega a valer más que las tres colocaciones
+  // del bloqueo. Sesión v2-6: semilla 86 (33 veces, único partido de los 20).
+  // Sesión v2-7 (la mano a mano central se valora con la oposición real de su
+  // ejecución y cambia la secuencia natural): semilla 88 (9 veces; en los 20,
+  // también seed 96 Sierra 8 y +5 104 Puerto 15, ver `scripts/me07b-v2-handoff-delay-gap.ts`).
+  const { gi, r } = natural(88, plus(SIERRA_CLARA.players, 3));
   const team = new Map(r.possessions.map((p) => [p.index, p.teamId]));
   const placements = r.audit!.decisions.filter((d) => d.point === "colocacion_bloqueo" && d.options.length > 1);
 
@@ -124,26 +129,45 @@ describe("ME-07B v2 §2.2 (v2-6): Delay se valora frente a lo visto ante la entr
 });
 
 describe("ME-07B v2 §2.4 (v2-6): receptor del roll sin reloj", () => {
-  // Estado raro (1 de 1.200 partidos drop/drop, semillas 1–1200): era la 1134 y, con el plan elegido por valor dentro de la central, la 597.
-  it("si el reloj de lanzamiento expira antes de cualquier vía del receptor, se audita su lectura sin opción y hay violación (semilla 597, drop/drop)", () => {
-    const gi = buildGameInput({
-      seed: 597,
-      auditEnabled: true,
-      home: { id: SIERRA_CLARA.id, name: SIERRA_CLARA.name, players: SIERRA_CLARA.players, priority: "proteger_balance", coverage: "drop" },
-      away: { id: PUERTO_AMBAR.id, name: PUERTO_AMBAR.name, players: PUERTO_AMBAR.players, priority: "proteger_balance", coverage: "drop" },
-    });
-    const r = playFullGame(gi);
-    expect(r.stop.cause).toBe("final");
-    const d = r.audit!.decisions.find((x) => x.point === "lectura_segunda_o5" && x.chosenOptionId === null)!;
+  // Estado raro (1 de 1.200 partidos drop/drop, semillas 1–1200): era la 1134 y, con el plan elegido por
+  // valor dentro de la central, la 597. Sesión v2-7 (la lectura de la mano a mano con la oposición real
+  // cambia la secuencia natural): ninguna semilla de 1–3000 drop/drop lo alcanza, así que se construye:
+  // bloqueo directo en la geometría del escenario, O1 sin tiro propio (T01–T04 = 1, así la primera lectura
+  // es el pase al roll) y 2,00 s de reloj; con la semilla 1 la recepción es incómoda (LAB-0.1) y el retraso
+  // deja todas las vías del receptor fuera de reloj aunque la proyección del pase las viera dentro.
+  it("si el reloj de lanzamiento expira antes de cualquier vía del receptor, se audita su lectura sin opción y hay violación (caso construido)", () => {
+    const scenario = getScenario("drop_con_ayuda");
+    const start: Record<string, { x: number; y: number }> = {};
+    for (const s of [...scenario.offense, ...scenario.defense]) start[s.playerId] = s.initialPosition;
+    const offense = SIERRA_CLARA.players.map((p) => (p.id === "O1" ? { ...p, attributes: { ...p.attributes, T01: 1, T02: 1, T03: 1, T04: 1 } } : p)) as PlayerProfile[];
+    const audit = createRecordingAuditCollector();
+    const core = computePossessionCore(
+      { scenarioId: "drop_con_ayuda", coverage: "drop", seed: 1, rulesetVersion: "FIBA-2026", labParametersVersion: "LAB-0.3", offensePlayers: offense, defensePlayers: PUERTO_AMBAR.players, offensivePlan: "bloqueo_directo" },
+      {
+        audit,
+        trackPositionHistory: true,
+        linked: {
+          binding: Object.fromEntries(Object.keys(start).map((k) => [k, k])),
+          startPositions: start,
+          shotClockMs: 2_000,
+          gameClockMs: 400_000,
+          rng: createResumableRandom(1),
+          attackingPriority: "proteger_balance",
+          entry: { kind: "organized_set" },
+          rules: { deferFreeThrows: true, ordinaryFouls: true, secondEntryAllowed: true },
+        },
+      },
+    );
+    const decisions = audit.snapshot().decisions;
+    expect(decisions.find((x) => x.point === "lectura_bloqueo_o1")!.chosenOptionId).toBe("pase_o5");
+    const d = decisions.find((x) => x.point === "lectura_segunda_o5" && x.chosenOptionId === null)!;
     expect(d).toBeDefined();
     for (const o of d.options) {
       expect(o.reasonCode).toBe("receiver_option_not_viable");
       if (typeof o.values!.readySeconds === "number") expect(o.values!.readySeconds).toBeGreaterThan(o.values!.shotClockSeconds as number);
     }
-    const after = r.events.filter((e) => e.possessionIndex === d.possessionIndex && e.atMs >= d.atMs);
-    const violation = after.find((e) => e.kind === "shot_clock_violation")!;
-    expect(violation).toBeDefined();
-    expect(after.some((e) => e.kind === "field_goal_attempt" && e.atMs <= violation.atMs)).toBe(false);
-    expect(buildAuditExport(gi, r, { exportedAt: "test" }).result.reconciliation.filter((c) => !c.ok)).toEqual([]);
+    expect(core.terminal.kind).toBe("shot_clock_violation");
+    expect(core.timeline.some((e) => e.kind === "shot_clock_violation")).toBe(true);
+    expect(core.timeline.some((e) => e.kind === "field_goal_attempt")).toBe(false);
   });
 });
