@@ -1057,3 +1057,67 @@ npx tsx scripts/me07b-v2-handoff-delay-gap.ts --directed --seeds 1-20
 ```
 Siguiente paso: las decisiones de Dennis (geometría de la mano a mano;
 aprendizaje por ficha); después, el resto de §4–§7.
+
+### Sesión v2-8 — 2026-10-04
+
+**Base:** `86a2997`; rama `claude/me-07b-v2-capitulo-tactico`, **PR #11 Draft**
+(no se fusiona ni se marca Ready). Decisión de Dennis para esta ronda
+(literal, también en `analysis/ME-07B-v2-mano-a-mano-v2-8.md`): «DECISIÓN DE
+DISEÑO: autorizo el rediseño acotado de la mano a mano central. En la entrega
+de O5 a O2, el cuerpo de O5 debe poder actuar como pantalla real sobre D2. La
+ventaja debe depender de la posición y llegada de ambos atacantes, calidad de
+la pantalla, trayectoria y capacidades de D2, y ayuda de D5. La defensa debe
+poder superar, negar o contener la acción y obligar al atacante a leer otra
+salida o reorganizarse. Un triple o una penetración solo existen si los
+movimientos crean esa ventana de verdad. No separes artificialmente al
+defensor, no regales oposición cero, no aumentes porcentajes de acierto para
+hacer competitiva la jugada y no impongas cuotas de familias.» Después:
+seguir con el resto del encargo v2 y la matriz sin preguntar «¿sigo?».
+
+**Resultado en una línea: la mano a mano central compite de verdad (familia
+bloqueo 99,3 % → 54,7 % en la foto de las 20; proyección = ejecución en 2.319
+usos dirigidos) y aparece la siguiente causa medida: el comparador no
+proyecta el rebote ofensivo y el bloqueo rinde +0,12 por encima de lo que
+promete.**
+
+#### Hecho y verificado (con commits)
+1. `09cef76` — **rediseño** (`runHandoffPhase`, detalle en `ACTIONS.md`): codo
+   real del lado fuerte; entrega en el hombro alto de O5; pantalla del cuerpo
+   de O5 sobre D2 con la primitiva del bloqueo directo, sumada a la llegada de
+   D2 y solo con O5 puesto; negación de D2; respuesta de D5 a la entrega
+   (hundirse/cambiar/saltar, como Delay, observación compartida en
+   `defenseByHandoffResponse`); lectura al recibir con aro, parada, triple solo
+   detrás del arco, continuación de O5 (una sola trayectoria de quien le
+   defiende), indirecto, puerta de atrás. **Defecto encontrado:** los tiros del
+   indirecto de ME-06 se anotaban como triples desde 6,60 y 5,79 m (dentro del
+   arco); ahora el tipo lo decide la zona. Delay suma también el retraso de su
+   pantalla a la llegada de D1 (era `max`, efecto medido casi nulo).
+2. `ee43bf0` — documentación (ACTIONS, AUDIT, matriz, CHANGELOG, análisis
+   `analysis/ME-07B-v2-mano-a-mano-v2-8.md`).
+
+#### Pruebas realmente pasadas
+`npm run check` completo (lint + typecheck + **359 tests** + docs:check +
+build) en verde antes de `09cef76`. Nueva `me07b-v2-handoff-screen.test.ts`
+(bloqueador, defensor y receptor con un solo cambio; tres respuestas; D2
+niega; pantalla no puesta; sin teletransporte). Reescritas con causa
+`me07b-v2-handoff-read.test.ts` (proyección = ejecución con las tres
+respuestas) y `me06-mano-a-mano.test.ts`. Recalculadas con causa (cambia la
+secuencia natural): bocina con tiro anotado 148 → **576**, fallo sin rebote
+21 → **161**, dos prórrogas/guardián 206 → **1765** (ninguna en 1–1764),
+ROT-3 natural Puerto 74 → **Sierra 2** (O4 pasa a pívot, entra SC10), poste de
+Delay 92 → **95**; pruebas de cobertura de pantalla filtran las respuestas a
+la entrega (`coverage_not_in_card`) y la de Horns compara con la central por
+orden; la de proyección observada vuelve al fixture sin construir.
+
+#### `/lab` real (PostgreSQL 16 + Chromium, `next start`, árbol de `ee43bf0`)
+`walk-v26.cjs` y `walk-v27-dho.cjs` (scratchpad): semilla 92 todo `auto` →
+**93–111** (= dominio), `final`, 0 actas sin conciliar, familias mano a mano
+197 / bloqueo 46, respuestas hundirse 106, cambiar 73, saltar 2; semilla 92
+con mano a mano por orden en los dos → **130–103** (= dominio): 218 entregas
+(hundirse 100, cambiar 114, saltar 4: 3 negadas), lecturas aro de O2 95,
+continuación 83, triple 37, puerta de atrás 2; Sierra +3, semilla 88 →
+**154–93** (= dominio), bloqueo 179 / mano a mano 55; perfiles restaurados.
+Posesiones 101–120 consecutivas de la 92 (`me07b-v2-possession-slice.ts`):
+defensa trampa/drop/cambio con su concesión, pero la mano a mano se repite
+posesión tras posesión con la misma lectura por equipo (Sierra: triple de
+SC07 ante hundirse; Puerto: aro de PA07 ante el cambio).

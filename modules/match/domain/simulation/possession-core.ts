@@ -561,6 +561,21 @@ function redirect(ctx: CoreContext, playerId: string, departSeconds: number, arr
   ctx.positions[playerId] = to;
 }
 
+/**
+ * Sesión v2-8: registra en el historial (solo en el partido enlazado) una
+ * trayectoria que el árbol ya usa para valorar y contestar —p. ej. la
+ * retirada de D5 en el drop— sin cambiar la posición de cálculo de las
+ * comprobaciones que siguen en el mismo árbol (que parten de donde estaba al
+ * decidir). Así el rebote, el relato y la fase siguiente ven al defensor
+ * donde de verdad está.
+ */
+function recordTrajectory(ctx: CoreContext, playerId: string, departSeconds: number, arriveSeconds: number, to: Point2D): void {
+  if (!ctx.linked || !ctx.positionHistory) return;
+  const keep = ctx.positions[playerId]!;
+  redirect(ctx, playerId, departSeconds, arriveSeconds, to);
+  ctx.positions[playerId] = keep;
+}
+
 /** Velocidad de carrera sin balón o con bote (F01), reutilizada del movimiento atacante LAB-0.1. */
 function runSpeed(ctx: CoreContext, slot: string): number {
   return attackerMoveSpeedMps(player(ctx, slot).attributes.F01);
@@ -1829,6 +1844,10 @@ function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition, d1Route: S
       arrivalSeconds: d5DropArrival,
     }),
   };
+  // Sesión v2-8: esa misma trayectoria es la que D5 recorre de verdad (historial de posiciones: rebote,
+  // relato y posiciones de la fase siguiente). Antes solo valía para valorar y contestar tiros y D5 seguía,
+  // para el rebote, en su punto de drop a 4 m del aro mientras el continuador llegaba al aro.
+  recordTrajectory(ctx, "D5", d5DropArrival - distance(d5DropPos, ATTACKED_HOOP) / d5DropSpeed, d5DropArrival, ATTACKED_HOOP);
 
   function rollReceiverRead(tAct: number, help: HelpPlan | null): { options: ReceiverOption[]; contained: boolean } {
     // Contenido: D3 a contacto del receptor (tolerancia numérica del punto a contacto).
@@ -4848,6 +4867,8 @@ function runHandoffPhase(ctx: CoreContext, response: HandoffResponse): Possessio
       const continuation = () => {
         if (rollPath.waypoint) setArrival(ctx, "O5", tRollWaypoint, rollPath.waypoint, tHandoffReady);
         setArrival(ctx, "O5", tO5AtRim, ATTACKED_HOOP, tRollWaypoint);
+        // Quien defiende la continuación recorre de verdad la trayectoria con la que se valora y contesta.
+        recordTrajectory(ctx, rollGuardId, rollGuardArrival - distance(rollGuardOrigin, ATTACKED_HOOP) / rollGuardSpeed, rollGuardArrival, ATTACKED_HOOP);
         event(ctx, tHandoffReady, "ejecutado", "roll_continuation", ["O5"], "O5 entrega y continúa hacia el aro.", { rollSpot: ATTACKED_HOOP });
       };
       const withContinuation = (exec: HandlerReadOption["execute"]): HandlerReadOption["execute"] => (record) => {

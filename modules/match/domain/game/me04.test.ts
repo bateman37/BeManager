@@ -201,8 +201,9 @@ describe("ME-04 (2): bocina, tiro en el aire, reset del reloj de lanzamiento y r
     // fichas, primera lectura como frontera, Delay en `auto`) a la 560, y el plan
     // elegido por valor dentro de la central (la banda no cruza de plan) a la 540, y
     // la lectura de la mano a mano valorada con la oposición real de su ejecución (v2-7) a la 148, y
-    // el rediseño de la mano a mano central (v2-8: el cuerpo de O5 retiene a D2) a la 576 (ninguna en 1–575).
-    const r = game(576);
+    // el rediseño de la mano a mano central (v2-8: el cuerpo de O5 retiene a D2) a la 576 y la retirada de D5
+    // registrada en el historial (v2-8) a la 255 (ninguna en 1–254).
+    const r = game(255);
     const i = r.events.findIndex((e) => e.kind === "buzzer" && e.detail.shotInFlight === true);
     expect(i).toBeGreaterThan(0);
     const buzzer = r.events[i]!;
@@ -222,8 +223,8 @@ describe("ME-04 (2): bocina, tiro en el aire, reset del reloj de lanzamiento y r
     // soltado a tiempo sin rebote inventado tras la bocina final.
     // ME-07B v2 §2.1 (cierre de rebote y caída del tirador) desplaza ese
     // caso a la semilla 53, y §2.3 (defensa auto con trampa en competencia)
-    // a la 14, y §2.4 (asignación de creador/bloqueador y lectura del receptor) a la 60; §2.5 (faltas por contacto) a la 49; LAB-0.7 (bloqueo lateral, ICE) a la 69; la ficha Horns (LAB-0.8) y la proyección frente a la defensa observada (v2-4) a la 86; la elección de ficha por valor (sesión v2-6) a la 41 y el plan por valor dentro de la central (v2-6) a la 31 y la lectura de la mano a mano con la oposición real (v2-7) a la 21 y el rediseño de la mano a mano central (v2-8) a la 161.
-    const r = game(161);
+    // a la 14, y §2.4 (asignación de creador/bloqueador y lectura del receptor) a la 60; §2.5 (faltas por contacto) a la 49; LAB-0.7 (bloqueo lateral, ICE) a la 69; la ficha Horns (LAB-0.8) y la proyección frente a la defensa observada (v2-4) a la 86; la elección de ficha por valor (sesión v2-6) a la 41 y el plan por valor dentro de la central (v2-6) a la 31 y la lectura de la mano a mano con la oposición real (v2-7) a la 21 y el rediseño de la mano a mano central (v2-8) a la 161 y la retirada de D5 en el historial (v2-8) a la 31.
+    const r = game(31);
     const i = r.events.findIndex((e) => e.kind === "buzzer" && e.detail.shotInFlight === true);
     const next = r.events.slice(i + 1, i + 4).map((e) => e.kind);
     expect(next).toEqual(["field_goal_attempt", "possession_ended", "period_ended"]);
@@ -406,8 +407,8 @@ describe("ME-04 (4): sustituciones en oportunidad legal, reentrada, minutos 5× 
   it("canasta tardía en C4: solo sustituye el equipo que la recibe; también tras último libre y entre períodos", () => {
     // LAB-0.7 (bloqueo lateral, ICE): la semilla publicada ya no tiene una
     // canasta recibida en los dos últimos minutos con relevo; la 1 sí, hasta la
-    // sesión v2-6 (elección de ficha por valor): ahora la 2.
-    const r = game(2);
+    // sesión v2-6 (elección de ficha por valor): la 2, y desde la sesión v2-8 (retirada de D5 en el historial) la 1.
+    const r = game(1);
     const late = r.substitutions.filter((s) => s.window === "canasta");
     expect(late.length).toBeGreaterThan(0);
     for (const s of late) {
@@ -625,8 +626,9 @@ describe("ME-04 (6): empate → prórroga, empate en prórroga → otra; guardi�
     // la variante Horns→Spain en `auto` (LAB-0.9, v2-5) a la 1718 (ninguna en 1–1717) y la
     // elección de ficha y plan por valor con Delay en `auto` (sesión v2-6) a la 111 (ninguna en 1–110), y la
     // lectura de la mano a mano valorada con la oposición real de su ejecución (v2-7) a la 206 (ninguna en 1–205),
-    // y el rediseño de la mano a mano central (v2-8) a la 1765 (ninguna en 1–1764).
-    const r = game(1765);
+    // y el rediseño de la mano a mano central (v2-8) a la 1765, y la retirada de D5 en el historial (v2-8) a la
+    // 392 (ninguna en 1–391).
+    const r = game(392);
     expect(r.periods.map((p) => p.label)).toEqual(["C1", "C2", "C3", "C4", "Prórroga 1", "Prórroga 2"]);
     const endOf = (period: number) => r.events.find((e) => e.kind === "period_ended" && e.period === period)!;
     expect(endOf(4).score[SC]).toBe(endOf(4).score[PA]);
@@ -644,7 +646,7 @@ describe("ME-04 (6): empate → prórroga, empate en prórroga → otra; guardi�
   });
 
   it("el guardián de prórrogas señala la anomalía sin cerrar el empate ni inventar ganador", () => {
-    const r = game(1765, BASE, { maxOvertimes: 1 });
+    const r = game(392, BASE, { maxOvertimes: 1 });
     expect(r.stop.cause).toBe("guardian");
     expect(r.winnerTeamId).toBeNull();
     expect(r.finalScore[SC]).toBe(r.finalScore[PA]);
@@ -792,4 +794,6 @@ describe("ME-04 (7): regresión de ME-01/02/03 y segunda entrada del bloqueo", (
 // intencional de la mecánica deportiva del rebote, no una regresión. Otra
 // vez en §2.3: la trampa sale al preparar la pantalla (el tramo incluye
 // posesiones con trampa).
-const TRAMO_FINGERPRINT = "e09989547e1805f631bac577985e77d40d9959a96c5a1e2adccdfc1ee9c07a00";
+// Sesión v2-8: la retirada de D5 en el drop queda en el historial de posiciones (rebote, relato y posición
+// de la fase siguiente), no solo en la valoración: cambian posiciones y rebotes del tramo.
+const TRAMO_FINGERPRINT = "ee397024c4358d174ec3ad4f499e6acc2f3f2cac6977b712d27219717b904241";

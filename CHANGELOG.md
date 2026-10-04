@@ -125,6 +125,13 @@ decisiones duraderas viven en `docs/decisions/`, no aquí.
   medida en `docs/match/analysis/ME-07B-v2-comparador-v2-6.md` y scripts
   `me07b-v2-placement-gap.ts`, `me07b-v2-projection-calibration.ts` y
   `me07b-v2-possession-slice.ts`. Semillas de escenario recalculadas con causa.
+- **La retirada de D5 queda en el historial (sesión v2-8).** La trayectoria
+  única con la que el drop (y la continuación de la mano a mano) valora y
+  contesta no se registraba como movimiento: si contestaba otro defensor, para
+  el rebote D5 seguía a 4 m del aro. `recordTrajectory` la escribe sin cambiar
+  las posiciones de cálculo. Rebote ofensivo tras fallo vivo en la foto seed:
+  36 % → 26 %; familia bloqueo en la foto de las 20: 59,6 %. Huella del tramo
+  de ME-03 y semillas de escenario recalculadas con causa.
 - **Rediseño de la mano a mano central (sesión v2-8, decisión de Dennis).**
   O5 recibe en el codo alto real del lado fuerte y O2 recibe en su hombro
   alto rodeándolo; el cuerpo de O5 es pantalla real sobre D2 (T13/F05 frente a

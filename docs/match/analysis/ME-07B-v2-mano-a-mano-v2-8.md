@@ -102,7 +102,7 @@ ficha por orden proyectaba 0,461 y anotaba 0,652.
 | +5 · Sierra | 364/0 → 317/30 | 483 · 346 → 452 · 325 |
 | +5 · Puerto | 354/15 → 276/98 | 313 · 345 → 339 · 327 |
 
-**Familia bloqueo 99,3 % → 54,7 %** (2.592 de 4.738). Respuestas de la
+**Familia bloqueo 99,3 % → 54,7 %** (2.592 de 4.738; 59,6 % tras el arreglo de la sección 5). Respuestas de la
 defensa ante la mano a mano en la foto seed: hundirse 588, cambiar 503,
 saltar 415 (401 de ellas niegan la entrega). Lecturas: continuación de O5
 449, triple al recibir 266, aro de O2 390, aro de O5 con la entrega negada
@@ -123,6 +123,36 @@ central (1,092). Lo corrige en parte el aprendizaje por muestras (LAB-0.4),
 que mezcla puntos de toda la ventana. Proyectar el rebote exige una regla
 sobre quién carga y dónde cae cada tiro antes de lanzarlo: queda como
 siguiente trabajo del comparador, sin coeficiente inventado.
+
+## 5. Defecto encontrado al revisar el rebote: la retirada de D5 no quedaba en el historial
+
+Al recorrer `/lab` (semilla 92, todo `auto`) los rebotes ofensivos asegurados
+igualaban a los defensivos (37 y 37). Causa: la trayectoria única con la que
+el árbol valora y contesta la retirada de D5 —en el drop del bloqueo directo
+(preexistente) y en la continuación de la mano a mano (nuevo en esta
+sesión)— no se registraba como movimiento real. Si el tiro lo contestaba otro
+defensor (triple de O2 contestado por D2, triple de O1 por D1), para el
+rebote D5 seguía en su punto de drop, a 4 m del aro, mientras el continuador
+llegaba al aro. Ahora `recordTrajectory` la escribe en el historial del
+partido enlazado sin cambiar las posiciones de cálculo del árbol (el
+laboratorio ME-01–03 sin enlazar conserva su huella; la del tramo de ME-03
+cambia con causa).
+
+Mismas 20 semillas, antes → después de este arreglo:
+
+| Foto · equipo | OREB tras fallo de campo vivo | Familia bloqueo / mano a mano | Puntos · posesiones |
+|---|---|---|---|
+| seed · Sierra | 156/431 (36 %) → 124/468 (26 %) | 480/788 → 604/706 | 1.335 · 1.115 → 1.171 · 1.150 |
+| seed · Puerto | 173/478 (36 %) → 126/489 (26 %) | 438/856 → 743/620 | 1.309 · 1.121 → 1.362 · 1.153 |
+| +3 · Sierra | 130/228 (57 %) → 108/250 (43 %) | 394/362 → 397/376 | 893 · 620 → 858 · 635 |
+| +3 · Puerto | 89/305 (29 %) → 63/273 (23 %) | 687/12 → 527/205 | 616 · 623 → 637 · 635 |
+| +5 · Sierra | 63/127 (50 %) → 47/118 (40 %) | 317/30 → 362/9 | 452 · 325 → 504 · 348 |
+| +5 · Puerto | 46/151 (30 %) → 37/142 (26 %) | 276/98 → 304/72 | 339 · 327 → 300 · 349 |
+
+Familia bloqueo en la foto de las 20: **59,6 %** (2.937 de 4.925). El
+rebote ofensivo de la foto seed queda en el 26 % de los fallos vivos; con
+Sierra +3/+5 sigue más alto porque sus interiores mejorados ganan llegadas
+y cierres (efecto de capacidad, no de posición).
 
 ## Reproducir
 

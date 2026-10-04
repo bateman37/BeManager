@@ -146,7 +146,7 @@ describe("ME-04-ROT-3: relevo de emergencia sin nadie que declare el rol del exc
     expect(plan.unresolved).toEqual([{ outId: "A1", role: 1, kind: "menos_de_cinco", eligible: 4 }]);
   });
 
-  it("partido completo natural (semilla 2): los pívots declarados de Sierra excluidos; termina final con acta conciliada, registra quién y por qué, el excluido no vuelve y los perfiles no cambian", () => {
+  it("partido completo natural (semilla 4): los pívots declarados de Sierra excluidos; termina final con acta conciliada, registra quién y por qué, el excluido no vuelve y los perfiles no cambian", () => {
     // La semilla 39 (dos bases declarados excluidos) se verificó de punta a
     // punta en `399d8e6` (final 110–101, entra SC08 de base) y la 23 (Sierra,
     // rol 5) tras LAB-0.7; la ficha Horns (LAB-0.8) y la proyección del ataque
@@ -156,13 +156,14 @@ describe("ME-04-ROT-3: relevo de emergencia sin nadie que declare el rol del exc
     // sesión v2-6; la 9 (Sierra, rol 5) hasta la v2-6 y la 74 (Puerto, rol 5)
     // en la v2-7. Sesión v2-8 (rediseño de la mano a mano central, que cambia la
     // secuencia natural): la primera semilla de 1–400 con relevo de emergencia es
-    // la 2 (también la 23 y la 30): en Sierra se excluyen los tres que declaran el
+    // la 2 (también la 23 y la 30), y tras registrar la retirada de D5 en el historial (v2-8) la 4 (la 12 y la 23
+    // son otros dos casos de Sierra, sin reajuste en pista): en Sierra se excluyen los tres que declaran el
     // rol 5; O4 [4] pasa a pívot (reajuste en pista) y entra SC10 [3,4] como
     // ala-pívot, por capacidad pertinente (9,38 frente a 8,88 de SC08 de pívot).
     const home = structuredClone(SIERRA_CLARA.players);
     const homeBefore = JSON.stringify(home);
     const gameInput = buildGameInput({
-      seed: 2,
+      seed: 4,
       auditEnabled: true,
       home: { id: SC, name: SIERRA_CLARA.name, players: home, ...common },
       away: { id: PA, name: PUERTO_AMBAR.name, players: PUERTO_AMBAR.players, ...common },
