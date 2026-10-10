@@ -102,7 +102,7 @@ ficha por orden proyectaba 0,461 y anotaba 0,652.
 | +5 · Sierra | 364/0 → 317/30 | 483 · 346 → 452 · 325 |
 | +5 · Puerto | 354/15 → 276/98 | 313 · 345 → 339 · 327 |
 
-**Familia bloqueo 99,3 % → 54,7 %** (2.592 de 4.738; 59,6 % tras el arreglo de la sección 5). Respuestas de la
+**Familia bloqueo 99,3 % → 54,7 %** (2.592 de 4.738; 54,0 % de 4.961 tras el arreglo de la sección 5). Respuestas de la
 defensa ante la mano a mano en la foto seed: hundirse 588, cambiar 503,
 saltar 415 (401 de ellas niegan la entrega). Lecturas: continuación de O5
 449, triple al recibir 266, aro de O2 390, aro de O5 con la entrega negada
@@ -112,7 +112,7 @@ necesita pase de entrada y la carrera de O2.
 Coste de la foto de las 20 con auditoría, en serie y sin otros procesos:
 62,0 s antes del cambio y 64,5 s después.
 
-## 4. Siguiente causa medida (no corregida)
+## 4. Siguiente causa medida antes del arreglo de la sección 5 (resuelta por él)
 
 El comparador valora el **primer tiro y sus libres**; no proyecta lo que
 viene después (rebote ofensivo, segunda acción). Por orden, el bloqueo
@@ -138,21 +138,52 @@ partido enlazado sin cambiar las posiciones de cálculo del árbol (el
 laboratorio ME-01–03 sin enlazar conserva su huella; la del tramo de ME-03
 cambia con causa).
 
-Mismas 20 semillas, antes → después de este arreglo:
+Mismas 20 semillas, antes → después de este arreglo (árbol de `ab50cf1`):
 
 | Foto · equipo | OREB tras fallo de campo vivo | Familia bloqueo / mano a mano | Puntos · posesiones |
 |---|---|---|---|
-| seed · Sierra | 156/431 (36 %) → 124/468 (26 %) | 480/788 → 604/706 | 1.335 · 1.115 → 1.171 · 1.150 |
-| seed · Puerto | 173/478 (36 %) → 126/489 (26 %) | 438/856 → 743/620 | 1.309 · 1.121 → 1.362 · 1.153 |
-| +3 · Sierra | 130/228 (57 %) → 108/250 (43 %) | 394/362 → 397/376 | 893 · 620 → 858 · 635 |
-| +3 · Puerto | 89/305 (29 %) → 63/273 (23 %) | 687/12 → 527/205 | 616 · 623 → 637 · 635 |
-| +5 · Sierra | 63/127 (50 %) → 47/118 (40 %) | 317/30 → 362/9 | 452 · 325 → 504 · 348 |
-| +5 · Puerto | 46/151 (30 %) → 37/142 (26 %) | 276/98 → 304/72 | 339 · 327 → 300 · 349 |
+| seed · Sierra | 156/431 (36 %) → 150/461 (33 %) | 480/788 → 550/767 | 1.335 · 1.115 → 1.160 · 1.126 |
+| seed · Puerto | 173/478 (36 %) → 150/506 (30 %) | 438/856 → 673/702 | 1.309 · 1.121 → 1.224 · 1.126 |
+| +3 · Sierra | 130/228 (57 %) → 139/234 (59 %) | 394/362 → 314/516 | 893 · 620 → 914 · 623 |
+| +3 · Puerto | 89/305 (29 %) → 43/290 (15 %) | 687/12 → 511/173 | 616 · 623 → 551 · 622 |
+| +5 · Sierra | 63/127 (50 %) → 51/102 (50 %) | 317/30 → 374/4 | 452 · 325 → 528 · 341 |
+| +5 · Puerto | 46/151 (30 %) → 22/153 (14 %) | 276/98 → 256/121 | 339 · 327 → 284 · 342 |
 
-Familia bloqueo en la foto de las 20: **59,6 %** (2.937 de 4.925). El
-rebote ofensivo de la foto seed queda en el 26 % de los fallos vivos; con
-Sierra +3/+5 sigue más alto porque sus interiores mejorados ganan llegadas
-y cierres (efecto de capacidad, no de posición).
+Familia bloqueo en la foto de las 20: **54,0 %** (2.678 de 4.961). Con el
+fixture (foto seed) el rebote ofensivo baja de 36 % a 30–33 %. Con Sierra
++3/+5 la diferencia la marcan las capacidades: sus interiores mejorados
+ganan llegadas y cierres en los dos aros (Sierra 50–59 %, Puerto 14–15 %);
+es efecto de capacidad, sin cambio de reglas. Un valor intermedio que
+apareció mientras se probaba (mover también la posición de cálculo de D5)
+hacía desaparecer el tiro parado del manejador: se descartó por eso.
+
+### Partidos dirigidos tras el arreglo (mismas 20 semillas, `ab50cf1`)
+
+| Ficha por orden | Usos | Proyectado (colocación) | Ante la respuesta elegida | Anotado = 1.er tiro + libres + resto | Anotado − proyectado por partido |
+|---|---:|---:|---:|---|---|
+| Mano a mano central | 2.449 | 0,997 | 0,954 | 0,857 = 0,769 + 0,079 + 0,008 | −0,140 ± 0,019 (20/20 por debajo) |
+| Delay | 2.234 | 0,847 | 0,829 | — | +0,010 ± 0,026 (10/20) |
+| Bloqueo central | 2.426 | 0,917 | 0,885 | 0,910 = 0,819 + 0,048 + 0,042 | −0,005 ± 0,029 (11/20) |
+
+- **El «exceso» del bloqueo de la sección 2 (+0,12) era el defecto de la
+  sección 5**: con D5 retirándose de verdad, su resto baja de 0,135 a 0,042
+  y el bloqueo rinde lo proyectado. La causa abierta de la sección 4 queda
+  así resuelta por la geometría, sin proyectar el rebote.
+- **La mano a mano por orden queda por debajo** y se descompone: 0,043 es la
+  respuesta de D5, que la defensa elige por menor concesión y el ataque solo
+  conoce por frecuencia (0,997 → 0,954, por diseño); 0,024 la banda de empate
+  por tendencia de tiro (0,955 → 0,931); el primer tiro anota 0,848 con
+  libres frente a 0,908 esperados (−0,06: 60 tapones, ≈ −0,025 por uso, que
+  ninguna lectura valora en ninguna ficha; el resto, unas 1,5 desviaciones
+  típicas); y el resto pasa de 0,047 a 0,008 porque D5 ya no deja el rebote
+  al continuador. En `auto` (foto de las 20, 2.280 usos) proyecta 0,934 y
+  anota 0,950; su primer tiro con libres rinde 0,944 frente a 0,946
+  esperados. El bloqueo central en `auto` (1.638 usos) anota 0,818 de primer
+  tiro con libres frente a 0,882 esperados (≈ 2,5 desviaciones típicas por
+  debajo, sin mecanismo identificado; por orden rinde lo esperado):
+  seguimiento en la próxima medición, sin conclusión.
+- **Pendiente medido:** el riesgo de tapón no entra en el valor de ninguna
+  lectura (`blockDeflectionProbability` solo en la resolución).
 
 ## Reproducir
 

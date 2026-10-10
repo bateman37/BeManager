@@ -130,7 +130,7 @@ decisiones duraderas viven en `docs/decisions/`, no aquí.
   contesta no se registraba como movimiento: si contestaba otro defensor, para
   el rebote D5 seguía a 4 m del aro. `recordTrajectory` la escribe sin cambiar
   las posiciones de cálculo. Rebote ofensivo tras fallo vivo en la foto seed:
-  36 % → 26 %; familia bloqueo en la foto de las 20: 59,6 %. Huella del tramo
+  36 % → 30–33 %; familia bloqueo en la foto de las 20: 54,0 %. Huella del tramo
   de ME-03 y semillas de escenario recalculadas con causa.
 - **Rediseño de la mano a mano central (sesión v2-8, decisión de Dennis).**
   O5 recibe en el codo alto real del lado fuerte y O2 recibe en su hombro
