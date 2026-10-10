@@ -76,6 +76,15 @@ por defecto `guardar_espacio`), ambos independientes de `coverage` y del
 escenario: la misma disposición admite las dos familias ofensivas y
 cualquier combinación de cobertura/orden (ver `ACTIONS.md`).
 
+**ME-07B v2 (LAB-0.7):** `GameTeamInput.screenPlacement`
+(`"auto" | "central" | "lateral"`, por defecto `auto`) y
+`MatchInput.screenPlacement` (`"central" | "lateral"`, por defecto
+`central`): la colocación del bloqueo directo de cada acción organizada,
+con su propia disposición (`LATERAL_PNR_TARGETS`) y continuación; la mano
+a mano solo desde la central. `coverage` admite además `a_la_altura`.
+Las acciones organizadas se describen como fichas de libro en
+`domain/tactics/playbook-card.ts` (§3; ver `ACTIONS.md`).
+
 **ME-07A:** `coverage` y `offBallDefensiveCall` admiten `"auto"` (ver
 `ACTIONS.md`, resuelto de forma pura antes del árbol); `GameTeamInput`
 añade `creationPriority` (`"equilibrado" | "buscar_aro" | "buscar_triple"`,
@@ -125,7 +134,7 @@ tiempo avanza de hecho en hecho.
   equipo (copia profunda), cinco titulares en orden de rol, roles
   funcionales declarados (`players/functional-roles.ts`), prioridad tras tiro
   y **cobertura de cada equipo**, semilla y versiones (`FIBA-2026`,
-  `LAB-0.2`, `ME-04-GAME-1`, `ME-04-JUMP-1`, `ME-04-ROT-1`). Empieza 0–0, C1
+  `LAB-0.2`, `ME-04-GAME-1`, `ME-04-JUMP-1`, `ME-04-ROT-3`). Empieza 0–0, C1
   10:00, con el salto inicial; no reutiliza la entrada 7:12/18 s del tramo.
 - **Estado del partido:** período, sentido de ataque de cada equipo, flecha
   de alternancia, control/derecho a saque/balón suelto, relojes (partido,

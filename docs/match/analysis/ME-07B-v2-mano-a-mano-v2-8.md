@@ -1,0 +1,195 @@
+# ME-07B v2 — rediseño de la mano a mano central: el cuerpo de O5 como pantalla real (sesión v2-8)
+
+**Estado:** ACTIVE (medición fechada; no se reescribe)
+**Es fuente de verdad para:** las cifras de la sesión v2-8 sobre el rediseño acotado de la mano a mano central (pruebas de un solo cambio, proyección frente a ejecución, mismas 20 semillas y partidos dirigidos) y la causa medida que queda abierta en la elección de familia.
+**Debe leerse cuando:** se toque la entrega en mano (central o Delay), la respuesta de D5 a la entrega o la comparación entre familias en `auto`.
+**No cubre:** el árbol completo de la entrega (ver `docs/match/ACTIONS.md`) ni las mediciones anteriores (`ME-07B-v2-mano-a-mano-delay-v2-7.md`).
+**Documentos relacionados:** `ME-07B-v2-mano-a-mano-delay-v2-7.md`, `ME-07B-v2-foto-basal-20.md`, `docs/match/TACTICAL-MATRIX.md`, `docs/prompts/implementation/ME-07B-PROGRESS.md` (sesión v2-8).
+**Última actualización:** 2026-10-04 (ME-07B v2, sesión v2-8).
+
+## Decisión de Dennis (literal)
+
+> «DECISIÓN DE DISEÑO: autorizo el rediseño acotado de la mano a mano central.
+> En la entrega de O5 a O2, el cuerpo de O5 debe poder actuar como pantalla
+> real sobre D2. La ventaja debe depender de la posición y llegada de ambos
+> atacantes, calidad de la pantalla, trayectoria y capacidades de D2, y ayuda
+> de D5. La defensa debe poder superar, negar o contener la acción y obligar
+> al atacante a leer otra salida o reorganizarse. Un triple o una penetración
+> solo existen si los movimientos crean esa ventana de verdad. No separes
+> artificialmente al defensor, no regales oposición cero, no aumentes
+> porcentajes de acierto para hacer competitiva la jugada y no impongas cuotas
+> de familias.»
+
+## Qué se cambió (sin coeficientes nuevos)
+
+Detalle en `ACTIONS.md` («Segunda familia posicional»). Resumen:
+
+1. **Punto de entrega.** ME-06 llamaba «codo alto» al centro de la línea de
+   tiros libres. Ahora O5 recibe en el codo real del lado fuerte (semianchura
+   FIBA de la zona) y la entrega es en su hombro alto, a contacto (7,0 m del
+   aro, detrás del arco). O2 rodea a O5 hasta ese hombro y sale por el otro.
+2. **Pantalla del cuerpo de O5 sobre D2:** la misma primitiva del bloqueo
+   directo (`screenInterceptDelaySeconds` T13/F05 frente a T16, peso),
+   **sumada** a la llegada de D2 al hombro de contacto, solo si O5 está
+   puesto (`SCREEN_SET_AFTER_ARRIVAL_SECONDS`). D2 sigue a O2 con su
+   reconocimiento (M01/M05), velocidad (F04) y llegada perimetral (T22); si
+   llega antes que O2 al punto, la entrega queda negada.
+3. **Respuesta de D5 a la entrega** (las tres de Delay: hundirse, cambiar,
+   saltar), elegida por menor concesión y lo visto ante entregas. Antes la
+   defensa elegía una cobertura de pantalla que la entrega solo consultaba
+   para la trampa.
+4. **Lectura al recibir** (ya no espera al indirecto) con vías nuevas:
+   parada de O2, triple al recibir (solo detrás del arco), continuación de O5
+   al aro tras entregar (con una sola trayectoria de retirada de quien le
+   defiende, como D5 en el drop del bloqueo), puerta de atrás de O2 con la
+   entrega negada.
+5. **Tipo de tiro del indirecto por su zona real.** Los puntos de ME-06
+   (`WEAK_SIDE_CUT_SPOT` 6,60 m, `WEAK_SIDE_SCREEN_SPOT` 5,79 m) están dentro
+   del arco; hasta v2-8 se anotaban **tres** puntos. Ahora son tiros medios.
+6. **Delay** usa la misma suma del retraso (antes `max(llegada, entrega +
+   retraso)`: a un D1 tardío la pantalla no le costaba nada). Efecto medido
+   casi nulo (proyección dirigida 0,841 → 0,843).
+
+## 1. Pruebas de un solo cambio (misma geometría del escenario)
+
+`me07b-v2-handoff-screen.test.ts` (7 casos), sobre el motor real:
+
+| Cambio único | Intermedio que cambia | Desenlace de la lectura |
+|---|---|---|
+| Bloqueador O5 T13/F05 1 → 15 (D2 lento, F04 3) | retraso 0,06 → 0,43 s; D2 se libera más tarde | parada de O2: oposición 0,5 → 0; aro y triple al recibir sin cambio (sin bono global) |
+| Defensor D2 F04/T16 15 → 1 | llega al hombro de O5 1,34 → 1,91 s; se libera 1,94 → 2,58 s | parada de O2: 0,5 → 0 |
+| Receptor O2 F01 1 → 15 | llega a la entrega 2,02 → 1,33 s | aro: oposición 1 → 0,5 y pasa a ser la vía elegida |
+| Respuesta de D5 hundirse / cambiar / saltar | entrega completada / completada con cambio que persiste / negada | continuación de O5 / aro contra el pívot / O5 se la queda: tres primeras decisiones distintas |
+| D2 por delante de O2 | llega antes al punto (0,79 frente a 1,52 s) | entrega negada, O5 lee aro, puerta de atrás, indirecto o salida |
+| O5 llega tarde y entrega al recibir | pantalla no puesta: retraso 0 | D2 sigue a O2 sin coste de contacto |
+
+Invariante: ningún tramo de D2 supera su velocidad (con el margen T22).
+
+**Lo que la geometría no permite (y se deja así):** el triple al recibir en
+el hombro alto lo contesta a medias un D2 retenido en el hombro de contacto
+(0,99 m del tirador frente a un alcance de 1,4–1,5 m): la calidad de la
+pantalla no lo convierte en un triple libre. Libre solo si D2 no ha llegado
+aún al hombro al soltar.
+
+## 2. Proyección frente a ejecución (misma regla que v2-7)
+
+`me07b-v2-handoff-read.test.ts` (reescrita): con las tres respuestas, las dos
+órdenes sin balón y 25 semillas, el valor de la vía elegida es puntos × la
+probabilidad que usa el tiro en todos los casos con recepción limpia (≥ 100).
+
+Partidos dirigidos (`me07b-v2-handoff-delay-gap.ts --directed --seeds 1-20`):
+
+| Ficha por orden | Usos | Proyectado (familia) | Anotado = 1.er tiro + libres + resto | Anotado − proyectado por partido |
+|---|---:|---:|---|---|
+| Mano a mano central | 2.319 | 0,998 | 1,006 = 0,860 + 0,100 + 0,047 | +0,010 ± 0,025 (9/20 por debajo) |
+| Delay (tras alinear la pantalla) | 2.177 | 0,843 | 0,802 = 0,653 + 0,126 + 0,023 | −0,040 ± 0,018 (12/20) |
+| Bloqueo central | 2.229 | 0,917 | 1,039 = 0,816 + 0,088 + **0,135** | **+0,123 ± 0,027 (2/20)** |
+
+Mano a mano: oposición supuesta = usada en 2.011 de 2.019 primeros tiros a
+0,5 (las 8 restantes son recepciones con control incómodo). En v2-7 la misma
+ficha por orden proyectaba 0,461 y anotaba 0,652.
+
+## 3. Mismas 20 semillas (todo `auto`)
+
+`scripts/me07b-v2-baseline-20.ts`; 20/20 `final` y actas conciliadas.
+
+| Foto · equipo | Familia bloqueo / mano a mano (v2-7 → v2-8) | Puntos · posesiones (v2-7 → v2-8) |
+|---|---|---|
+| seed · Sierra | 1.286/8 → 480/788 | 1.325 · 1.201 → 1.335 · 1.115 |
+| seed · Puerto | 1.285/1 → 438/856 | 1.296 · 1.203 → 1.309 · 1.121 |
+| +3 · Sierra | 702/0 → 394/362 | 934 · 668 → 893 · 620 |
+| +3 · Puerto | 713/9 → 687/12 | 633 · 669 → 616 · 623 |
+| +5 · Sierra | 364/0 → 317/30 | 483 · 346 → 452 · 325 |
+| +5 · Puerto | 354/15 → 276/98 | 313 · 345 → 339 · 327 |
+
+**Familia bloqueo 99,3 % → 54,7 %** (2.592 de 4.738; 54,0 % de 4.961 tras el arreglo de la sección 5). Respuestas de la
+defensa ante la mano a mano en la foto seed: hundirse 588, cambiar 503,
+saltar 415 (401 de ellas niegan la entrega). Lecturas: continuación de O5
+449, triple al recibir 266, aro de O2 390, aro de O5 con la entrega negada
+303, puerta de atrás 98. Más tiempo por posesión (11,6 → 12,3 s): la entrega
+necesita pase de entrada y la carrera de O2.
+
+Coste de la foto de las 20 con auditoría, en serie y sin otros procesos:
+62,0 s antes del cambio y 64,5 s después.
+
+## 4. Siguiente causa medida antes del arreglo de la sección 5 (resuelta por él)
+
+El comparador valora el **primer tiro y sus libres**; no proyecta lo que
+viene después (rebote ofensivo, segunda acción). Por orden, el bloqueo
+central anota 0,135 por uso en ese «resto» y la mano a mano 0,047, así que
+el bloqueo rinde +0,12 por encima de su proyección de forma sistemática y en
+la foto seed `auto` elige más la mano a mano (0,976 por uso) que el bloqueo
+central (1,092). Lo corrige en parte el aprendizaje por muestras (LAB-0.4),
+que mezcla puntos de toda la ventana. Proyectar el rebote exige una regla
+sobre quién carga y dónde cae cada tiro antes de lanzarlo: queda como
+siguiente trabajo del comparador, sin coeficiente inventado.
+
+## 5. Defecto encontrado al revisar el rebote: la retirada de D5 no quedaba en el historial
+
+Al recorrer `/lab` (semilla 92, todo `auto`) los rebotes ofensivos asegurados
+igualaban a los defensivos (37 y 37). Causa: la trayectoria única con la que
+el árbol valora y contesta la retirada de D5 —en el drop del bloqueo directo
+(preexistente) y en la continuación de la mano a mano (nuevo en esta
+sesión)— no se registraba como movimiento real. Si el tiro lo contestaba otro
+defensor (triple de O2 contestado por D2, triple de O1 por D1), para el
+rebote D5 seguía en su punto de drop, a 4 m del aro, mientras el continuador
+llegaba al aro. Ahora `recordTrajectory` la escribe en el historial del
+partido enlazado sin cambiar las posiciones de cálculo del árbol (el
+laboratorio ME-01–03 sin enlazar conserva su huella; la del tramo de ME-03
+cambia con causa).
+
+Mismas 20 semillas, antes → después de este arreglo (árbol de `ab50cf1`):
+
+| Foto · equipo | OREB tras fallo de campo vivo | Familia bloqueo / mano a mano | Puntos · posesiones |
+|---|---|---|---|
+| seed · Sierra | 156/431 (36 %) → 150/461 (33 %) | 480/788 → 550/767 | 1.335 · 1.115 → 1.160 · 1.126 |
+| seed · Puerto | 173/478 (36 %) → 150/506 (30 %) | 438/856 → 673/702 | 1.309 · 1.121 → 1.224 · 1.126 |
+| +3 · Sierra | 130/228 (57 %) → 139/234 (59 %) | 394/362 → 314/516 | 893 · 620 → 914 · 623 |
+| +3 · Puerto | 89/305 (29 %) → 43/290 (15 %) | 687/12 → 511/173 | 616 · 623 → 551 · 622 |
+| +5 · Sierra | 63/127 (50 %) → 51/102 (50 %) | 317/30 → 374/4 | 452 · 325 → 528 · 341 |
+| +5 · Puerto | 46/151 (30 %) → 22/153 (14 %) | 276/98 → 256/121 | 339 · 327 → 284 · 342 |
+
+Familia bloqueo en la foto de las 20: **54,0 %** (2.678 de 4.961). Con el
+fixture (foto seed) el rebote ofensivo baja de 36 % a 30–33 %. Con Sierra
++3/+5 la diferencia la marcan las capacidades: sus interiores mejorados
+ganan llegadas y cierres en los dos aros (Sierra 50–59 %, Puerto 14–15 %);
+es efecto de capacidad, sin cambio de reglas. Un valor intermedio que
+apareció mientras se probaba (mover también la posición de cálculo de D5)
+hacía desaparecer el tiro parado del manejador: se descartó por eso.
+
+### Partidos dirigidos tras el arreglo (mismas 20 semillas, `ab50cf1`)
+
+| Ficha por orden | Usos | Proyectado (colocación) | Ante la respuesta elegida | Anotado = 1.er tiro + libres + resto | Anotado − proyectado por partido |
+|---|---:|---:|---:|---|---|
+| Mano a mano central | 2.449 | 0,997 | 0,954 | 0,857 = 0,769 + 0,079 + 0,008 | −0,140 ± 0,019 (20/20 por debajo) |
+| Delay | 2.234 | 0,847 | 0,829 | — | +0,010 ± 0,026 (10/20) |
+| Bloqueo central | 2.426 | 0,917 | 0,885 | 0,910 = 0,819 + 0,048 + 0,042 | −0,005 ± 0,029 (11/20) |
+
+- **El «exceso» del bloqueo de la sección 2 (+0,12) era el defecto de la
+  sección 5**: con D5 retirándose de verdad, su resto baja de 0,135 a 0,042
+  y el bloqueo rinde lo proyectado. La causa abierta de la sección 4 queda
+  así resuelta por la geometría, sin proyectar el rebote.
+- **La mano a mano por orden queda por debajo** y se descompone: 0,043 es la
+  respuesta de D5, que la defensa elige por menor concesión y el ataque solo
+  conoce por frecuencia (0,997 → 0,954, por diseño); 0,024 la banda de empate
+  por tendencia de tiro (0,955 → 0,931); el primer tiro anota 0,848 con
+  libres frente a 0,908 esperados (−0,06: 60 tapones, ≈ −0,025 por uso, que
+  ninguna lectura valora en ninguna ficha; el resto, unas 1,5 desviaciones
+  típicas); y el resto pasa de 0,047 a 0,008 porque D5 ya no deja el rebote
+  al continuador. En `auto` (foto de las 20, 2.280 usos) proyecta 0,934 y
+  anota 0,950; su primer tiro con libres rinde 0,944 frente a 0,946
+  esperados. El bloqueo central en `auto` (1.638 usos) anota 0,818 de primer
+  tiro con libres frente a 0,882 esperados (≈ 2,5 desviaciones típicas por
+  debajo, sin mecanismo identificado; por orden rinde lo esperado):
+  seguimiento en la próxima medición, sin conclusión.
+- **Pendiente medido:** el riesgo de tapón no entra en el valor de ninguna
+  lectura (`blockDeflectionProbability` solo en la resolución).
+
+## Reproducir
+
+```bash
+npx vitest run modules/match/domain/game/me07b-v2-handoff-screen.test.ts modules/match/domain/game/me07b-v2-handoff-read.test.ts
+npx tsx scripts/me07b-v2-baseline-20.ts
+npx tsx scripts/me07b-v2-handoff-delay-gap.ts --photos
+npx tsx scripts/me07b-v2-handoff-delay-gap.ts --directed --seeds 1-20
+```

@@ -8,7 +8,7 @@
 import type { GameInput, GameResult } from "../game/game-model";
 import type { PhaseEntry } from "../sequence/tramo-model";
 import { reconcileBoxScore, type ReconciliationCheck } from "../game/box-score";
-import type { AuditCoverageGap, AuditDecisionRecord } from "./audit-types";
+import type { AuditCoverageGap, AuditDecisionRecord, AuditFactLink } from "./audit-types";
 import { LAB_ROSTER_FIXTURE } from "../players/lab-roster-fixture";
 import type { PlayerProfile } from "../players/player-profile";
 
@@ -19,7 +19,9 @@ import type { PlayerProfile } from "../players/player-profile";
  * no reinterpreta ni reescribe un `.json` ya exportado con
  * `"ME-06-AUDIT-1"`.
  */
-export const AUDIT_SCHEMA_VERSION = "ME-07A-AUDIT-1";
+// ME-07B v2 §6: nuevo punto `disputa_rebote` (llegada bruta/efectiva y
+// cierres con T19/F05 del cerrador). No reinterpreta `ME-07A-AUDIT-1`.
+export const AUDIT_SCHEMA_VERSION = "ME-07B-AUDIT-1";
 
 export interface AuditExportRun {
   readonly schemaVersion: typeof AUDIT_SCHEMA_VERSION;
@@ -76,6 +78,11 @@ export interface AuditExportTeam {
   readonly offBallDefensiveCall: string;
   /** ME-07A §3.1: prioridad de creación de este equipo. */
   readonly creationPriority: string;
+  /** ME-07B v2 §4 (LAB-0.7): colocación del bloqueo directo pedida (auto, central o lateral). */
+  readonly screenPlacement: string;
+  /** ME-07B v2 §4 (LAB-0.9): variante encadenada pedida al atacar y respuesta al bloqueo ciego al defender. */
+  readonly chainedVariant: string;
+  readonly backScreenCall: string;
   readonly roster: readonly AuditExportTeamPlayer[];
   /**
    * Huella estable de la foto efectiva de este equipo (ME-06 §5): deriva
@@ -172,6 +179,37 @@ export interface AuditExportFamilyUnattributed {
   readonly fga3: number;
 }
 
+/**
+ * ME-07B v2 §2.6: cada FGA enlazado a la acción efectiva anterior que lo
+ * causó (misma posesión y fase, instante ≤ al del tiro), con su cadena:
+ * familia elegida **antes** del tiro en esa fase (no la última de la fase),
+ * decisión de lectura/entrada causante, tirador real, posición e instante.
+ * Transición y segunda oportunidad son categorías propias, sin familia
+ * ficticia.
+ */
+export interface AuditExportShotAttribution {
+  readonly atMs: number;
+  readonly possessionIndex: number;
+  readonly phaseIndex: number;
+  readonly teamId: string;
+  readonly shooterId: string;
+  readonly shotType: string;
+  readonly made: boolean;
+  readonly shooterPosition: { readonly x: number; readonly y: number } | null;
+  readonly category: "familia" | "transicion" | "segunda_oportunidad" | "otra_fase";
+  readonly family: string | null;
+  readonly familyDecisionId: number | null;
+  /** ME-07B v2 §3: ficha de libro en vigor en esa fase (`seleccion_familia` → `cardId`), p. ej. `horns_bloqueo`. */
+  readonly cardId: string | null;
+  readonly causingDecision: {
+    readonly id: number;
+    readonly point: string;
+    readonly chosenOptionId: string | null;
+    readonly atMs: number;
+    readonly factLink: AuditFactLink | null;
+  } | null;
+}
+
 export interface AuditExportResult {
   readonly finalScore: Readonly<Record<string, number>>;
   readonly winnerTeamId: string | null;
@@ -193,6 +231,8 @@ export interface AuditExportResult {
     readonly byFamily: readonly AuditExportFamilyTeamSummary[] | null;
     /** Ver `AuditExportFamilyUnattributed`. `null` sin auditoría activada. */
     readonly byFamilyUnattributed: readonly AuditExportFamilyUnattributed[] | null;
+    /** ME-07B v2 §2.6: atribución causal tiro a tiro. `null` sin auditoría. */
+    readonly shots: readonly AuditExportShotAttribution[] | null;
     /** Motivos de rechazo de las tres ramas hoy ausentes (§4): solo con auditoría activada. */
     readonly rejectionReasons: readonly AuditExportPossessionRejections[] | null;
   };
@@ -340,6 +380,9 @@ function teamFingerprint(team: GameInput["teams"][number]): string {
       offensivePlan: team.offensivePlan,
       offBallDefensiveCall: team.offBallDefensiveCall,
       creationPriority: team.creationPriority,
+      screenPlacement: team.screenPlacement ?? "auto",
+      chainedVariant: team.chainedVariant ?? "auto",
+      backScreenCall: team.backScreenCall ?? "auto",
       starters: [...team.starters].sort(),
       declaredRoles: team.declaredRoles,
       roster: team.roster
@@ -372,25 +415,117 @@ function playerTeamId(input: GameInput, playerId: string): string | null {
  * fases sin `seleccion_familia` (transición, segunda oportunidad, segunda
  * entrada) quedan fuera; se cuentan aparte como hueco de cobertura.
  */
+/** Decisiones de acción que pueden originar un tiro (lectura/entrada), por orden de prioridad causal. */
+const SHOT_CAUSING_POINTS: ReadonlySet<string> = new Set([
+  "lectura_bloqueo_o1",
+  "lectura_segunda_o5",
+  "lectura_trampa",
+  // ME-07B v2 §5: lecturas del manejador ante cambio, show, «a la altura» e ICE
+  // (antes faltaban: el tiro tras esas lecturas quedaba sin acción causante).
+  "lectura_cambio",
+  "lectura_show",
+  "lectura_a_la_altura",
+  "lectura_ice",
+  // ME-07B v2 §4 (LAB-0.9): lectura del manejador en Horns→Spain.
+  "lectura_spain",
+  // ME-07B v2 §4 (LAB-0.10): lecturas de Delay (manejador tras la entrega, pívot que se la queda, poste).
+  "lectura_delay",
+  "lectura_delay_pivote",
+  "lectura_poste",
+  "segunda_entrada",
+  "lectura_mano_a_mano",
+  "entrada_fase_transicion",
+  "lectura_transicion",
+]);
+
+/**
+ * ME-07B v2 §2.6: atribución tiro a tiro. Para cada `field_goal_attempt`,
+ * la familia es la última `seleccion_familia` de su misma (posesión, fase)
+ * **anterior o simultánea** al tiro, y la acción causante es la última
+ * decisión de lectura/entrada de esa misma fase anterior al tiro. Una fase
+ * sin familia se clasifica por su entrada real (transición o segunda
+ * oportunidad), nunca con una familia ficticia.
+ */
+export function attributeShots(result: GameResult, decisions: readonly AuditDecisionRecord[]): AuditExportShotAttribution[] {
+  const byPhase = new Map<string, AuditDecisionRecord[]>();
+  for (const d of decisions) {
+    if (d.possessionIndex === null || d.phaseIndex === null) continue;
+    if (d.point !== "seleccion_familia" && !SHOT_CAUSING_POINTS.has(d.point)) continue;
+    const key = `${d.possessionIndex}:${d.phaseIndex}`;
+    const list = byPhase.get(key) ?? [];
+    list.push(d);
+    byPhase.set(key, list);
+  }
+  const phaseEntry = new Map<string, string>();
+  for (const p of result.possessions) for (const ph of p.phases) phaseEntry.set(`${p.index}:${ph.index}`, ph.entry);
+
+  const out: AuditExportShotAttribution[] = [];
+  for (const ev of result.events) {
+    if (ev.kind !== "field_goal_attempt") continue;
+    const key = `${ev.possessionIndex}:${ev.phaseIndex}`;
+    const before = (byPhase.get(key) ?? []).filter((d) => d.atMs <= ev.atMs);
+    let familyDecision: AuditDecisionRecord | null = null;
+    let causing: AuditDecisionRecord | null = null;
+    for (const d of before) {
+      if (d.point === "seleccion_familia") {
+        if (!familyDecision || d.atMs >= familyDecision.atMs) familyDecision = d;
+      } else if (!causing || d.atMs > causing.atMs || (d.atMs === causing.atMs && d.id > causing.id)) {
+        causing = d;
+      }
+    }
+    const entry = phaseEntry.get(key);
+    const shooterId = ev.actors[0] ?? "";
+    const pos = ev.positions.find((p) => p.playerId === shooterId)?.position ?? null;
+    out.push({
+      atMs: ev.atMs,
+      possessionIndex: ev.possessionIndex,
+      phaseIndex: ev.phaseIndex,
+      teamId: ev.possessionTeamId,
+      shooterId,
+      shotType: String(ev.detail.shotType),
+      made: ev.detail.made === true,
+      shooterPosition: pos ? { x: pos.x, y: pos.y } : null,
+      category: familyDecision
+        ? "familia"
+        : entry === "ventaja_temprana"
+          ? "transicion"
+          : entry === "segunda_oportunidad"
+            ? "segunda_oportunidad"
+            : "otra_fase",
+      family: familyDecision?.chosenOptionId ?? null,
+      familyDecisionId: familyDecision?.id ?? null,
+      cardId: (familyDecision?.options.find((o) => o.id === familyDecision!.chosenOptionId)?.values?.cardId as string | undefined) ?? null,
+      causingDecision: causing
+        ? { id: causing.id, point: causing.point, chosenOptionId: causing.chosenOptionId, atMs: causing.atMs, factLink: causing.factLink }
+        : null,
+    });
+  }
+  return out;
+}
+
+/**
+ * Entradas y tiros por familia ofensiva y equipo (ME-06 §5; ME-07B v2 §2.6):
+ * las entradas cuentan cada `seleccion_familia`; los tiros salen de la
+ * atribución causal tiro a tiro (`attributeShots`), así que un tiro se
+ * atribuye a la familia elegida antes que él en su fase, no a la última
+ * familia registrada en esa fase.
+ */
 function buildFamilySummary(
   input: GameInput,
-  result: GameResult,
   decisions: readonly AuditDecisionRecord[],
+  shotsAttributed: readonly AuditExportShotAttribution[],
 ): {
   readonly rows: AuditExportFamilyTeamSummary[];
   readonly unattributed: AuditExportFamilyUnattributed[];
   readonly unattributedFga: number;
   readonly unattributedPossessions: number;
 } {
-  const phaseFamily = new Map<string, { teamId: string; family: string }>();
   const entries = new Map<string, number>();
   for (const d of decisions) {
     if (d.point !== "seleccion_familia" || d.possessionIndex === null || d.phaseIndex === null) continue;
     if (!d.chosenOptionId) continue;
     const teamId = d.holderId ? playerTeamId(input, d.holderId) : null;
     if (!teamId) continue;
-    const key = `${d.possessionIndex}:${d.phaseIndex}`;
-    phaseFamily.set(key, { teamId, family: d.chosenOptionId });
     const entryKey = `${teamId}|${d.chosenOptionId}`;
     entries.set(entryKey, (entries.get(entryKey) ?? 0) + 1);
   }
@@ -399,36 +534,30 @@ function buildFamilySummary(
   const unattributedByTeam = new Map<string, { fga2: number; fga3: number }>();
   let unattributedFga = 0;
   const unattributedPossessions = new Set<number>();
-  for (const ev of result.events) {
-    if (ev.kind !== "field_goal_attempt") continue;
-    const key = `${ev.possessionIndex}:${ev.phaseIndex}`;
-    const attribution = phaseFamily.get(key);
-    const three = ev.detail.shotType === "three_point";
-    const made = ev.detail.made === true;
-    if (!attribution) {
+  for (const shot of shotsAttributed) {
+    const three = shot.shotType === "three_point";
+    if (!shot.family) {
       unattributedFga += 1;
-      unattributedPossessions.add(ev.possessionIndex);
+      unattributedPossessions.add(shot.possessionIndex);
       // El equipo real que intentó el tiro es siempre el que tenía el
-      // control en esa posesión (`possessionTeamId`, ME-07A §5.1): nunca se
-      // infiere de `holderId`, que puede faltar en fases sin decisión.
-      const line = unattributedByTeam.get(ev.possessionTeamId) ?? { fga2: 0, fga3: 0 };
+      // control en esa posesión (`possessionTeamId`, ME-07A §5.1).
+      const line = unattributedByTeam.get(shot.teamId) ?? { fga2: 0, fga3: 0 };
       if (three) line.fga3 += 1;
       else line.fga2 += 1;
-      unattributedByTeam.set(ev.possessionTeamId, line);
+      unattributedByTeam.set(shot.teamId, line);
       continue;
     }
-    const shotKey = `${attribution.teamId}|${attribution.family}`;
+    const shotKey = `${shot.teamId}|${shot.family}`;
     const line = shots.get(shotKey) ?? { fga2: 0, fgm2: 0, fga3: 0, fgm3: 0 };
     if (three) {
       line.fga3 += 1;
-      if (made) line.fgm3 += 1;
+      if (shot.made) line.fgm3 += 1;
     } else {
       line.fga2 += 1;
-      if (made) line.fgm2 += 1;
+      if (shot.made) line.fgm2 += 1;
     }
     shots.set(shotKey, line);
   }
-
   const unattributed = [...unattributedByTeam.entries()].map(([teamId, line]): AuditExportFamilyUnattributed => ({ teamId, ...line }));
 
   const keys = new Set<string>([...entries.keys(), ...shots.keys()]);
@@ -451,6 +580,9 @@ function exportTeam(team: GameInput["teams"][number]): AuditExportTeam {
     offensivePlan: team.offensivePlan,
     offBallDefensiveCall: team.offBallDefensiveCall,
     creationPriority: team.creationPriority,
+    screenPlacement: team.screenPlacement ?? "auto",
+    chainedVariant: team.chainedVariant ?? "auto",
+    backScreenCall: team.backScreenCall ?? "auto",
     roster: team.roster.map((p) => ({
       id: p.id,
       name: p.name,
@@ -482,7 +614,8 @@ export function buildAuditExport(
 ): AuditExportV1 {
   const auditEnabled = input.auditEnabled === true;
   const decisions = result.audit?.decisions ?? [];
-  const family = auditEnabled ? buildFamilySummary(input, result, decisions) : null;
+  const shotAttribution = auditEnabled ? attributeShots(result, decisions) : null;
+  const family = shotAttribution ? buildFamilySummary(input, decisions, shotAttribution) : null;
   const coverageGaps = [
     ...(result.audit?.coverageGaps ?? []),
     ...(family && family.unattributedFga > 0
@@ -556,6 +689,7 @@ export function buildAuditExport(
         byTeam: teamIds.map((teamId) => buildTeamSummary(input, result, teamId)),
         byFamily: family?.rows ?? null,
         byFamilyUnattributed: family?.unattributed ?? null,
+        shots: shotAttribution,
         byPlayer: Object.values(result.box.players).map((line): AuditExportPlayerSummary => ({
           playerId: line.playerId,
           teamId: line.teamId,

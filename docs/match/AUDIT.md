@@ -11,9 +11,9 @@ hechos (ver `MODEL.md`) ni el acta (ver `BOXSCORE.md`): este documento solo
 describe cómo se observa y se exporta lo que esos documentos ya definen.
 **Documentos relacionados:** `MODEL.md`, `ACTIONS.md`, `BOXSCORE.md`,
 `docs/decisions/DECISION-REQUERIDA-ME-04-alcance-natural-faltas-y-segunda-entrada.md`.
-**Última actualización:** 2026-09-30 (ME-07A: esquema `ME-07A-AUDIT-1`,
-corrige el `phaseIndex` de `byFamily`, defensa `auto` y decisión de
-creador/tendencia generalizada — ver más abajo).
+**Última actualización:** 2026-10-04 (ME-07B v2, sesión v2-8: valores de la
+entrega con pantalla del cuerpo de O5 y respuesta de D5 en la mano a mano
+central).
 
 ## Qué es y qué no es
 
@@ -53,7 +53,25 @@ otra versión).
   `family_forced_by_plan` cuando el equipo fijó una familia), y para la
   mano a mano: `entrada_mano_a_mano`, `transferencia_mano_a_mano`,
   `bloqueo_indirecto_o3` y `lectura_mano_a_mano` — mismas reglas de
-  `status`/`reasonCode`/`factLink` que el resto del árbol.
+  `status`/`reasonCode`/`factLink` que el resto del árbol. Desde la sesión
+  v2-7 de ME-07B v2, las vías de tiro de `lectura_mano_a_mano` llevan
+  `opposition` (la oposición geométrica con la que se valoran, la misma que
+  usará `resolucion_tiro`) y `pase_o3` su `contesterId`. **Sesión v2-8**
+  (rediseño de la entrega): `transferencia_mano_a_mano` registra `response`
+  (hundirse/cambiar_entrega/saltar_entrega), `d2Denies`, `d5Jumps`,
+  llegadas de O2 y D2, `o5ReadySeconds`, `tHandoffReady`, `screenSet`,
+  `screenDelaySeconds`, `d2ContactSeconds` y `d2ReleaseSeconds`; la defensa
+  audita su respuesta en `seleccion_cobertura` (como Delay: las coberturas
+  de pantalla quedan `coverage_not_in_card`); `lectura_mano_a_mano` la decide
+  `decideHandlerRead` (motivos `read_value_higher/lower`,
+  `read_option_not_viable`, `tie_band_resolved_by_tendency`) con las vías
+  `finalizar_portador`, `parada_o2`, `triple_o2`, `continuacion_o5`,
+  `pase_o3`, `continuar_o4`, `pase_o1` (entrega completada) o
+  `finalizar_o5`, `puerta_atras_o2`, `pase_o3`, `continuar_o4`, `pase_o1`
+  (negada), cada una con `situationalValue`, `completion`, `opposition`,
+  `contesterId` y, en el indirecto, `shotType`. Hechos nuevos en la central:
+  `dho_completed`/`dho_denied`, `switch_committed`, `show_committed`,
+  `roll_continuation`, `backdoor_cut`.
 - **`input.teams[]`** ahora declara también `offensivePlan` y
   `offBallDefensiveCall` (la foto de cada equipo para todo el partido), y
   cada jugador del roster lleva `fixtureDiff`: diferencias reales por
@@ -101,7 +119,129 @@ archivos `ME-06-AUDIT-1` ya descargados).
   `fingerprint` del equipo: cambiarlos invalida un resultado anterior,
   igual que `offensivePlan`.
 
-## Esquema (`schemaVersion: "ME-07A-AUDIT-1"`)
+## ME-07B v2: `ME-07B-AUDIT-1` y disputa de rebote
+
+Esquema versionado a `"ME-07B-AUDIT-1"` (no reinterpreta los archivos
+`ME-07A-AUDIT-1`). Nuevo punto `disputa_rebote`, emitido tras cada rebote
+de tiro o libre que toca aro: una opción por candidato real (ID en pista)
+con `rawArrivalSeconds`, `effectiveArrivalSeconds`, `inPool`,
+`boxedOutBy`/`boxOutDelaySeconds`/`closerT19`/`closerF05` si un rival le
+cerró, `boxesOut` si él cerró, y sus T19/F05/T20 consultados. Motivos
+`rebound_boxed_out_by_rival`, `rebound_arrival_in_window`,
+`rebound_arrival_outside_window`; elegida = quien controló. El hecho
+`rebound_secured`/`rebound_contested` lleva los mismos cierres en
+`detail.boxOuts`. `seleccion_familia` (§2.2) añade por familia
+`bestReadOption`, `bestReadRawValue`, `bestReadCompletion` y
+`projectedDecisionSeconds` de la primera lectura proyectada en seco
+(`projectedCoverage: "drop"` para el bloqueo directo);
+`seleccion_cobertura` (§2.3) añade la concesión proyectada, la rama
+prevista de la trampa, `stealProbability`, llegadas de D5/pase y la
+mezcla con lo observado (`observedUses`, `observedPoints`,
+`blendedValue`); desde §5 compiten `drop`, `trampa`, `cambio`, `show`,
+`por_debajo` e `ice` (motivos `coverage_tied_base_kept` si su concesión es
+idéntica a la de drop y `coverage_ice_central_not_eligible`). Nuevos puntos
+`lectura_cambio` y `lectura_show` (motivos `read_value_higher/lower`,
+`read_option_not_viable`) y hechos `switch_committed`, `show_committed`,
+`show_recovery` y `coverage_not_applicable` (`requested`, `applied`,
+`lateral`); `screen_navigated.detail.route = "por_debajo"` en el under.
+**LAB-0.7 (v2-3):** punto `colocacion_bloqueo` (una opción por colocación
+evaluada con `projectedValue`, creador, bloqueador, plan y lectura
+proyectados; motivos `placement_projected_value_higher/lower`,
+`placement_forced_by_plan`, `creator_ready_later_in_band`);
+`organizacion_creador` añade `placement`; `seleccion_familia` ante la
+lateral marca la mano a mano `family_not_in_lateral_placement`;
+`seleccion_cobertura` añade `a_la_altura` y da a `ice` su concesión
+proyectada cuando la pantalla es lateral (`lateralScreen`). Puntos
+`lectura_ice` y `lectura_a_la_altura`; `lectura_show`/`lectura_a_la_altura`
+llevan `halted`, `driveStartSeconds` y `d5RecoversTo`. Hechos
+`ice_committed` (`icePoint`, `d1IceAt`, `screenUsedAt`, `lowHelpSpot`,
+`d5LowAt`), `ice_late`, `at_level_committed`/`show_committed`
+(`depthToHoop`) y `at_level_recovery`; `organized_entry` y `screen_set`
+llevan `placement`. La configuración exportada de cada equipo añade
+`screenPlacement` (entra en la huella). **§3:** cada opción de
+`seleccion_familia` lleva `cardId`, la ficha de libro a la que corresponde
+(`null` si la colocación no admite esa familia).
+**v2-4 (LAB-0.8, Horns):** `colocacion_bloqueo` admite `horns`; ante Horns
+la mano a mano se marca `family_not_in_card_placement`; `organized_entry`
+lleva `placement: "horns"` y los roles (O3 = segundo cuerno); el texto de
+`help_left_assignment` dice dónde queda libre el jugador («en el codo» /
+«en la esquina débil») y `invertir_o3`/`pase_o3` llevan `shotType`. Cada tiro
+de `result.summary.shots` añade `cardId` (ficha en vigor de su fase) y la
+acción causante incluye ahora `lectura_cambio`, `lectura_show`,
+`lectura_a_la_altura` y `lectura_ice` (antes faltaban). La opción
+`bloqueo_directo` de `seleccion_familia` pasa a `projectedCoverage:
+"observada"` con `coverageWeight_<cobertura>`, `valueAgainst_<cobertura>` y
+`expectedValueOverShownCoverages` (tendencia observada del rival, LAB-0.4).
+**v2-5 (LAB-0.9, Horns→Spain):** puntos `seleccion_variante` (opciones
+`horns_bloqueo`/`horns_spain`; en `auto`, `expectedValueOverShownCoverages`,
+`valueAgainst_*`, `coverageWeight_*`; motivos `variant_projected_value_*`,
+`variant_forced_by_plan`), `lectura_spain_bloqueador` (`bloqueo_ciego`/
+`quedarse_en_codo`; motivos `back_screen_target_present/absent`,
+`back_screen_shot_clock_insufficient`; valores `coverage`, `d5DistanceToHoop`,
+`backScreenSetSeconds`), `respuesta_bloqueo_ciego` (`seguir`/`ayudar`/
+`cambiar` con `concessionValue`, `call`, `switchCallSeconds`,
+`rollStartSeconds`, `d5ReleaseSeconds`; motivos `back_screen_lower/
+higher_concession`, `back_screen_forced_by_call`,
+`back_screen_switch_recognized_late`) y `lectura_spain` (acción causante de
+tiro). Hechos `back_screen_set` (`screenPoint`, `backScreenDelay`,
+`d5ReleaseAt`, `handlerWaitSeconds`), `back_screen_switch`, `back_screen_pop`
+(`popSpot`, `arrivesAt`); `roll_continuation` lleva `deep` y se fecha al
+arrancar el roll en Spain. `seleccion_familia.cardId` y `summary.shots[].cardId`
+valen `horns_spain`. **v2-5 (LAB-0.10, Delay):** `colocacion_bloqueo` admite
+`delay`; `seleccion_familia` elige la mano a mano con `cardId:
+delay_mano_a_mano` (el bloqueo, `family_not_in_card_placement`);
+`seleccion_cobertura` ante Delay compara solo drop/cambio/show (respuestas
+hundirse/cambiar/saltar la entrega, `delayResponse`, `concessionValue`) y marca
+el resto `coverage_not_in_card`; puntos `entrega_delay` (`entrega_completada`/
+`entrega_negada`/`entrada_negada` con `handoffScreenDelay`, `d1BackSeconds`,
+`d5JumpArrivalSeconds`), `lectura_delay`, `lectura_delay_pivote`,
+`respuesta_poste` (`ayudar_poste`/`quedarse_esquina`, `digArrivalSeconds`,
+`postTurnSeconds`, `digInTime`; motivos `help_lower/higher_concession`) y
+`lectura_poste` (las tres de lectura son acción causante de tiro; `holderId`
+es quien lee: manejador, pívot o poste). Hechos `delay_hold`, `dho_completed`,
+`dho_denied`, `backdoor_cut`, `post_dig` (`digPoint`), `weak_side_cut`. La
+configuración exportada de cada equipo añade `chainedVariant` y
+`backScreenCall` (entran en la huella). **v2-6 (comparador):**
+`colocacion_bloqueo` añade por opción `firstReadSeconds`, el desglose
+`valueAgainst_<cobertura|respuesta>` y `coverageWeight_<cobertura>`, la mejor vía
+ante el plan base (`baseBestRead`, `baseBestReadRawValue`,
+`baseBestReadCompletion`, `baseDecisionSeconds`), `spainCalled` en Horns y, en
+la elegida, la asignación ejecutada (`chosenAssignmentValue`,
+`chosenHandlerId`, `chosenScreenerId`, `chosenFirstReadSeconds`); motivo nuevo
+`placement_tied_first_read_later` (a igual valor exacto) en lugar de
+`creator_ready_later_in_band` entre fichas. `organizacion_creador` añade
+`firstReadSeconds`. `lectura_segunda_o5` sin opción (`chosenOptionId=null`,
+todas `receiver_option_not_viable` con `shotClockSeconds`) cuando el reloj
+expira antes de cualquier vía del receptor.
+**§2.6:** `result.summary.shots` enlaza cada FGA a la
+familia elegida antes que él en su fase y a la última decisión de
+lectura/entrada anterior (`causingDecision` con id, punto, opción,
+instante y `factLink`), con tirador real, posición e instante; categorías
+`familia`/`transicion`/`segunda_oportunidad`/`otra_fase`. `byFamily`
+cuenta los tiros con esa atribución (antes: la última familia de la fase).
+**§2.4–§2.5:** `organizacion_creador` lista una opción por creador
+candidato (ID real) con `projectedValue`, `screenerId`, `projectedPlan`,
+`projectedBestRead` y `readySeconds`; motivos
+`creator_kept_by_real_holder`, `creator_projected_value_higher`,
+`creator_pass_back_faster`, `creator_ready_later_in_band`. El hecho
+`organized_entry` lleva `detail.roles` (rol → ID real).
+`lectura_bloqueo_o1` añade `parada_o1`/`flotadora_o1` (tipo, distancia,
+cerrador, oposición) y `triple_o1.contesterId`; `lectura_segunda_o5` pasa
+a `finalizar_aro`/`flotadora`/`invertir_o3` (cerrador y oposición real) con
+`receiver_value_higher|lower`, `receiver_option_not_viable` y los motivos
+de tendencia; `help_decision` lleva `concessionWithHelp/WithoutHelp`.
+`entrada_fase_transicion.triple_portador` guarda profundidad, carrera,
+cerrador, oposición y `organizeProjectedValue`. `resolucion_tiro.legal_contest`
+añade `contactFoulProbability`, `contactFoul` y `contesterM07`;
+`puerta_falta_sin_tiro` registra también las faltas de trampa y de rebote
+(`contact_foul_drawn`/`contact_foul_not_drawn`, `situation`,
+`foulProbability`). Tipos de FGA: `close_finish`, `floater`, `mid_range`,
+`three_point` (los dos intermedios cuentan como 2FGA).
+Sigue pendiente de este encargo (§6):
+candidatos viables/inviables por decisión en todos los puntos y los
+demás puntos nuevos de §6.
+
+## Esquema (`schemaVersion: "ME-07B-AUDIT-1"`)
 
 | Sección | Contenido |
 |---|---|
@@ -122,7 +262,7 @@ instante absoluto en ms, punto de observación (`point`, uno de
 `sustitucion`, desde ME-06 `seleccion_familia`, `entrada_mano_a_mano`,
 `transferencia_mano_a_mano`, `bloqueo_indirecto_o3`,
 `lectura_mano_a_mano`, y desde ME-07A `seleccion_cobertura` y
-`seleccion_orden_sin_balon`), posesión/fase si existía, poseedor, participantes, las
+`seleccion_orden_sin_balon`, y desde ME-07B v2 `disputa_rebote`), posesión/fase si existía, poseedor, participantes, las
 opciones realmente evaluadas y cuál se eligió. Cada opción lleva:
 
 - `status`: `elegida`, `descartada_por_condicion` (se evaluó y perdió) o
@@ -170,6 +310,14 @@ usaron (ver `RULES.md`).
   minutos), pero no la comparación completa frente a todos los candidatos
   elegibles del quinteto en ese instante. `coverageGaps` indica cuántas
   sustituciones de esa corrida quedan así de parcialmente explicadas.
+  **Excepción completa (ME-04-ROT-3):** el relevo de emergencia sí registra
+  una decisión `sustitucion` con cada suplente comparado (su mejor
+  asignación: roles declarados conservados, quién queda fuera de rol y con
+  qué capacidad pertinente, reajustes, minutos), el elegido
+  (`emergency_fill_chosen`) y por qué perdió cada otro
+  (`emergency_fill_fewer_declared_roles`, `emergency_fill_lower_role_fit`,
+  `emergency_fill_lost_tie_break`); la nota indica el criterio decisivo y el
+  enlace apunta al hecho `substitution`. No consume RNG.
 
 Ninguna otra ruta de las priorizadas por el prompt (§3, puntos 1–5) queda
 sin instrumentar en este bloque; si una futura entrega añade un punto de

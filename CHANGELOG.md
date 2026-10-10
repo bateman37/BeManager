@@ -3,6 +3,216 @@
 Formato libre en español, orden cronológico inverso. Los motivos de
 decisiones duraderas viven en `docs/decisions/`, no aquí.
 
+## ME-07B v2 — Capítulo táctico íntegro y reparación causal (en curso, PR #11 Draft, sin fusionar)
+
+- Encargo vigente guardado en
+  `docs/prompts/implementation/ME-07B-v2-capitulo-tactico-y-20-auditorias.md`
+  y diagnóstico de 20 auditorías en
+  `docs/match/analysis/ME-07A-diagnostico-20-auditorias.md`. Rama nueva
+  `claude/me-07b-v2-capitulo-tactico` desde `main` (`7b7eedd`, PR #10 ya
+  fusionada); PR #11 Draft.
+- Foto basal de las 20 auditorías recreada desde el `GameInput`
+  (`scripts/me07b-v2-baseline-20.ts`, cuadro en
+  `docs/match/analysis/ME-07B-v2-foto-basal-20.md`): mismos marcadores y
+  tiros que el anexo del informe en los 20 partidos.
+- **§2.1 Rebote.** Corrige el defecto de ME-01 (el retraso del cierre
+  valía siempre cero y la ventana de vuelo usaba la llegada sin ajustar):
+  un cierre legal y próximo —cerrador más cerca del aro que su rival y con
+  contacto alcanzable durante el vuelo y antes de que el rival llegue— suma
+  `closeoutReboundDelaySeconds(T19, F05)` **del cerrador** a la llegada **del
+  rival**; pool, instante de control, hecho (`boxOuts`) y auditoría usan la
+  llegada efectiva. El tirador no cierra mientras completa su gesto y cae
+  de su salto antes de ir al rebote (`shooterLandingSeconds(F06)`, nueva
+  hipótesis LAB-0.4). Efecto medido en la foto seed: OREB tras fallo de
+  campo vivo 362/537 → 167/518 (Sierra) y 374/617 → 103/534 (Puerto); casi
+  todo el efecto viene de la caída del tirador, no del retraso del cierre.
+- Auditoría versionada a `ME-07B-AUDIT-1` con el punto `disputa_rebote`.
+- **§2.2 Selección de familia.** `auto` proyecta en seco cada familia con su
+  propia ejecución hasta la primera lectura real (misma frontera, reloj,
+  ayudas y concesiones) y pondera la mejor vía por el riesgo de desvío de
+  sus pases; se retiran los estimadores ad hoc. El monopolio del bloqueo
+  directo persiste y queda explicado: el drop concede el roll libre en
+  2.397 de 2.413 primeras lecturas de la foto seed (trabajo de §2.3).
+- **§2.3 Defensa auto.** D5 decide la trampa al empezar a prepararse la
+  pantalla (antes, al usarla: nunca era elegible); drop y trampa se
+  comparan con su propia ejecución proyectada en seco desde la misma
+  geometría y cada equipo combina esa proyección con lo que ya ha
+  concedido o anotado en el partido (LAB-0.4,
+  `blendProjectionWithObservation`). Foto seed: 484 trampas / 675 drops
+  (Sierra defendiendo) y 443 / 733 (Puerto); Sierra +3 elige la mano a
+  mano 128 veces. La trampa sube rebote ofensivo y pérdidas (pendiente).
+- **§2.6 Atribución.** `result.summary.shots` enlaza cada FGA a su acción
+  efectiva anterior y a la familia elegida antes que él en su fase;
+  `byFamily` usa esa atribución. Invariante atribuidos + sin atribuir = FGA
+  por equipo conservado.
+- Semillas naturales de cuatro pruebas (bocina ×2, dos prórrogas/guardián,
+  tapón) y dos huellas de regresión recalculadas con causa documentada.
+- **§2.4 Roles.** Al organizar, creador (O1) y bloqueador (O5/O4) se
+  asignan entre jugadores reales con la misma proyección en seco del
+  selector de familia; los defensores siguen a su marca (sin cambio de
+  emparejamiento instantáneo). Foto seed: el poseedor real crea 745/1.233
+  veces (antes 34/1.182).
+- **§2.4 Lecturas.** O5 lee aro, floater o inversión frente al mejor
+  cierre real (D5 con una sola trayectoria de drop, que antes nunca
+  contestaba al continuador, y D3); O1 añade el tiro parado (tiro medio o
+  floater) y su triple cuenta el cierre de D1; D3 decide si ayuda al
+  continuador comparando concesiones (orden `rollHelpCall`, «no dejar
+  tirador de esquina»). Nuevos tipos de tiro `floater` (T02) y `mid_range`
+  (T03), LAB-0.5; T02/T03 activas con relleno neutro 8.
+- **§2.5 Transición.** El triple del portador se lee en su punto real de
+  tiro tras la carrera con balón, con el cierre desde posiciones reales, y
+  compite con el valor proyectado de organizar (antes se leía en el medio
+  campo y nunca existía): 14 y 8 elegidos en la foto seed.
+- **§2.5 Faltas.** Contactos defensivos reales —cierre legal con solape,
+  trampa cerrada, rebote por encima de la espalda— se adjudican con M07
+  (Disciplina, activa con relleno neutro 8; LAB-0.6). Foto seed: 70 → 230
+  PF y ≈100 → 278 FTA; ya no dependen de las segundas oportunidades.
+- **Rotación `ME-04-ROT-2`.** Con las faltas de contacto reales (§2.5) las
+  exclusiones pasan a ≈0,7 por partido y la política rígida por rol paraba
+  por guardián partidos ordinarios (3 de 60 semillas naturales en `f4fe5f8`)
+  cuando ningún suplente declaraba el rol del excluido. Ahora un compañero
+  en pista que declara ese rol se reajusta a él y entra el suplente del rol
+  que deja; nadie juega fuera de un rol declarado. Si ni así hay relevo, el
+  guardián sigue explicándolo (queda 1 de 60: los cuatro aleros declarados
+  de Puerto excluidos; decisión requerida en el progreso).
+- **§3 Ficha de libro (primer paso).** `PlaybookCard` une fase/condición,
+  colocación, roles y sustitutos, primera acción, variantes, lecturas
+  permitidas, seguridad y prioridad de las tres acciones organizadas
+  existentes; decide qué colocaciones se ofrecen al organizar y se audita
+  (`cardId`). Sin cambio de conducta (foto de las 20 idéntica).
+- **§4 Ficha Horns→bloqueo (LAB-0.8), primera ficha «jugable».** Los dos
+  interiores del quinteto en los codos (bloqueador y segundo cuerno), las
+  esquinas llenas y el ala débil vacía; entrada por orden
+  (`screenPlacement=horns`, «Colocación del bloqueo: Horns» en `/lab`) o por
+  proyección en `auto`. Mismo árbol de coberturas con otra responsabilidad:
+  ayuda al roll el defensor del segundo cuerno y deja un tiro medio en el
+  codo (no un triple de esquina); la reparación sale de la esquina débil.
+  Misma ficha ante drop/cambio/trampa → tres desenlaces distintos;
+  ejecución, negación y continuidad en `me07b-v2-horns.test.ts`; `/lab`
+  recorrido. Arreglos técnicos al construirla: la ayuda no se mete en el
+  mismo punto que un continuador en carrera (antes, cada ayuda desde el
+  codo era falta y un partido llegaba a `menos_de_cinco`), el cambio
+  persiste tras un pase desviado recuperado, el marco se reasigna aunque
+  gane el primer candidato, los tiros tras lecturas de cambio/show/a la
+  altura/ICE tienen acción causante y cada tiro lleva `cardId`.
+- **§4 Ficha Horns→Spain (LAB-0.9), jugable.** Desde Horns, el segundo cuerno
+  pone un bloqueo ciego real a D5 (a contacto, en su retroceso al aro) y el
+  manejador espera a que esté puesto; D5 queda retenido (T13/F05 frente a T16)
+  y rodea al bloqueador; roll profundo al poste bajo débil y pop del bloqueador
+  ciego. Entrada por orden («Variante encadenada: Spain» en `/lab`) o en `auto`
+  frente a Horns→bloqueo; sin objetivo (cambio, trampa, show, a la altura)
+  se juega el árbol de Horns. Respuesta defensiva nueva («Bloqueo ciego
+  (Spain)»: seguir, ayudar desde la pintura o cambiar), por concesión en
+  `auto`. Pruebas en `me07b-v2-spain.test.ts`; `/lab` recorrido. Semillas
+  naturales recalculadas (dos prórrogas 984 → 1718; faltas sobre 8 partidos).
+- **§4 Ficha Delay→DHO con puerta de atrás y entrada a poste con salidas
+  (LAB-0.10), jugable por orden.** Interior arriba, entrega en mano con el
+  cuerpo del pívot como pantalla, respuesta hundirse/cambiar/saltar la
+  entrega (la negada da la puerta de atrás y el alto-bajo), poste con ayuda
+  «dig» de la esquina, salida a la esquina, corte del ala débil y repostear.
+  Solo por orden («Colocación: Delay»): en `auto` no compite todavía. Corregido
+  en el recorrido de `/lab`: el corte atravesaba a su defensor y cada corte era
+  falta tardía (3–5 excluidos por partido). Pruebas en `me07b-v2-delay.test.ts`.
+- **§2.2 Comparador de fichas y Delay en `auto` (sesión v2-6).** La ficha
+  (colocación) se elige por su valor proyectado; la banda de empate solo
+  desempata asignaciones de la misma ficha y del mismo plan, por la primera
+  lectura real (antes decidía el 81,9 % de las colocaciones a favor de una que
+  valía menos). Delay compite en `auto` frente a las respuestas a la entrega
+  vistas. Arreglos de estados alcanzados: balón suelto recuperado conserva las
+  parejas vivas; receptor del roll sin reloj acaba en violación auditada.
+  Foto de las 20: central 93,4 % → 40,5 % de las colocaciones, Delay 0,7 %;
+  **la familia sigue siendo bloqueo en el 94,0 %** (antes 86,5 %), con causa
+  medida en `docs/match/analysis/ME-07B-v2-comparador-v2-6.md` y scripts
+  `me07b-v2-placement-gap.ts`, `me07b-v2-projection-calibration.ts` y
+  `me07b-v2-possession-slice.ts`. Semillas de escenario recalculadas con causa.
+- **La retirada de D5 queda en el historial (sesión v2-8).** La trayectoria
+  única con la que el drop (y la continuación de la mano a mano) valora y
+  contesta no se registraba como movimiento: si contestaba otro defensor, para
+  el rebote D5 seguía a 4 m del aro. `recordTrajectory` la escribe sin cambiar
+  las posiciones de cálculo. Rebote ofensivo tras fallo vivo en la foto seed:
+  36 % → 30–33 %; familia bloqueo en la foto de las 20: 54,0 %. Huella del tramo
+  de ME-03 y semillas de escenario recalculadas con causa.
+- **Rediseño de la mano a mano central (sesión v2-8, decisión de Dennis).**
+  O5 recibe en el codo alto real del lado fuerte y O2 recibe en su hombro
+  alto rodeándolo; el cuerpo de O5 es pantalla real sobre D2 (T13/F05 frente a
+  T16 y peso, solo si O5 está puesto, sumada a la llegada de D2); D2 niega si
+  llega antes; D5 responde a la entrega (hundirse/cambiar/saltar) como en
+  Delay; O2 lee al recibir (aro, parada, triple solo detrás del arco,
+  continuación de O5, indirecto, salida). Los tiros del indirecto se anotaban
+  como triples desde puntos dentro del arco: ahora el tipo lo decide la zona.
+  Delay suma también el retraso de pantalla a la llegada de D1. Foto de las
+  20: familia bloqueo 99,3 % → 54,7 %; dirigidos: mano a mano proyectada
+  0,998, anotada 1,006. Nueva `me07b-v2-handoff-screen.test.ts`; reescritas
+  `me07b-v2-handoff-read.test.ts` y `me06-mano-a-mano.test.ts`; análisis
+  `docs/match/analysis/ME-07B-v2-mano-a-mano-v2-8.md`. Semillas de escenario
+  recalculadas con causa.
+- **§2.2 Lectura de la mano a mano con la oposición real (sesión v2-7).**
+  `pase_o3`, `continuar_o4` y `finalizar_portador` se valoran con
+  `estimateContestLevel` y los mismos argumentos que `resolveShotAttempt`
+  (antes un umbral propio: triples sin oposición que la ejecución resolvía
+  contestados, 199 de 200; lectura 1,17 frente a 0,63). La proyección de la
+  familia hereda el arreglo. Foto de las 20: mano a mano central 249 → 1 uso,
+  familia bloqueo 94,0 % → 99,3 %, Delay 33 (un partido) → 32 (tres). Delay
+  no tenía error sistemático (2.209 usos dirigidos). Nueva
+  `me07b-v2-handoff-read.test.ts`; script
+  `me07b-v2-handoff-delay-gap.ts`; análisis
+  `docs/match/analysis/ME-07B-v2-mano-a-mano-delay-v2-7.md`. Semillas de
+  escenario recalculadas con causa.
+- **Saques (stack, Iverson, box, diamond, elevator):** analizados, sin
+  mecanismo nuevo; falta la primitiva de saque defendido (nota en la matriz).
+- **§2.2/§5 El ataque proyecta contra la defensa observada.** Selector de
+  familia y asignación de roles ponderan la concesión de cada cobertura que
+  el rival ha mostrado por su frecuencia (`shownCoverageWeights`, LAB-0.4;
+  sin muestras, drop como antes). Coste: ≈1,7 s por partido con auditoría
+  (antes ≈0,65 s).
+- **Diagnóstico de la bajada de puntos de v2-3** en
+  `docs/match/analysis/ME-07B-v2-descomposicion-puntos-v2-3.md`: dos
+  prórrogas, aciertos bajo lo esperado y mezcla defensiva; fuera de muestra
+  sube. Decisión de Dennis sobre `menos_de_cinco` registrada en `RULES.md`
+  (sin implementar).
+- **§4–§5 Bloqueo directo lateral, ICE ejecutable y «a la altura» (LAB-0.7).**
+  Segunda colocación real del bloqueo (`screenPlacement`, selector en
+  `/lab`; en `auto` el poseedor real la elige con creador y bloqueador por
+  la misma proyección en seco, punto `colocacion_bloqueo`), con su
+  disposición y su short roll. ICE solo ante ella: D1 se pone del lado de la
+  pantalla si llega antes del uso (M01/M05/F04), D5 baja a la ayuda baja, el
+  bloqueador se abre al codo y O1 lee fondo, tiro medio, pase al bloqueador
+  por la línea de D1, esquina fuerte o salida; ICE tardío juega drop.
+  «A la altura» sube junto al bloqueador y vuelve con el continuador sin
+  frenar al manejador; el show sale a la línea del manejador y le frena si
+  llega antes que él, y vuelve al aro. `auto` compite entre siete
+  coberturas. Foto seed (Sierra/Puerto): colocación lateral 55/32 de
+  1.230/1.294; ICE elegido 9/38 (como defensa), a la altura 5/135, show
+  1/61; puntos 1.201–1.210 (antes 1.317–1.307). 180/180 semillas 1–60 en
+  las tres fotos `final` con acta conciliada. Semillas de prueba de
+  bocina/prórrogas recalculadas (325, 69, 1, 246).
+- **Rotación `ME-04-ROT-3` (decisión de Dennis, semilla 39).** Si ni el
+  relevo por rol ni el reajuste ROT-2 completan el quinteto tras una
+  exclusión, entra un suplente habilitado aunque no declare el rol vacante:
+  la asignación de los cinco que conserva más roles declarados, la mayor
+  capacidad pertinente en el puesto excepcional y desempate sin sorteo
+  (reajustes, minutos, ID). Hecho, registro de sustitución y decisión
+  auditada `sustitucion` dicen quién y por qué; sin malus ni cambios de
+  perfil; el excluido no vuelve. Con menos de cinco habilitados sigue el
+  guardián (caso reglamentario distinto, pendiente). Semillas 1–60 en las
+  tres fotos: 180/180 `final` con acta conciliada (antes la 39 seed paraba).
+- **§5 Coberturas.** `auto` compite entre drop, trampa, cambio, show, por
+  debajo e ICE con la misma proyección en seco. Cambio: D5 canta y sale a
+  la altura del bloqueo, D1 se queda con el bloqueador y el desajuste
+  persiste en la posesión. Show: D5 sale y vuelve cuando D1 supera la
+  pantalla. Por debajo: D1 pasa entre el bloqueador y su defensor; niega
+  roll y penetración, pero el cierre del triple tiene que rodear al
+  bloqueador y llega tarde (margen medio −0,60 s → +0,27 s en la semilla
+  92; O1 elige triple 6 → 120 veces). ICE: no elegible ante el bloqueo
+  central (orden manual → drop con el motivo); el ICE ejecutable espera al
+  bloqueo lateral. Foto seed, coberturas de Sierra defendiendo: trampa 349,
+  drop 757, por debajo 125, cambio 40, show 48 (Puerto: 236/775/55/61/139).
+- **Pendiente**: ICE ejecutable y at the level, falta en
+  ataque, respuesta defensiva «cerrar» tras el tiro (probada y retirada en
+  v2-1; OREB tras fallo vivo aún 35–38 %), §§3–7 completos (gramática,
+  estructuras, libro, inventario, 15 atributos candidatos restantes, UI de
+  Ataque/Defensa/Libro, plan manual). ME-07B no está terminada.
+
 ## ME-07B — Cierre de ME-07A y motor táctico integrado (en curso, sin fusionar)
 
 - Prompt guardado íntegro en

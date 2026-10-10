@@ -184,12 +184,26 @@ describe("ME-04 (2): bocina, tiro en el aire, reset del reloj de lanzamiento y r
     expect(adjudicateBuzzerShot({ releaseMs: 600, buzzerMs: 600, made: true, shotPoints: 3 })).toMatchObject({ countsAsFieldGoalAttempt: false, pointsAwarded: 0 });
   });
 
-  it("partido natural: un triple soltado 0,04 s antes de la bocina entra y cuenta; después solo se resuelve ese tiro", () => {
+  it("partido natural: un tiro soltado antes de la bocina final entra y cuenta; después solo se resuelve ese tiro", () => {
     // Semilla recalculada en ME-07A (§3.2, organize() cambia qué
-    // posesiones llegan a la bocina final): sigue siendo un tiro soltado
-    // antes de la bocina final del partido que entra y solo se resuelve
-    // ese tiro.
-    const r = game(738);
+    // posesiones llegan a la bocina final) y otra vez en ME-07B v2 §2.1
+    // (el cierre de rebote y la caída del tirador cambian qué posesiones
+    // llegan a la bocina) y en §2.2 (el selector de familia proyecta cada
+    // familia hasta su primera lectura): la semilla 151 conserva un tiro
+    // (ahora de dos, antes un triple) soltado antes de la bocina final del
+    // partido que entra y solo se resuelve ese tiro. §2.3 (trampa desde la
+    // preparación y defensa que aprende) lo lleva a la semilla 309, y §2.4
+    // (asignación de creador/bloqueador por proyección) a la 179 y la lectura
+    // del receptor del roll a la 316; §2.5 (faltas por contacto real) a la 110;
+    // el bloqueo lateral, el ICE y «a la altura» (LAB-0.7) a la 325; la ficha
+    // Horns (LAB-0.8) y la proyección frente a la defensa observada (v2-4) a la 787;
+    // la elección de ficha por valor (sesión v2-6: la banda ya no desempata entre
+    // fichas, primera lectura como frontera, Delay en `auto`) a la 560, y el plan
+    // elegido por valor dentro de la central (la banda no cruza de plan) a la 540, y
+    // la lectura de la mano a mano valorada con la oposición real de su ejecución (v2-7) a la 148, y
+    // el rediseño de la mano a mano central (v2-8: el cuerpo de O5 retiene a D2) a la 576 y la retirada de D5
+    // registrada en el historial (v2-8) a la 255 (ninguna en 1–254).
+    const r = game(255);
     const i = r.events.findIndex((e) => e.kind === "buzzer" && e.detail.shotInFlight === true);
     expect(i).toBeGreaterThan(0);
     const buzzer = r.events[i]!;
@@ -207,7 +221,10 @@ describe("ME-04 (2): bocina, tiro en el aire, reset del reloj de lanzamiento y r
     // Semilla recalculada en ME-07A (§3.2, organize() cambia qué posesiones
     // llegan a la bocina): PUBLISHED_SEED sigue produciendo un fallo
     // soltado a tiempo sin rebote inventado tras la bocina final.
-    const r = game(PUBLISHED_SEED);
+    // ME-07B v2 §2.1 (cierre de rebote y caída del tirador) desplaza ese
+    // caso a la semilla 53, y §2.3 (defensa auto con trampa en competencia)
+    // a la 14, y §2.4 (asignación de creador/bloqueador y lectura del receptor) a la 60; §2.5 (faltas por contacto) a la 49; LAB-0.7 (bloqueo lateral, ICE) a la 69; la ficha Horns (LAB-0.8) y la proyección frente a la defensa observada (v2-4) a la 86; la elección de ficha por valor (sesión v2-6) a la 41 y el plan por valor dentro de la central (v2-6) a la 31 y la lectura de la mano a mano con la oposición real (v2-7) a la 21 y el rediseño de la mano a mano central (v2-8) a la 161 y la retirada de D5 en el historial (v2-8) a la 31.
+    const r = game(31);
     const i = r.events.findIndex((e) => e.kind === "buzzer" && e.detail.shotInFlight === true);
     const next = r.events.slice(i + 1, i + 4).map((e) => e.kind);
     expect(next).toEqual(["field_goal_attempt", "possession_ended", "period_ended"]);
@@ -296,6 +313,15 @@ describe("ME-04 (3): faltas personales y de equipo, bonus y quinta personal", ()
     const nonShooting = r.events.filter((e) => e.kind === "non_shooting_foul");
     expect(nonShooting.length).toBeGreaterThan(0);
     for (const e of nonShooting) {
+      // ME-07B v2 §2.5: las faltas de contacto real en trampa o rebote llevan
+      // su situación y la probabilidad adjudicada (LAB-0.6); las de la
+      // puerta de contención conservan todo su detalle geométrico.
+      if (e.detail.situation !== undefined) {
+        expect(["trampa", "rebote_sobre_espalda"]).toContain(e.detail.situation);
+        expect(e.detail.foulProbability as number).toBeGreaterThan(0);
+        expect(e.actors.length).toBe(2);
+        continue;
+      }
       // El hecho lleva actor, posiciones, tiempo, contacto y legalidad.
       expect(e.detail.legality).toBe("contacto_ilegal");
       expect(e.detail.distanceMeters as number).toBeLessThanOrEqual(0.7);
@@ -379,6 +405,10 @@ describe("ME-04 (4): sustituciones en oportunidad legal, reentrada, minutos 5× 
   });
 
   it("canasta tardía en C4: solo sustituye el equipo que la recibe; también tras último libre y entre períodos", () => {
+    // LAB-0.7 (bloqueo lateral, ICE): la semilla publicada ya no tiene una
+    // canasta recibida en los dos últimos minutos con relevo; la 1 sí, hasta la
+    // sesión v2-6 (elección de ficha por valor): la 2, y desde la sesión v2-8 (retirada de D5 en el historial) la 1.
+    const r = game(1);
     const late = r.substitutions.filter((s) => s.window === "canasta");
     expect(late.length).toBeGreaterThan(0);
     for (const s of late) {
@@ -464,6 +494,48 @@ describe("ME-04 (4): sustituciones en oportunidad legal, reentrada, minutos 5× 
     });
     expect(again.changes).toEqual([]);
   });
+
+  it("ME-04-ROT-2: sin suplente del rol del excluido, un compañero que lo declara se reajusta y entra el relevo de su rol; sin reajuste posible, pasa al relevo de emergencia ME-04-ROT-3", () => {
+    const p = (id: string, roles: number[], onCourt: boolean, extra: Partial<RotationPlayerState> = {}): RotationPlayerState => ({
+      id,
+      declaredRoles: roles as RotationPlayerState["declaredRoles"],
+      onCourt,
+      continuousMs: 100_000,
+      totalMs: 100_000,
+      disqualified: false,
+      locked: false,
+      ...extra,
+    });
+    // Caso real de la semilla 91 (Puerto): excluido el único alero en pista, el
+    // escolta en pista declara 2 y 3 y en el banquillo solo hay escoltas.
+    const players = [
+      p("A1", [1], true),
+      p("A2", [2, 3], true),
+      p("A3", [3], true, { disqualified: true }),
+      p("A4", [4], true),
+      p("A5", [5], true),
+      p("B2", [2], false, { totalMs: 50_000 }),
+      p("B2b", [2], false, { totalMs: 80_000 }),
+      p("B4", [4], false),
+    ];
+    const plan = planSubstitutions({ lineup: ["A1", "A2", "A3", "A4", "A5"], players, voluntaryCap: 2, continuousThresholdMs: 300_000, protectedIds: [] });
+    expect(plan.unresolved).toEqual([]);
+    expect(plan.changes).toEqual([
+      expect.objectContaining({ outId: "A3", inId: "B2", role: 2, reason: "exclusion", reassigned: { playerId: "A2", fromRole: 2, toRole: 3 } }),
+    ]);
+    // Nadie en pista ni en el banquillo declara 3: ya no hay guardián, sino
+    // relevo de emergencia ME-04-ROT-3 (detalle en `me04-rot3.test.ts`).
+    const none = planSubstitutions({
+      lineup: ["A1", "A2", "A3", "A4", "A5"],
+      players: players.map((x) => (x.id === "A2" ? { ...x, declaredRoles: [2] as RotationPlayerState["declaredRoles"] } : x)),
+      voluntaryCap: 2,
+      continuousThresholdMs: 300_000,
+      protectedIds: [],
+    });
+    expect(none.unresolved).toEqual([]);
+    expect(none.changes).toEqual([expect.objectContaining({ outId: "A3", inId: "B2", role: 3, reason: "exclusion", emergency: expect.objectContaining({ declaredKept: 4, decidedBy: "menos_minutos" }) })]);
+    expect(none.changes[0]!.reassigned).toBeUndefined();
+  });
 });
 
 // (5) Acta conciliada desde hechos.
@@ -543,9 +615,20 @@ describe("ME-04 (6): empate → prórroga, empate en prórroga → otra; guardi�
   });
 
   it("partido natural con dos prórrogas: 5:00 cada una, faltas contadas en C4, canastas de C4 y final sin empate", () => {
-    // Semilla recalculada en ME-04B (§§3.1-3.3): sigue siendo un partido
-    // natural con dos prórrogas bajo trampa/trampa y «cargar rebote».
-    const r = game(7, TRAP_CRASH);
+    // Semilla recalculada en ME-04B (§§3.1-3.3) y en ME-07B v2 §2.1. Desde
+    // §2.3 (la trampa se decide al preparar la pantalla) ninguna semilla
+    // 1–3000 da dos prórrogas con trampa/trampa y «cargar rebote»; la
+    // semilla 225 con drop/drop y «proteger balance» sí es un partido
+    // natural con dos prórrogas. §2.4 (asignación de creador/bloqueador por
+    // proyección y lectura del receptor) la desplaza a la semilla 667, §2.5
+    // (faltas por contacto real) a la 232, LAB-0.7 (bloqueo lateral, ICE) a la 246 y
+    // la ficha Horns (LAB-0.8) con la proyección frente a la defensa observada (v2-4) a la 984 y
+    // la variante Horns→Spain en `auto` (LAB-0.9, v2-5) a la 1718 (ninguna en 1–1717) y la
+    // elección de ficha y plan por valor con Delay en `auto` (sesión v2-6) a la 111 (ninguna en 1–110), y la
+    // lectura de la mano a mano valorada con la oposición real de su ejecución (v2-7) a la 206 (ninguna en 1–205),
+    // y el rediseño de la mano a mano central (v2-8) a la 1765, y la retirada de D5 en el historial (v2-8) a la
+    // 392 (ninguna en 1–391).
+    const r = game(392);
     expect(r.periods.map((p) => p.label)).toEqual(["C1", "C2", "C3", "C4", "Prórroga 1", "Prórroga 2"]);
     const endOf = (period: number) => r.events.find((e) => e.kind === "period_ended" && e.period === period)!;
     expect(endOf(4).score[SC]).toBe(endOf(4).score[PA]);
@@ -563,7 +646,7 @@ describe("ME-04 (6): empate → prórroga, empate en prórroga → otra; guardi�
   });
 
   it("el guardián de prórrogas señala la anomalía sin cerrar el empate ni inventar ganador", () => {
-    const r = game(7, TRAP_CRASH, { maxOvertimes: 1 });
+    const r = game(392, BASE, { maxOvertimes: 1 });
     expect(r.stop.cause).toBe("guardian");
     expect(r.winnerTeamId).toBeNull();
     expect(r.finalScore[SC]).toBe(r.finalScore[PA]);
@@ -609,7 +692,18 @@ describe("ME-04 (7): regresión de ME-01/02/03 y segunda entrada del bloqueo", (
         );
         out.push([t.events.map((e) => [e.kind, e.atMs, e.actors, e.text, e.positions, e.gameClockMs, e.shotClockMs, e.score]), t.stop, t.box]);
       }
-    // Huella recalculada en ME-07B (§2: elimina el veto absoluto T04>=9 del
+    // Huella recalculada en ME-07B v2 sesión v2-6: dentro de una misma ficha, la
+    // banda de empate entre asignaciones de creador/bloqueador desempata por la
+    // primera lectura real proyectada, no por el instante en que los cinco están
+    // situados (con el desempate antiguo la huella es idéntica a la de v2-4).
+    // Antes: recalculada en la sesión v2-4: el ataque proyecta el
+    // bloqueo frente a la cobertura que ha visto (la trampa fija del tramo
+    // pesa en la asignación de creador y bloqueador; LAB-0.4). Antes:
+    // recalculada en ME-07B v2 §2.4 (creador y bloqueador se asignan
+    // por proyección al organizar, con los defensores siguiendo a su marca;
+    // lectura real del receptor del roll, ayuda de D3 leída, tiro parado de
+    // O1 y tipos floater/tiro medio; §2.5: faltas por contacto real).
+    // Antes: recalculada en ME-07B (§2: elimina el veto absoluto T04>=9 del
     // triple de O1 en la primera lectura del bloqueo — ahora compite por
     // valor situacional con oposición geométrica en vez de excluirse por
     // capacidad; el tramo pasa por esa misma lectura). Antes: recalculada
@@ -644,7 +738,7 @@ describe("ME-04 (7): regresión de ME-01/02/03 y segunda entrada del bloqueo", (
     let seen = 0;
     for (let seed = 1; seed <= 10 && seen === 0; seed++) {
       const core = computePossessionCore(
-        { scenarioId: "drop_con_ayuda", coverage: "drop", seed, rulesetVersion: "FIBA-2026", labParametersVersion: "LAB-0.2", offensePlayers: SIERRA_CLARA.players, defensePlayers: PUERTO_AMBAR.players },
+        { scenarioId: "drop_con_ayuda", coverage: "drop", seed, rulesetVersion: "FIBA-2026", labParametersVersion: "LAB-0.2", offensePlayers: SIERRA_CLARA.players, defensePlayers: PUERTO_AMBAR.players, rollHelpCall: "siempre" },
         {
           linked: {
             binding,
@@ -674,7 +768,7 @@ describe("ME-04 (7): regresión de ME-01/02/03 y segunda entrada del bloqueo", (
       expect(core.ball).toMatchObject({ status: "held", holderId: core.terminal.creatorId });
       // Sin reglas de partido, la misma geometría conserva el tiro forzado de ME-01.
       const legacy = computePossessionCore(
-        { scenarioId: "drop_con_ayuda", coverage: "drop", seed, rulesetVersion: "FIBA-2026", labParametersVersion: "LAB-0.2", offensePlayers: SIERRA_CLARA.players, defensePlayers: PUERTO_AMBAR.players },
+        { scenarioId: "drop_con_ayuda", coverage: "drop", seed, rulesetVersion: "FIBA-2026", labParametersVersion: "LAB-0.2", offensePlayers: SIERRA_CLARA.players, defensePlayers: PUERTO_AMBAR.players, rollHelpCall: "siempre" },
         { linked: { binding, startPositions: start, shotClockMs: 20_000, gameClockMs: 400_000, rng: createResumableRandom(seed), attackingPriority: "proteger_balance", entry: { kind: "organized_set" } } },
       );
       expect(legacy.terminal.kind).not.toBe("second_entry_kick_out");
@@ -694,4 +788,12 @@ describe("ME-04 (7): regresión de ME-01/02/03 y segunda entrada del bloqueo", (
   });
 });
 
-const TRAMO_FINGERPRINT = "47dfe426d37f19f73e5849da67807d33987d281c460ff82524a5e935db8980ea";
+// Recalculada en ME-07B v2 §2.1: el rebote aplica de verdad el retraso del
+// cierre (antes siempre cero), el tirador no cierra mientras completa su
+// gesto y cae de su salto antes de ir al rebote (LAB-0.4). Cambio
+// intencional de la mecánica deportiva del rebote, no una regresión. Otra
+// vez en §2.3: la trampa sale al preparar la pantalla (el tramo incluye
+// posesiones con trampa).
+// Sesión v2-8: la retirada de D5 en el drop queda en el historial de posiciones (rebote, relato y posición
+// de la fase siguiente), no solo en la valoración: cambian posiciones y rebotes del tramo.
+const TRAMO_FINGERPRINT = "ee397024c4358d174ec3ad4f499e6acc2f3f2cac6977b712d27219717b904241";

@@ -25,6 +25,18 @@ export const FIBA_THREE_POINT_RADIUS_METERS = 6.75;
  */
 export const FREE_THROW_LINE_SPOT: Point2D = { x: ATTACKED_HOOP.x - 5.8, y: ATTACKED_HOOP.y };
 
+/**
+ * Semianchura de la zona restringida rectangular FIBA (4,90 m de ancho), en
+ * metros. Una pantalla cuyo punto queda fuera de esa franja respecto al eje
+ * del aro es lateral (ME-07B v2 §5: ICE solo tiene sentido en un bloqueo
+ * lateral, para impedir el centro).
+ */
+export const FIBA_LANE_HALF_WIDTH_METERS = 2.45;
+
+export function isLateralScreenSpot(position: Point2D): boolean {
+  return Math.abs(position.y - ATTACKED_HOOP.y) > FIBA_LANE_HALF_WIDTH_METERS;
+}
+
 export function isBehindThreePointLine(position: Point2D): boolean {
   return distanceToHoop(position) > FIBA_THREE_POINT_RADIUS_METERS;
 }
