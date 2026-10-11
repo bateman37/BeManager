@@ -59,7 +59,6 @@ describe("ME-07B v2 §2.2 (v2-6): la ficha se elige por valor y Delay compite en
   // ejecución y cambia la secuencia natural): semilla 88 (9 veces; en los 20,
   // también seed 96 Sierra 8 y +5 104 Puerto 15, ver `scripts/me07b-v2-handoff-delay-gap.ts`).
   const { gi, r } = natural(88, plus(SIERRA_CLARA.players, 3));
-  const team = new Map(r.possessions.map((p) => [p.index, p.teamId]));
   const placements = r.audit!.decisions.filter((d) => d.point === "colocacion_bloqueo" && d.options.length > 1);
 
   it("en cada organización la ficha elegida es la de mayor valor proyectado, con su primera lectura auditada", () => {
@@ -79,10 +78,14 @@ describe("ME-07B v2 §2.2 (v2-6): la ficha se elige por valor y Delay compite en
   });
 
   it("Delay se elige solo cuando vale más, y entonces se juega su ficha con sus lecturas", () => {
+    // Sesión v2-9: con el rebote ofensivo en el valor de cada ficha, en la +3 Puerto ya no elige Delay
+    // (Sierra, 1 vez). La foto seed 96 da la muestra: Puerto lo elige 15 veces.
+    const { gi, r } = natural(96, SIERRA_CLARA.players);
+    const team = new Map(r.possessions.map((p) => [p.index, p.teamId]));
+    const placements = r.audit!.decisions.filter((d) => d.point === "colocacion_bloqueo" && d.options.length > 1);
     const delay = placements.filter((d) => d.chosenOptionId === "delay");
-    expect(delay.length).toBeGreaterThan(0);
+    expect(delay.filter((d) => team.get(d.possessionIndex!) === PUERTO_AMBAR.id).length).toBeGreaterThan(10);
     for (const d of delay) {
-      expect(team.get(d.possessionIndex!)).toBe(PUERTO_AMBAR.id);
       const v = (id: string) => d.options.find((o) => o.id === id)!.values!.projectedValue as number;
       expect(v("delay")).toBeGreaterThan(Math.max(v("central"), v("lateral"), v("horns")));
       // Su primera lectura llega más de 1 s después de situarse: pase de entrada y entrega antes de leer.

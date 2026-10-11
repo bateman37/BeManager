@@ -85,7 +85,8 @@ describe("ME-07B v2 §2.5: faltas por contacto real en balón vivo", () => {
     }
     expect(total).toBeGreaterThan(10);
     expect(outside / total).toBeGreaterThan(0.5);
-  });
+    // Ocho partidos completos con la proyección del rebote ofensivo (v2-9): supera el `testTimeout` global.
+  }, 300_000);
 
   it("solo cambiar M07 de los defensores de Puerto cambia cuántas faltas comete Puerto (disciplina alta < baja)", () => {
     const withM07 = (v: number) => PUERTO_AMBAR.players.map((p) => ({ ...p, attributes: { ...p.attributes, M07: v } }));

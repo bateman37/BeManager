@@ -1394,6 +1394,14 @@ export abstract class LinkedRun {
     frame: Frame,
     t0: Milliseconds,
     holderId: string,
+    /**
+     * Sesión v2-9: con `false`, la proyección no suma lo que sigue a un fallo
+     * vivo. La usa la lectura de transición, que compara organizar con el
+     * triple del portador valorado solo por su primer tiro: el rebote tras ese
+     * triple no se proyecta mientras los defensores no reaccionen al tiro
+     * (ACTIONS, «Rebote ofensivo y continuación»).
+     */
+    reboundFollowUp = true,
   ): {
     frame: Frame;
     options: import("../audit/audit-types").AuditOptionRecord[];
@@ -1484,6 +1492,7 @@ export abstract class LinkedRun {
                 defenseByHandoffResponse: { ...(this.observations.get(frame.defending.id)?.defenseByHandoffResponse ?? {}) },
               },
             },
+            { reboundFollowUp },
           );
           const tFirstReadMs = tReadyMs + secondsToMs(projection.decisionSeconds);
           candidates.push({ map, handlerId, screenerId: map.O5!, tReadyMs, tFirstReadMs, value: projection.value, plan: projection.plan, read: projection.bestReadOption, breakdown: projection.breakdown, placement, targets });
@@ -1938,16 +1947,47 @@ export abstract class LinkedRun {
       const carrierProfile = this.profile(carrierId);
       const pullUpPrep = movingShotPrepSeconds(carrierProfile.attributes.T06);
       const pullUps = remaining > 2 ? planTransitionPullUps(carrier, defenders) : [];
+      // Entrada y piernas del triple de cada candidato: las mismas que se ejecutan si se toma.
+      const tripleEntry = (cand: (typeof pullUps)[number]): { entry: Extract<LinkedEntry, { kind: "direct_finish" }>; legs: Record<string, PlannedLeg> } => {
+        const closer = cand.closer;
+        const entry: Extract<LinkedEntry, { kind: "direct_finish" }> = {
+          kind: "direct_finish",
+          shooterSlot: carrierSlot,
+          finishSpot: cand.spot,
+          shooterAtSpotSeconds: cand.travelSeconds,
+          shotType: "three_point",
+          prepSeconds: pullUpPrep,
+          pass: null,
+          contesterSlot: closer.slot,
+          contesterArrivalSeconds: cand.closeoutArrivalSeconds,
+          contesterGeometry: {
+            originPos: closer.position,
+            destinationPos: cand.spot,
+            speedMps: closer.lateralSpeedMps,
+            brakingExtraSeconds: closeoutBrakingExtraSeconds(this.profile(closer.id).attributes.F03),
+          },
+        };
+        const legs: Record<string, PlannedLeg> = {
+          [carrierSlot]: { departSeconds: 0, arriveSeconds: cand.travelSeconds, to: cand.spot },
+        };
+        for (const p of [...attackers, ...defenders]) {
+          if (p.slot === carrierSlot) continue;
+          const to = p.slot === closer.slot ? cand.spot : this.dispositionTargets()[p.slot]!;
+          legs[p.slot] = { departSeconds: 0, arriveSeconds: p.slot === closer.slot ? cand.closeoutArrivalSeconds : timeToReach(p.position, to, p.runSpeedMps), to };
+        }
+        return { entry, legs };
+      };
       let bestPullUp: { cand: (typeof pullUps)[number]; level: EffectiveOpposition; value: number } | null = null;
       for (const cand of pullUps) {
         const tReady = cand.travelSeconds + pullUpPrep;
         if (tReady >= remaining) continue;
         const level = this.closeoutLevel(cand.closer, cand.spot, cand.closeoutArrivalSeconds, cand.travelSeconds, tReady);
+        // Misma base que el valor de organizar con el que se compara (sin el rebote ofensivo: ver `assignOrganizedRoles`).
         const value = 3 * shotProbability(THREE_POINT_BASE_PROBABILITY, carrierProfile.attributes.T04, level);
         if (!bestPullUp || value > bestPullUp.value + 1e-12) bestPullUp = { cand, level, value };
       }
       if (bestPullUp) {
-        const organizeValue = Math.max(0, ...this.assignOrganizedRoles(frame, t1, carrierId).options.map((o) => (o.values?.projectedValue as number) ?? 0));
+        const organizeValue = Math.max(0, ...this.assignOrganizedRoles(frame, t1, carrierId, false).options.map((o) => (o.values?.projectedValue as number) ?? 0));
         const gap = bestPullUp.value - organizeValue;
         let takeTriple = gap > 0;
         let byTendency = false;
@@ -2009,32 +2049,7 @@ export abstract class LinkedRun {
         });
         if (takeTriple) {
           this.assignResponsibility(t1, carrierId, "carril_transicion", "Sube botando y se levanta para el triple antes de organizar.");
-          const closer = cand.closer;
-          const entry: LinkedEntry = {
-            kind: "direct_finish",
-            shooterSlot: carrierSlot,
-            finishSpot: cand.spot,
-            shooterAtSpotSeconds: cand.travelSeconds,
-            shotType: "three_point",
-            prepSeconds: pullUpPrep,
-            pass: null,
-            contesterSlot: closer.slot,
-            contesterArrivalSeconds: cand.closeoutArrivalSeconds,
-            contesterGeometry: {
-              originPos: closer.position,
-              destinationPos: cand.spot,
-              speedMps: closer.lateralSpeedMps,
-              brakingExtraSeconds: closeoutBrakingExtraSeconds(this.profile(closer.id).attributes.F03),
-            },
-          };
-          const legs: Record<string, PlannedLeg> = {
-            [carrierSlot]: { departSeconds: 0, arriveSeconds: cand.travelSeconds, to: cand.spot },
-          };
-          for (const p of [...attackers, ...defenders]) {
-            if (p.slot === carrierSlot) continue;
-            const to = p.slot === closer.slot ? cand.spot : this.dispositionTargets()[p.slot]!;
-            legs[p.slot] = { departSeconds: 0, arriveSeconds: p.slot === closer.slot ? cand.closeoutArrivalSeconds : timeToReach(p.position, to, p.runSpeedMps), to };
-          }
+          const { entry, legs } = tripleEntry(cand);
           return this.runCore(frame, t1, entry, legs);
         }
         return { kind: "organize", frame, atMs: t1, holderId: carrierId };

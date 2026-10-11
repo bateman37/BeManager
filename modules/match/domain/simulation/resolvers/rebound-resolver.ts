@@ -188,9 +188,43 @@ export function resolveRebound(
   rng: SeededRandom,
   boxOutGeometry?: ReboundBoxOutGeometry,
 ): ReboundOutcome {
-  if (!isInsideCourt(seed.landingPoint)) {
-    return { kind: "out_of_bounds" };
+  const contest = contestRebound(seed, candidates, boxOutGeometry);
+  if (!contest) return { kind: "out_of_bounds" };
+  const { trace, pool, captureProbability } = contest;
+  const first = pool[0]!;
+
+  if (rng.next() < captureProbability) {
+    return { kind: "secured", playerId: first.playerId, trace };
   }
+
+  return {
+    kind: "loose_ball_tip",
+    nearestPlayerId: first.playerId,
+    contestPoolPlayerIds: pool.map((c) => c.playerId),
+    trace,
+  };
+}
+
+/**
+ * Parte determinista de la disputa (sesión v2-9): cierres, llegadas
+ * efectivas, quiénes optan y la probabilidad de captura limpia del primero.
+ * `resolveRebound` solo añade el sorteo de esa captura; la proyección del
+ * rebote ofensivo (`possession-core`) usa esta misma función sin sortear.
+ * `null` si el balón cae fuera o nadie puede llegar.
+ */
+export interface ReboundContest {
+  readonly trace: ReboundTrace;
+  /** Optantes por orden de llegada efectiva; el primero es quien intenta capturar. */
+  readonly pool: readonly { readonly playerId: string; readonly teamId: string; readonly effectiveArrival: number }[];
+  readonly captureProbability: number;
+}
+
+export function contestRebound(
+  seed: ReboundSeed,
+  candidates: readonly ReboundCandidate[],
+  boxOutGeometry?: ReboundBoxOutGeometry,
+): ReboundContest | null {
+  if (!isInsideCourt(seed.landingPoint)) return null;
 
   const boxOuts = boxOutGeometry ? computeReboundBoxOuts(candidates, boxOutGeometry, seed.flightTimeSeconds) : [];
   const delayOf = new Map(boxOuts.map((b) => [b.rivalId, b.delaySeconds]));
@@ -207,10 +241,7 @@ export function resolveRebound(
   // cancha y lo recupera quien realmente llegue antes, aunque sea después
   // de esa ventana: no hay "eligibilidad" artificial, solo llegada real.
   const pool = withinFlightWindow.length > 0 ? withinFlightWindow : withEffectiveArrival;
-
-  if (pool.length === 0) {
-    return { kind: "out_of_bounds" };
-  }
+  if (pool.length === 0) return null;
 
   const poolIds = new Set(pool.map((c) => c.playerId));
   const trace: ReboundTrace = {
@@ -222,21 +253,38 @@ export function resolveRebound(
       inPool: poolIds.has(c.playerId),
     })),
   };
-
-  const first = pool[0]!;
   const disputa: 0 | 1 = pool.length > 1 ? 1 : 0;
-  const captureProbability = reboundCaptureProbability(first.t20, disputa);
+  return { trace, pool, captureProbability: reboundCaptureProbability(pool[0]!.t20, disputa) };
+}
 
-  if (rng.next() < captureProbability) {
-    return { kind: "secured", playerId: first.playerId, trace };
+/**
+ * Cuadratura de la caída del rebote (sesión v2-9): la misma distribución que
+ * `seedReboundLanding` (radio uniforme en su intervalo por tipo de tiro y
+ * ángulo uniforme en ±π/2 alrededor de la dirección aro→tirador), en una
+ * rejilla de puntos medios con peso igual. Sin parámetro nuevo: solo la
+ * forma determinista de leer esa misma distribución para proyectar.
+ */
+export function reboundLandingQuadrature(
+  hoop: Point2D,
+  shotOrigin: Point2D,
+  shotType: ShotType,
+  radialSteps = 2,
+  angularSteps = 6,
+): readonly { readonly seed: ReboundSeed; readonly weight: number }[] {
+  const close = shotType === "close_finish" || shotType === "floater";
+  const [minRadius, maxRadius] = close ? REBOUND_SEED_RADIUS_CLOSE_METERS : REBOUND_SEED_RADIUS_THREE_METERS;
+  const flightTimeSeconds = close ? REBOUND_FLIGHT_TIME_CLOSE_SECONDS : REBOUND_FLIGHT_TIME_THREE_SECONDS;
+  const baseAngle = Math.atan2(shotOrigin.y - hoop.y, shotOrigin.x - hoop.x);
+  const weight = 1 / (radialSteps * angularSteps);
+  const out: { seed: ReboundSeed; weight: number }[] = [];
+  for (let i = 0; i < radialSteps; i++) {
+    const radius = minRadius + ((i + 0.5) / radialSteps) * (maxRadius - minRadius);
+    for (let j = 0; j < angularSteps; j++) {
+      const angle = baseAngle - Math.PI / 2 + ((j + 0.5) / angularSteps) * Math.PI;
+      out.push({ seed: { landingPoint: add(hoop, scale({ x: Math.cos(angle), y: Math.sin(angle) }, radius)), flightTimeSeconds }, weight });
+    }
   }
-
-  return {
-    kind: "loose_ball_tip",
-    nearestPlayerId: first.playerId,
-    contestPoolPlayerIds: pool.map((c) => c.playerId),
-    trace,
-  };
+  return out;
 }
 
 /** Llegada efectiva (con cierre) de un jugador según la traza del rebote. */

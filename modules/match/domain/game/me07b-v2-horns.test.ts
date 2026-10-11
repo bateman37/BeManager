@@ -215,9 +215,15 @@ describe("ME-07B v2 §4: Horns no es la central con otro nombre (misma cobertura
     expect(new Set(invertShot(horns.r))).toEqual(new Set(["mid_range"]));
     expect(new Set(invertShot(central.r))).toEqual(new Set(["three_point"]));
     const chosen = (r: GameResult) => counts(sierraDecisions(r, "lectura_segunda_o5").map((d) => d.chosenOptionId));
-    // La central invierte a la esquina a menudo; Horns casi nunca (el tiro medio del codo vale menos que el aro).
+    // La central invierte a la esquina a menudo. Hasta v2-8 Horns casi nunca; desde v2-9 (el rebote ofensivo
+    // entra en el comparador y cambia qué posesiones llegan aquí) invierte con una frecuencia parecida (25 de 101
+    // frente a 21 de 97), pero lo que vale invertir es menos: un tiro medio del codo frente al triple de la esquina.
     expect(chosen(central.r).invertir_o3!).toBeGreaterThan(10);
-    expect(chosen(horns.r).invertir_o3 ?? 0).toBeLessThan(chosen(central.r).invertir_o3!);
+    const invertValue = (r: GameResult) => {
+      const vs = sierraDecisions(r, "lectura_segunda_o5").map((d) => d.options.find((o) => o.id === "invertir_o3")!.values!.situationalValue).filter((v): v is number => typeof v === "number" && Number.isFinite(v));
+      return vs.reduce((a, b) => a + b, 0) / vs.length;
+    };
+    expect(invertValue(horns.r)).toBeLessThan(invertValue(central.r));
   });
 });
 

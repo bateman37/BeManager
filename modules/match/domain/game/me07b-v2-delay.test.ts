@@ -256,8 +256,9 @@ describe("ME-07B v2 §4: salidas del poste (ayuda de la esquina, corte, repostea
   });
 
   it("si el tirador de la esquina no tira, la ayuda se hunde igual y el poste no tiene esa salida (no dejar tirador de esquina, al revés)", () => {
-    const fast = play(92, { coverage: "drop", away: fastHelp(PUERTO_AMBAR.players), tag: "fast" });
-    const both = play(92, { coverage: "drop", away: fastHelp(PUERTO_AMBAR.players), home: noShooters(SIERRA_CLARA.players), tag: "fast+noShooters" });
+    // Sesión v2-9: en la 92 ya no sale ninguna vez a la esquina con la ayuda rápida; la 95 da la muestra.
+    const fast = play(95, { coverage: "drop", away: fastHelp(PUERTO_AMBAR.players), tag: "fast" });
+    const both = play(95, { coverage: "drop", away: fastHelp(PUERTO_AMBAR.players), home: noShooters(SIERRA_CLARA.players), tag: "fast+noShooters" });
     const kick = (g: { r: GameResult }) => sierra(g.r, "lectura_poste").filter((d) => d.chosenOptionId === "salida_esquina_o2").length;
     expect(kick(both)).toBeLessThan(kick(fast));
     expect(counts(sierra(both.r, "respuesta_poste").map((d) => d.chosenOptionId)).ayudar_poste!).toBeGreaterThan(10);

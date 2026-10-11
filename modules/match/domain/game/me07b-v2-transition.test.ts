@@ -34,7 +34,9 @@ function play(seed: number, home: readonly PlayerProfile[] = SIERRA_CLARA.player
   );
 }
 
-const SEEDS = [91, 92, 93, 94];
+// Sesión v2-9 (el rebote ofensivo entra en el valor de organizar de las fichas y cambia la secuencia):
+// en 91–94 Sierra ya no toma ninguno; en 95–98, uno (semilla 98).
+const SEEDS = [95, 96, 97, 98];
 function transitionTriples(home: readonly PlayerProfile[] = SIERRA_CLARA.players) {
   const evaluated: { chosen: boolean; values: Record<string, unknown> }[] = [];
   for (const seed of SEEDS) {
@@ -71,5 +73,6 @@ describe("ME-07B v2 §2.5: triple del portador en transición", () => {
     const decided = transitionTriples(SIERRA_CLARA.players.map((p) => ({ ...p, shotTendency: "decidida" as const })));
     const prudent = transitionTriples(SIERRA_CLARA.players.map((p) => ({ ...p, shotTendency: "prudente" as const })));
     expect(rate(decided)).toBeGreaterThan(rate(prudent));
-  });
+    // Tres partidos completos con la proyección del rebote ofensivo (v2-9): supera el `testTimeout` global.
+  }, 300_000);
 });

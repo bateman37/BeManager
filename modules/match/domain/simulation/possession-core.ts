@@ -77,6 +77,8 @@ import { resolveShot, shotBaseProbability, type ShotType } from "./resolvers/sho
 import {
   seedReboundLanding,
   resolveRebound,
+  contestRebound,
+  reboundLandingQuadrature,
   pickTipWinnerByT20,
   effectiveReboundArrival,
   type ReboundBoxOutGeometry,
@@ -86,13 +88,13 @@ import {
 } from "./resolvers/rebound-resolver";
 import { resolvesTurnoverUnderPressure } from "./resolvers/turnover-resolver";
 import { planSecondEntry, type SecondEntryPlan } from "./second-entry-read";
-import type { RaceParticipant } from "../sequence/transition";
+import { readSecondChance, type RaceParticipant } from "../sequence/transition";
 import {
   evaluateCloseoutLegality,
   awardFreeThrowsForShootingFoul,
   evaluateContainmentContact,
 } from "./resolvers/foul-resolver";
-import { shotProbability, blockDeflectionProbability, CLOSE_FINISH_BASE_PROBABILITY, THREE_POINT_BASE_PROBABILITY } from "../lab/lab-0-1-parameters";
+import { shotProbability, blockDeflectionProbability } from "../lab/lab-0-1-parameters";
 import { createNoopAuditCollector, type AuditCollector } from "../audit/audit-collector";
 import type { AuditDecisionPoint, AuditOptionRecord, AuditReasonCode } from "../audit/audit-types";
 import { cardFor, type PlaybookCardId } from "../tactics/playbook-card";
@@ -112,10 +114,44 @@ function helpLeftShotType(ctx: CoreContext): ShotType {
   return isFloaterZone(spot) ? "floater" : "close_finish";
 }
 
-/** Valor del tiro de recepción de O3 en ese punto con la oposición dada (misma regla LAB-0.1 que el resto de vías). */
-function helpLeftShotValue(ctx: CoreContext, opposition: EffectiveOpposition): number {
+/** Cierre del tiro de recepción de O3: quién, con qué carrera y cuándo llega (o nadie). */
+interface HelpLeftContest {
+  /** Con el rebote ofensivo tras un fallo (proyecciones de una sola vía, como la trampa). */
+  readonly full?: boolean;
+  readonly tReady: number;
+  /** Punto real de recepción si no es `ctx.set.helpLeftSpot` (p. ej. el pop de Spain). */
+  readonly spot?: Point2D;
+  readonly contesterId: string;
+  readonly contesterArrival: number;
+  readonly contesterGeometry: ContestGeometry;
+}
+
+/** Sin defensor que pueda cerrar (oposición 0 supuesta por la rama): ni falta ni tapón. */
+function noContester(at: Point2D): Pick<ShotAttemptArgs, "contesterId" | "contesterArrival" | "contesterGeometry"> {
+  return { contesterId: "", contesterArrival: Infinity, contesterGeometry: { originPos: at, destinationPos: at, speedMps: 0, brakingExtraSeconds: 0 } };
+}
+
+/**
+ * Valor del tiro de recepción de O3 en ese punto con la oposición dada (misma
+ * regla que el resto de vías: `shotReadValue`, sesión v2-9).
+ */
+function helpLeftShotValue(ctx: CoreContext, opposition: EffectiveOpposition, contest: HelpLeftContest): number {
+  return (contest.full ? shotFullValue : shotReadValue)(ctx, helpLeftShotArgs(ctx, contest), opposition);
+}
+
+function helpLeftShotArgs(ctx: CoreContext, contest: HelpLeftContest): ShotAttemptArgs {
   const type = helpLeftShotType(ctx);
-  return (type === "three_point" ? 3 : 2) * shotProbability(shotBaseProbability(type), shotSkill(player(ctx, "O3"), type), opposition);
+  return {
+      shooterId: "O3",
+      shooterSkill: shotSkill(player(ctx, "O3"), type),
+      shotType: type,
+      shooterPos: contest.spot ?? ctx.set.helpLeftSpot,
+      tReady: contest.tReady,
+      prepSeconds: CATCH_AND_SHOOT_PREP_SECONDS,
+      contesterId: contest.contesterId,
+      contesterArrival: contest.contesterArrival,
+      contesterGeometry: contest.contesterGeometry,
+  };
 }
 /**
  * Solo para `closeout_tardío_con_contacto`: representa que D4 ya había
@@ -354,7 +390,8 @@ interface LinkedState {
 
 interface CoreContext {
   readonly input: MatchInput;
-  readonly rng: SeededRandom;
+  /** Mutable solo en seco: al seguir la vía elegida, el camino modal (`MODAL_RNG`, sesión v2-9). */
+  rng: SeededRandom;
   readonly timeline: RawEvent[];
   sequence: number;
   readonly positions: Record<string, Point2D>;
@@ -382,6 +419,15 @@ interface CoreContext {
    * costes que su ejecución real.
    */
   readonly projecting?: boolean;
+  /** Sesión v2-9: en seco, la primera lectura ya fijó la proyección y se sigue la vía elegida hasta su tiro. */
+  followUp?: boolean;
+  pendingProjection?: PendingProjection | null;
+  /**
+   * Proyección sin lo que sigue a un fallo vivo (sesión v2-9): la usa la
+   * lectura de transición, que compara organizar con un triple valorado solo
+   * por su primer tiro (ver `assignOrganizedRoles`).
+   */
+  readonly withoutReboundFollowUp?: boolean;
   /**
    * Puntos de la disposición del bloqueo directo de esta acción (central o
    * lateral, LAB-0.7; Horns, LAB-0.8). Mutable solo para que Horns→Spain
@@ -624,6 +670,12 @@ interface ProjectedReadOption {
   readonly value: number;
   /** Probabilidad de que los pases necesarios para llegar a la vía no se desvíen (LAB-0.1). */
   readonly completion: number;
+  /**
+   * Puntos esperados tras un fallo vivo del tiro de la vía (rebote ofensivo
+   * y palmeada, `reboundFollowUpValue`), ya multiplicados por la
+   * probabilidad de ese fallo; solo en la vía que la lectura elegiría.
+   */
+  readonly rebound?: number;
 }
 
 interface ReadProjection {
@@ -633,6 +685,68 @@ interface ReadProjection {
 
 class ReadProjectionReached {
   constructor(readonly projection: ReadProjection) {}
+}
+
+/**
+ * Seguimiento de la vía elegida en seco (ME-07B v2 §2.1/§2.2, sesión v2-9).
+ * La proyección de una familia se fija en su primera lectura (valor de cada
+ * vía, completado y frontera temporal), pero lo que sigue a un fallo depende
+ * de dónde estarán los diez cuando salga el tiro: la continuación del
+ * bloqueador, la retirada de D5, el que cierra y quién carga. En vez de
+ * suponerlo, la proyección sigue ejecutando —en la misma copia en seco— la
+ * vía que la lectura elegiría por su **camino modal**: cada sorteo de Bernoulli
+ * toma su resultado más probable (`MODAL_RNG`, 0,5: el pase no se desvía, la
+ * recepción es limpia si es lo probable, no hay falta ni robo improbables).
+ * Al llegar al tiro (`resolveShotAttempt`) se valora con el estado real de
+ * ese instante el rebote ofensivo y la palmeada (`reboundFollowUpValue`) y se
+ * corta (`FollowUpReached`). Si el camino acaba sin tiro (reloj, salida
+ * segura), no hay rebote que valorar.
+ */
+interface PendingProjection {
+  readonly tDecisionSeconds: number;
+  readonly options: readonly ProjectedReadOption[];
+  readonly bestIndex: number;
+}
+
+class FollowUpReached {
+  constructor(readonly reboundValue: number) {}
+}
+
+const MODAL_RNG: SeededRandom = {
+  next: () => 0.5,
+  nextInRange: (min: number, max: number) => (min + max) / 2,
+  nextInt: (min: number, max: number) => Math.floor((min + max) / 2),
+  nextSign: () => 1,
+};
+
+/**
+ * Fija la proyección de la primera lectura en seco y entra en seguimiento: la
+ * vía de mayor valor × completado (la misma regla que `familyOpportunity`).
+ * `null` si ninguna vía tiene valor positivo (no hay tiro que seguir).
+ */
+function beginFollowUp(ctx: CoreContext, tDecisionSeconds: number, options: readonly { readonly id: string; readonly value: number; readonly completion: number }[]): number | null {
+  let best = 0;
+  let bestIndex = -1;
+  options.forEach((o, i) => {
+    if (!Number.isFinite(o.value)) return;
+    const expected = o.value * o.completion;
+    if (expected > best) {
+      best = expected;
+      bestIndex = i;
+    }
+  });
+  if (bestIndex < 0 || ctx.withoutReboundFollowUp) return null;
+  ctx.pendingProjection = { tDecisionSeconds, options: options.map((o) => ({ id: o.id, value: o.value, completion: o.completion })), bestIndex };
+  ctx.followUp = true;
+  ctx.rng = MODAL_RNG;
+  return bestIndex;
+}
+
+function pendingWithRebound(pending: PendingProjection, rebound: number): ReadProjection {
+  return {
+    tDecisionSeconds: pending.tDecisionSeconds,
+    options: pending.options.map((o, i) => (i === pending.bestIndex && rebound !== 0 ? { ...o, rebound } : o)),
+  };
 }
 
 /**
@@ -694,6 +808,8 @@ function dryContext(ctx: CoreContext): CoreContext {
     linked: ctx.linked ? { ...ctx.linked, balancers: new Set(ctx.linked.balancers) } : null,
     audit: createNoopAuditCollector(),
     projecting: true,
+    followUp: false,
+    pendingProjection: null,
   };
 }
 
@@ -703,18 +819,23 @@ function dryContext(ctx: CoreContext): CoreContext {
  * reloj insuficiente).
  */
 function projectFamilyRead(ctx: CoreContext, run: (dry: CoreContext) => PossessionCoreResult): ReadProjection | null {
+  const dry = dryContext(ctx);
   try {
-    run(dryContext(ctx));
-    return null;
+    run(dry);
   } catch (e) {
     if (e instanceof ReadProjectionReached) return e.projection;
+    if (e instanceof FollowUpReached && dry.pendingProjection) return pendingWithRebound(dry.pendingProjection, e.reboundValue);
     throw e;
   }
+  // La vía seguida terminó sin tiro (salida segura, reloj): sin rebote.
+  return dry.pendingProjection ? pendingWithRebound(dry.pendingProjection, 0) : null;
 }
 
 /** Oportunidad comparable de una familia: la mejor vía viable por su probabilidad de completarse. */
 interface FamilyOpportunity extends EntryOpportunity {
   readonly bestOptionId: string | null;
+  /** Parte de `value` que es rebote ofensivo y palmeada tras un fallo vivo (sesión v2-9). */
+  readonly reboundValue?: number;
   /** Valor situacional de esa vía en la primera lectura proyectada, antes del riesgo de pase. */
   readonly bestRawValue: number | null;
   readonly bestCompletion: number | null;
@@ -722,7 +843,7 @@ interface FamilyOpportunity extends EntryOpportunity {
 }
 
 function familyOpportunity(projection: ReadProjection | null): FamilyOpportunity {
-  if (!projection) return { viable: false, value: -Infinity, bestOptionId: null, bestRawValue: null, bestCompletion: null, tDecisionSeconds: null };
+  if (!projection) return { viable: false, value: -Infinity, bestOptionId: null, bestRawValue: null, bestCompletion: null, tDecisionSeconds: null, reboundValue: 0 };
   let best = 0;
   let bestOption: ProjectedReadOption | null = null;
   for (const o of projection.options) {
@@ -733,9 +854,12 @@ function familyOpportunity(projection: ReadProjection | null): FamilyOpportunity
       bestOption = o;
     }
   }
+  // Sesión v2-9: lo que sigue a un fallo vivo del tiro de la vía elegida.
+  const rebound = bestOption ? (bestOption.rebound ?? 0) * bestOption.completion : 0;
   return {
     viable: best > 0,
-    value: best,
+    value: best + rebound,
+    reboundValue: rebound,
     bestOptionId: bestOption?.id ?? null,
     bestRawValue: bestOption?.value ?? null,
     bestCompletion: bestOption?.completion ?? null,
@@ -746,6 +870,7 @@ function familyOpportunity(projection: ReadProjection | null): FamilyOpportunity
 function familyAuditValues(o: FamilyOpportunity): Record<string, number | string | boolean | null> {
   return {
     situationalValue: o.value,
+    reboundValue: o.reboundValue ?? 0,
     viable: o.viable,
     bestReadOption: o.bestOptionId,
     bestReadRawValue: o.bestRawValue,
@@ -1002,10 +1127,8 @@ function breakdownOf(
   return out;
 }
 
-export function projectOrganizedOpportunity(
-  input: MatchInput,
-  linked: Omit<LinkedSegmentOptions, "rng" | "entry" | "legs">,
-): OrganizedProjection {
+/** Contexto en seco desde posiciones de partida en el marco local (proyecciones de quien llama al núcleo). */
+function projectionContext(input: MatchInput, linked: Omit<LinkedSegmentOptions, "rng" | "entry">, withoutReboundFollowUp = false): CoreContext {
   const scenario = getScenario(input.scenarioId);
   const positions: Record<string, Point2D> = {};
   const positionHistory: Record<string, PositionHistoryEntry[]> = {};
@@ -1037,8 +1160,56 @@ export function projectOrganizedOpportunity(
     audit: createNoopAuditCollector(),
     auditMeta: null,
     projecting: true,
+    withoutReboundFollowUp,
     set: pnrSetGeometry(input.screenPlacement ?? "central"),
   };
+  for (const [slot, leg] of Object.entries(linked.legs ?? {})) {
+    redirect(ctx, slot, leg.departSeconds, leg.arriveSeconds, leg.to);
+  }
+  return ctx;
+}
+
+/**
+ * Desglose del valor de un tiro directo planificado por quien llama al núcleo
+ * (sesión v2-9): mismo `shotValueBreakdown` que las lecturas del árbol, con
+ * las piernas ya planificadas (primer tiro, falta, tapón y palmeada tras
+ * rebote ofensivo). Lo usan las pruebas discriminantes del rebote proyectado.
+ */
+export function projectDirectFinishBreakdown(
+  input: MatchInput,
+  linked: Omit<LinkedSegmentOptions, "rng" | "entry">,
+  entry: Extract<LinkedEntry, { kind: "direct_finish" }>,
+  opposition: EffectiveOpposition,
+): ShotValueBreakdown {
+  const ctx = projectionContext(input, linked);
+  const shotType = entry.shotType ?? "close_finish";
+  const prepSeconds = entry.prepSeconds ?? (shotType === "three_point" || shotType === "mid_range" ? CATCH_AND_SHOOT_PREP_SECONDS : CLOSE_FINISH_PREP_SECONDS);
+  const tCatch = entry.pass ? Math.max(entry.shooterAtSpotSeconds, entry.pass.arrivalSeconds) : entry.shooterAtSpotSeconds;
+  return shotValueBreakdown(
+    ctx,
+    {
+      shooterId: entry.shooterSlot,
+      shooterSkill: shotSkill(player(ctx, entry.shooterSlot), shotType),
+      shotType,
+      shooterPos: entry.finishSpot,
+      tReady: tCatch + prepSeconds,
+      prepSeconds,
+      contesterId: entry.contesterSlot,
+      contesterArrival: entry.contesterArrivalSeconds,
+      contesterGeometry: entry.contesterGeometry,
+    },
+    opposition,
+    true,
+  );
+}
+
+export function projectOrganizedOpportunity(
+  input: MatchInput,
+  linked: Omit<LinkedSegmentOptions, "rng" | "entry" | "legs">,
+  options: { readonly reboundFollowUp?: boolean } = {},
+): OrganizedProjection {
+  const scenario = getScenario(input.scenarioId);
+  const ctx = projectionContext(input, linked, options.reboundFollowUp === false);
   const planChoice: OffensivePlanChoice = input.offensivePlan ?? "bloqueo_directo";
   if (ctx.set.placement === "delay") {
     // LAB-0.10: Delay se proyecta frente a cada respuesta a la entrega que el rival ha mostrado.
@@ -1612,48 +1783,49 @@ function readRollReceiver(ctx: CoreContext, env: RollReceiverEnv, tAct: number):
   const options: ReceiverOption[] = [];
   const tRimReady = tAct + timeToReach(pos, ATTACKED_HOOP, attackerMoveSpeedMps(receiver.attributes.F01)) + CLOSE_FINISH_PREP_SECONDS;
   const rim = bestContest(ctx, env.rimCandidates, ATTACKED_HOOP, tRimReady, CLOSE_FINISH_PREP_SECONDS)!;
-  const rimValue = tRimReady < clock ? 2 * shotProbability(CLOSE_FINISH_BASE_PROBABILITY, receiver.attributes.T01, rim.level) : -Infinity;
+  const rimShot: ShotAttemptArgs = {
+    shooterId: env.receiverId,
+    shooterSkill: receiver.attributes.T01,
+    shotType: "close_finish",
+    shooterPos: ATTACKED_HOOP,
+    tReady: tRimReady,
+    prepSeconds: CLOSE_FINISH_PREP_SECONDS,
+    contesterId: rim.id,
+    contesterArrival: rim.arrival,
+    contesterGeometry: rim.geometry,
+  };
+  const rimValue = tRimReady < clock ? shotReadValue(ctx, rimShot, rim.level) : -Infinity;
   options.push({
     id: "finalizar_aro",
     value: rimValue,
-    shot: {
-      shooterId: env.receiverId,
-      shooterSkill: receiver.attributes.T01,
-      shotType: "close_finish",
-      shooterPos: ATTACKED_HOOP,
-      tReady: tRimReady,
-      prepSeconds: CLOSE_FINISH_PREP_SECONDS,
-      contesterId: rim.id,
-      contesterArrival: rim.arrival,
-      contesterGeometry: rim.geometry,
-    },
+    shot: rimShot,
     values: { situationalValue: rimValue, contesterId: realId(ctx, rim.id), opposition: rim.level, readySeconds: tRimReady, rimOccupied: rim.occupied },
   });
   const tFloatReady = tAct + CLOSE_FINISH_PREP_SECONDS;
   const floater = bestContest(ctx, env.floaterCandidates, pos, tFloatReady, CLOSE_FINISH_PREP_SECONDS)!;
-  const floaterValue =
-    isFloaterZone(pos) && tFloatReady < clock ? 2 * shotProbability(shotBaseProbability("floater"), receiver.attributes.T02, floater.level) : -Infinity;
+  const floaterShot: ShotAttemptArgs = {
+    shooterId: env.receiverId,
+    shooterSkill: receiver.attributes.T02,
+    shotType: "floater",
+    shooterPos: pos,
+    tReady: tFloatReady,
+    prepSeconds: CLOSE_FINISH_PREP_SECONDS,
+    contesterId: floater.id,
+    contesterArrival: floater.arrival,
+    contesterGeometry: floater.geometry,
+  };
+  const floaterValue = isFloaterZone(pos) && tFloatReady < clock ? shotReadValue(ctx, floaterShot, floater.level) : -Infinity;
   options.push({
     id: "flotadora",
     value: floaterValue,
-    shot: {
-      shooterId: env.receiverId,
-      shooterSkill: receiver.attributes.T02,
-      shotType: "floater",
-      shooterPos: pos,
-      tReady: tFloatReady,
-      prepSeconds: CLOSE_FINISH_PREP_SECONDS,
-      contesterId: floater.id,
-      contesterArrival: floater.arrival,
-      contesterGeometry: floater.geometry,
-    },
+    shot: floaterShot,
     values: { situationalValue: floaterValue, contesterId: realId(ctx, floater.id), opposition: floater.level, readySeconds: tFloatReady },
   });
   const inv = env.invert;
   const tInvertReady = Math.max(tAct + PASS_RELEASE_SECONDS + distanceSeconds(pos, ctx.set.helpLeftSpot), inv?.targetReadySeconds ?? 0) + CATCH_AND_SHOOT_PREP_SECONDS;
   const invertLevel = inv ? estimateContestLevel(ctx, inv.closerId, inv.closerGeometry, inv.closerArrival, ctx.set.helpLeftSpot, tInvertReady, CATCH_AND_SHOOT_PREP_SECONDS) : 1;
   const invertCompletion = inv ? 1 - deflectionProbability(player(ctx, inv.deflectorId).attributes.T17, receiver.attributes.T09) : 0;
-  const invertValue = inv && tInvertReady < clock ? invertCompletion * helpLeftShotValue(ctx, invertLevel) : -Infinity;
+  const invertValue = inv && tInvertReady < clock ? invertCompletion * helpLeftShotValue(ctx, invertLevel, { tReady: tInvertReady, contesterId: inv.closerId, contesterArrival: inv.closerArrival, contesterGeometry: inv.closerGeometry }) : -Infinity;
   options.push({
     id: "invertir_o3",
     value: invertValue,
@@ -1979,9 +2151,18 @@ function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition, d1Route: S
   const tO1AtUnderPoint = tDecision + timeToReach(ctx.positions.O1!, underPoint, attackerMoveSpeedMps(o1.attributes.F01));
   const d1WallsDrive = underRoute && tD1Under <= tO1AtUnderPoint;
   const finishOpposition: EffectiveOpposition = finishMarginSeconds >= 0.25 && !d1WallsDrive ? 0 : 1;
-  const finishValue = finishViable
-    ? 2 * shotProbability(CLOSE_FINISH_BASE_PROBABILITY, o1.attributes.T01, finishOpposition)
-    : -Infinity;
+  const finishShot: ShotAttemptArgs = {
+    shooterId: "O1",
+    shooterSkill: o1.attributes.T01,
+    shotType: "close_finish",
+    shooterPos: ATTACKED_HOOP,
+    tReady: tO1FinishReady,
+    prepSeconds: CLOSE_FINISH_PREP_SECONDS,
+    contesterId: "D5",
+    contesterArrival: tDecision + d5TimeToHoop,
+    contesterGeometry: d5HoopGeometry,
+  };
+  const finishValue = finishViable ? shotReadValue(ctx, finishShot, finishOpposition) : -Infinity;
 
   // Vía "pase_o5": bate al perseguidor por >=0,2 s de retraso de pantalla,
   // hay línea, y D3 no negó el roll *antes* de esta decisión (si ya lo negó,
@@ -2020,7 +2201,9 @@ function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition, d1Route: S
   // ME-07B v2 §2.4: la oposición es la que resultará de la carrera real de D4
   // (misma regla que resolverá el tiro), no un umbral de margen aparte.
   const o3PassOpposition: EffectiveOpposition = estimateContestLevel(ctx, "D4", d4CornerGeometry, tD4ArriveAtCorner, ctx.set.helpLeftSpot, tPrepReadyO3Direct, CATCH_AND_SHOOT_PREP_SECONDS);
-  const o3PassValue = o3PassViable ? helpLeftShotValue(ctx, o3PassOpposition) : -Infinity;
+  const o3PassValue = o3PassViable
+    ? helpLeftShotValue(ctx, o3PassOpposition, { tReady: tPrepReadyO3Direct, contesterId: "D4", contesterArrival: tD4ArriveAtCorner, contesterGeometry: d4CornerGeometry })
+    : -Infinity;
 
   // Vía "triple_o1": O1 detrás de la línea con reloj suficiente (ya
   // comprobado arriba). ME-07B §2 elimina el veto absoluto de capacidad
@@ -2080,9 +2263,18 @@ function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition, d1Route: S
     movingShotPrepSeconds(o1.attributes.T06),
   )!;
   const tripleOpposition: EffectiveOpposition = tripleContest.level;
-  const tripleValue = tripleViable
-    ? 3 * shotProbability(THREE_POINT_BASE_PROBABILITY, o1.attributes.T04, tripleOpposition)
-    : -Infinity;
+  const tripleShot: ShotAttemptArgs = {
+    shooterId: "O1",
+    shooterSkill: o1.attributes.T04,
+    shotType: "three_point",
+    shooterPos: ctx.positions.O1!,
+    tReady: tShotReadyO1,
+    prepSeconds: movingShotPrepSeconds(o1.attributes.T06),
+    contesterId: tripleContest.id,
+    contesterArrival: tripleContest.arrival,
+    contesterGeometry: tripleContest.geometry,
+  };
+  const tripleValue = tripleViable ? shotReadValue(ctx, tripleShot, tripleOpposition) : -Infinity;
 
   // Vías "parada_o1" y "flotadora_o1" (ME-07B v2 §2.4): O1 sigue hacia el
   // aro tras la pantalla y se detiene antes del protector de aro, fuera de su
@@ -2141,7 +2333,9 @@ function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition, d1Route: S
     salida_segura: safeOutletValue,
   };
   const FIRST_READ_ORDER: readonly FirstReadOptionId[] = ["finalizar", "pase_o5", "pase_o3", "triple_o1", "parada_o1", "flotadora_o1", "salida_segura"];
-  if (ctx.projecting) {
+  // Sesión v2-9: en seco, la primera lectura fija la proyección y la vía elegida se sigue por su camino modal.
+  let forcedFirstRead: FirstReadOptionId | null = null;
+  if (ctx.projecting && !ctx.followUp) {
     const completionOf: Readonly<Record<FirstReadOptionId, number>> = {
       finalizar: 1,
       pase_o5: 1 - deflectionProbability(d1.attributes.T17, o1.attributes.T09),
@@ -2151,10 +2345,12 @@ function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition, d1Route: S
       flotadora_o1: 1,
       salida_segura: 1,
     };
-    throw new ReadProjectionReached({
-      tDecisionSeconds: tDecision,
-      options: FIRST_READ_ORDER.map((id) => ({ id, value: candidateValues[id], completion: completionOf[id] })),
-    });
+    if (!ctx.followUp) {
+      const options = FIRST_READ_ORDER.map((id) => ({ id, value: candidateValues[id], completion: completionOf[id] }));
+      const best = beginFollowUp(ctx, tDecision, options);
+      if (best === null) throw new ReadProjectionReached({ tDecisionSeconds: tDecision, options });
+      forcedFirstRead = FIRST_READ_ORDER[best]!;
+    }
   }
   const viableCandidates = FIRST_READ_ORDER.filter((id) => Number.isFinite(candidateValues[id]))
     .map((id) => ({ id, value: candidateValues[id] }))
@@ -2210,6 +2406,8 @@ function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition, d1Route: S
       }
     }
   }
+
+  if (forcedFirstRead) chosen = forcedFirstRead;
 
   const firstReadReasonCodes: Readonly<Record<FirstReadOptionId, { chosen: AuditReasonCode; notViable: AuditReasonCode }>> = {
     finalizar: { chosen: "lane_open_before_help", notViable: "lane_closed_help_ready" },
@@ -2301,17 +2499,7 @@ function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition, d1Route: S
       rngStateAfter: tieRngAfter,
       options: firstReadOptions,
     });
-    return resolveShotAttempt(ctx, {
-      shooterId: "O1",
-      shooterSkill: o1.attributes.T01,
-      shotType: "close_finish",
-      shooterPos: ATTACKED_HOOP,
-      tReady: tDecision + o1TimeToHoop + CLOSE_FINISH_PREP_SECONDS,
-      prepSeconds: CLOSE_FINISH_PREP_SECONDS,
-      contesterId: "D5",
-      contesterArrival: tDecision + d5TimeToHoop,
-      contesterGeometry: d5HoopGeometry,
-    });
+    return resolveShotAttempt(ctx, finishShot);
   }
 
   if (chosen === "pase_o5") {
@@ -2476,17 +2664,7 @@ function runDropPhase(ctx: CoreContext, scenario: ScenarioDefinition, d1Route: S
       rngStateAfter: tieRngAfter,
       options: firstReadOptions,
     });
-    return resolveShotAttempt(ctx, {
-      shooterId: "O1",
-      shooterSkill: o1.attributes.T04,
-      shotType: "three_point",
-      shooterPos: ctx.positions.O1!,
-      tReady: tShotReadyO1,
-      prepSeconds: movingShotPrepSeconds(o1.attributes.T06),
-      contesterId: tripleContest.id,
-      contesterArrival: tripleContest.arrival,
-      contesterGeometry: tripleContest.geometry,
-    });
+    return resolveShotAttempt(ctx, tripleShot);
   }
 
   if (chosen === "parada_o1" || chosen === "flotadora_o1") {
@@ -2718,7 +2896,22 @@ function runTrapPhase(ctx: CoreContext): PossessionCoreResult {
         trapClosed: false,
         branch: "carril_o1",
         stealProbability: 0,
-        concession: shotClockRemainingSeconds > 2 ? 2 * shotProbability(CLOSE_FINISH_BASE_PROBABILITY, o1.attributes.T01, 0) : 0,
+        concession:
+          shotClockRemainingSeconds > 2
+            ? shotFullValue(
+                ctx,
+                {
+                  shooterId: "O1",
+                  shooterSkill: o1.attributes.T01,
+                  shotType: "close_finish",
+                  shooterPos: ATTACKED_HOOP,
+                  tReady: tDecision + timeToReach(ctx.positions.O1!, ATTACKED_HOOP, attackerMoveSpeedMps(o1.attributes.F01)) + CLOSE_FINISH_PREP_SECONDS,
+                  prepSeconds: CLOSE_FINISH_PREP_SECONDS,
+                  ...noContester(ATTACKED_HOOP),
+                },
+                0,
+              )
+            : 0,
       });
     }
     const stealProbability = turnoverUnderPressureProbability(o1.attributes.T07, Math.min(d1.attributes.T15, d5.attributes.T15));
@@ -2730,15 +2923,40 @@ function runTrapPhase(ctx: CoreContext): PossessionCoreResult {
     let next: number;
     if (tD3LowManArrival > tO5ReadyProjected) {
       branch = "trap_broken_o4";
-      next = isBehindThreePointLine(ctx.positions.O4!)
-        ? 3 * shotProbability(THREE_POINT_BASE_PROBABILITY, o4.attributes.T04, 0)
-        : 2 * shotProbability(CLOSE_FINISH_BASE_PROBABILITY, o4.attributes.T01, 0);
+      const o4Three = isBehindThreePointLine(ctx.positions.O4!);
+      next = shotFullValue(
+        ctx,
+        {
+          shooterId: "O4",
+          shooterSkill: o4Three ? o4.attributes.T04 : o4.attributes.T01,
+          shotType: o4Three ? "three_point" : "close_finish",
+          shooterPos: ctx.positions.O4!,
+          tReady: tO5ReadyProjected + PASS_RELEASE_SECONDS + distanceSeconds(ctx.positions.O5!, ctx.positions.O4!) + CATCH_AND_SHOOT_PREP_SECONDS,
+          prepSeconds: CATCH_AND_SHOOT_PREP_SECONDS,
+          ...noContester(ctx.positions.O4!),
+        },
+        0,
+      );
     } else if (tD4ArriveAtCorner - tPrepReadyO3Projected >= 0.25) {
       branch = "invertir_o3";
-      next = (1 - deflectionProbability(d3.attributes.T17, o5.attributes.T09)) * helpLeftShotValue(ctx, 0);
+      next = (1 - deflectionProbability(d3.attributes.T17, o5.attributes.T09)) * helpLeftShotValue(ctx, 0, { full: true, tReady: tPrepReadyO3Projected, contesterId: "D4", contesterArrival: tD4ArriveAtCorner, contesterGeometry: d4CornerGeometry });
     } else {
       branch = "finalizar_bajo_contencion";
-      next = 2 * shotProbability(CLOSE_FINISH_BASE_PROBABILITY, o5.attributes.T01, 1);
+      next = shotFullValue(
+        ctx,
+        {
+          shooterId: "O5",
+          shooterSkill: o5.attributes.T01,
+          shotType: "close_finish",
+          shooterPos: ctx.positions.O5!,
+          tReady: tO5ReadyProjected,
+          prepSeconds: CLOSE_FINISH_PREP_SECONDS,
+          contesterId: "D3",
+          contesterArrival: tD3LowManArrival,
+          contesterGeometry: d3RollGeometry,
+        },
+        1,
+      );
     }
     throw new TrapProjectionReached({
       ...base,
@@ -3136,13 +3354,15 @@ function runIcePhase(ctx: CoreContext, scenario: ScenarioDefinition): Possession
   const tAtBaseline = tDecision + timeToReach(o1Start, ICE_BASELINE_DRIVE_SPOT, o1Speed);
   const tRimReady = tAtBaseline + timeToReach(ICE_BASELINE_DRIVE_SPOT, ATTACKED_HOOP, o1Speed) + CLOSE_FINISH_PREP_SECONDS;
   const rim = bestContest(ctx, [d5FromLow, d1Slide], ATTACKED_HOOP, tRimReady, CLOSE_FINISH_PREP_SECONDS)!;
-  const rimValue = tRimReady < clock && !rim.occupied ? 2 * shotProbability(CLOSE_FINISH_BASE_PROBABILITY, o1.attributes.T01, rim.level) : -Infinity;
+  const rimShot = contestedShot("O1", o1.attributes.T01, "close_finish", ATTACKED_HOOP, tRimReady, CLOSE_FINISH_PREP_SECONDS, rim);
+  const rimValue = tRimReady < clock && !rim.occupied ? shotReadValue(ctx, rimShot, rim.level) : -Infinity;
   // Tiro medio tras rechazar hacia fondo.
   const pullUpPrep = movingShotPrepSeconds(o1.attributes.T06);
   const tPullUpReady = tDecision + timeToReach(o1Start, ICE_BASELINE_PULL_UP_SPOT, o1Speed) + pullUpPrep;
   const pullUp = bestContest(ctx, [d1Slide, d5FromLow], ICE_BASELINE_PULL_UP_SPOT, tPullUpReady, pullUpPrep)!;
   const pullUpType: ShotType = isMidRangeZone(ICE_BASELINE_PULL_UP_SPOT) ? "mid_range" : "floater";
-  const pullUpValue = tPullUpReady < clock ? 2 * shotProbability(shotBaseProbability(pullUpType), shotSkill(o1, pullUpType), pullUp.level) : -Infinity;
+  const pullUpShot = contestedShot("O1", shotSkill(o1, pullUpType), pullUpType, ICE_BASELINE_PULL_UP_SPOT, tPullUpReady, pullUpPrep, pullUp);
+  const pullUpValue = tPullUpReady < clock ? shotReadValue(ctx, pullUpShot, pullUp.level) : -Infinity;
   // Pase al bloqueador abierto en el codo: la línea pasa por D1.
   const tPopPass = Math.max(tO5Pop, tDecision + PASS_RELEASE_SECONDS + distanceSeconds(o1Start, ICE_POP_SPOT));
   const envAt = (): RollReceiverEnv => ({
@@ -3161,7 +3381,8 @@ function runIcePhase(ctx: CoreContext, scenario: ScenarioDefinition): Possession
   const tCornerReady = tCornerArrival + CATCH_AND_SHOOT_PREP_SECONDS;
   const d2Home = chaser(ctx, "D2", ctx.positions.D2!, tDecision, (p) => perimeterArrivalAdjustmentSeconds(p.attributes.T22));
   const corner = bestContest(ctx, [d2Home], cornerPos, tCornerReady, CATCH_AND_SHOOT_PREP_SECONDS)!;
-  const cornerValue = isBehindThreePointLine(cornerPos) && tCornerReady < clock ? 3 * shotProbability(THREE_POINT_BASE_PROBABILITY, o2.attributes.T04, corner.level) : -Infinity;
+  const cornerShot = contestedShot("O2", o2.attributes.T04, "three_point", cornerPos, tCornerReady, CATCH_AND_SHOOT_PREP_SECONDS, corner);
+  const cornerValue = isBehindThreePointLine(cornerPos) && tCornerReady < clock ? shotReadValue(ctx, cornerShot, corner.level) : -Infinity;
   const cornerCompletion = 1 - deflectionProbability(d2.attributes.T17, o1.attributes.T09);
 
   const options: HandlerReadOption[] = [
@@ -3174,7 +3395,7 @@ function runIcePhase(ctx: CoreContext, scenario: ScenarioDefinition): Possession
       execute: (record) => {
         setArrival(ctx, "O1", tAtBaseline, ICE_BASELINE_DRIVE_SPOT, tDecision);
         record();
-        return resolveShotAttempt(ctx, { shooterId: "O1", shooterSkill: o1.attributes.T01, shotType: "close_finish", shooterPos: ATTACKED_HOOP, tReady: tRimReady, prepSeconds: CLOSE_FINISH_PREP_SECONDS, contesterId: rim.id, contesterArrival: rim.arrival, contesterGeometry: rim.geometry });
+        return resolveShotAttempt(ctx, rimShot);
       },
     },
     {
@@ -3185,7 +3406,7 @@ function runIcePhase(ctx: CoreContext, scenario: ScenarioDefinition): Possession
       values: { contesterId: realId(ctx, pullUp.id), opposition: pullUp.level, readySeconds: tPullUpReady, shotType: pullUpType },
       execute: (record) => {
         record();
-        return resolveShotAttempt(ctx, { shooterId: "O1", shooterSkill: shotSkill(o1, pullUpType), shotType: pullUpType, shooterPos: ICE_BASELINE_PULL_UP_SPOT, tReady: tPullUpReady, prepSeconds: pullUpPrep, contesterId: pullUp.id, contesterArrival: pullUp.arrival, contesterGeometry: pullUp.geometry });
+        return resolveShotAttempt(ctx, pullUpShot);
       },
     },
     {
@@ -3209,7 +3430,7 @@ function runIcePhase(ctx: CoreContext, scenario: ScenarioDefinition): Possession
         if (outcome.kind === "deflected_loose_ball") return resolveLooseBallAfterPass(ctx, tCornerArrival, "O1", "D2");
         const delay = outcome.kind === "awkward_control" ? outcome.extraDelaySeconds : 0;
         event(ctx, tCornerArrival, "concedido", "pass_received", ["O2"], "O2 recibe en la esquina.");
-        return resolveShotAttempt(ctx, { shooterId: "O2", shooterSkill: o2.attributes.T04, shotType: "three_point", shooterPos: cornerPos, tReady: tCornerReady + delay, prepSeconds: CATCH_AND_SHOOT_PREP_SECONDS + delay, contesterId: corner.id, contesterArrival: corner.arrival, contesterGeometry: corner.geometry });
+        return resolveShotAttempt(ctx, delayedShot(cornerShot, delay));
       },
     },
     { id: "salida_segura", value: 0, completion: 1, kind: "salida", values: {}, execute: (record) => executeSafeOutlet(ctx, tDecision, record) },
@@ -3250,8 +3471,11 @@ function decideHandlerRead(
   /** Quien lee (por defecto el manejador O1; en Delay, el pívot que se la queda o el poste). */
   holderSlot: string = "O1",
 ): PossessionCoreResult {
-  if (ctx.projecting) {
-    throw new ReadProjectionReached({ tDecisionSeconds: tDecision, options: options.map((o) => ({ id: o.id, value: o.value, completion: o.completion })) });
+  if (ctx.projecting && !ctx.followUp) {
+    // Sesión v2-9: la proyección queda fijada aquí y la vía elegida se sigue por su camino modal hasta su tiro.
+    const best = beginFollowUp(ctx, tDecision, options);
+    if (best === null) throw new ReadProjectionReached({ tDecisionSeconds: tDecision, options: options.map((o) => ({ id: o.id, value: o.value, completion: o.completion })) });
+    return options[best]!.execute(() => {});
   }
   const expected = (o: HandlerReadOption) => (Number.isFinite(o.value) ? o.value * o.completion : -Infinity);
   const viable = options.filter((o) => Number.isFinite(o.value)).sort((a, b) => expected(b) - expected(a));
@@ -3446,7 +3670,8 @@ function runSwitchPhase(ctx: CoreContext): PossessionCoreResult {
   // Atacar el cambio: carrera al aro frente al pívot que le ha tomado.
   const tRimReady = tDecision + timeToReach(o1UsePoint, ATTACKED_HOOP, attackerMoveSpeedMps(o1.attributes.F01)) + CLOSE_FINISH_PREP_SECONDS;
   const rim = bestContest(ctx, [d5Chase, d1FromRoll, d3Help], ATTACKED_HOOP, tRimReady, CLOSE_FINISH_PREP_SECONDS)!;
-  const rimValue = tRimReady < clock ? 2 * shotProbability(CLOSE_FINISH_BASE_PROBABILITY, o1.attributes.T01, rim.level) : -Infinity;
+  const rimShot = contestedShot("O1", o1.attributes.T01, "close_finish", ATTACKED_HOOP, tRimReady, CLOSE_FINISH_PREP_SECONDS, rim);
+  const rimValue = tRimReady < clock ? shotReadValue(ctx, rimShot, rim.level) : -Infinity;
   // Triple por encima del cambio: D5 ya delante (o llegando) cierra desde su trayectoria real.
   const tTripleReady = tDecision + movingShotPrepSeconds(o1.attributes.T06);
   const d5AtLevel: ContestCandidate = {
@@ -3454,7 +3679,8 @@ function runSwitchPhase(ctx: CoreContext): PossessionCoreResult {
     geometryTo: () => ({ geometry: { originPos: d5Origin, destinationPos: switchPoint, speedMps: d5Speed, brakingExtraSeconds: closeoutBrakingExtraSeconds(d5.attributes.F03) }, arrivalSeconds: tD5Switch }),
   };
   const triple = bestContest(ctx, [d5AtLevel], o1UsePoint, tTripleReady, movingShotPrepSeconds(o1.attributes.T06))!;
-  const tripleValue = isBehindThreePointLine(o1UsePoint) && tTripleReady < clock ? 3 * shotProbability(THREE_POINT_BASE_PROBABILITY, o1.attributes.T04, triple.level) : -Infinity;
+  const tripleShot = contestedShot("O1", o1.attributes.T04, "three_point", o1UsePoint, tTripleReady, movingShotPrepSeconds(o1.attributes.T06), triple);
+  const tripleValue = isBehindThreePointLine(o1UsePoint) && tTripleReady < clock ? shotReadValue(ctx, tripleShot, triple.level) : -Infinity;
   // Pase al continuador, emparejado con D1 (posible desajuste interior).
   const tPassArrival = Math.max(tRollReady, tDecision + PASS_RELEASE_SECONDS + distanceSeconds(o1UsePoint, ctx.set.shortRoll));
   const envAt = (): RollReceiverEnv => ({
@@ -3477,7 +3703,7 @@ function runSwitchPhase(ctx: CoreContext): PossessionCoreResult {
       values: { contesterId: realId(ctx, rim.id), opposition: rim.level, readySeconds: tRimReady, switcherF04: d5.attributes.F04 },
       execute: (record) => {
         record();
-        return { ...resolveShotAttempt(ctx, { shooterId: "O1", shooterSkill: o1.attributes.T01, shotType: "close_finish", shooterPos: ATTACKED_HOOP, tReady: tRimReady, prepSeconds: CLOSE_FINISH_PREP_SECONDS, contesterId: rim.id, contesterArrival: rim.arrival, contesterGeometry: rim.geometry }), ...swap };
+        return { ...resolveShotAttempt(ctx, rimShot), ...swap };
       },
     },
     {
@@ -3488,7 +3714,7 @@ function runSwitchPhase(ctx: CoreContext): PossessionCoreResult {
       values: { contesterId: realId(ctx, triple.id), opposition: triple.level, behindLine: isBehindThreePointLine(o1UsePoint) },
       execute: (record) => {
         record();
-        return { ...resolveShotAttempt(ctx, { shooterId: "O1", shooterSkill: o1.attributes.T04, shotType: "three_point", shooterPos: o1UsePoint, tReady: tTripleReady, prepSeconds: movingShotPrepSeconds(o1.attributes.T06), contesterId: triple.id, contesterArrival: triple.arrival, contesterGeometry: triple.geometry }), ...swap };
+        return { ...resolveShotAttempt(ctx, tripleShot), ...swap };
       },
     },
     {
@@ -3624,10 +3850,12 @@ function runShowPhase(ctx: CoreContext, scenario: ScenarioDefinition, depth: Big
   const tRimReady = tDriveStart + timeToReach(o1UsePoint, ATTACKED_HOOP, attackerMoveSpeedMps(o1.attributes.F01)) + CLOSE_FINISH_PREP_SECONDS;
   const d5Contains = chaser(ctx, "D5", upPoint, Math.max(tD5Up, tDecision), (p) => interiorArrivalAdjustmentSeconds(p.attributes.T23));
   const rim = bestContest(ctx, atLevel ? [d5Contains, d1Trail] : [d5Recovering, d1Trail], ATTACKED_HOOP, tRimReady, CLOSE_FINISH_PREP_SECONDS)!;
-  const rimValue = tRimReady < clock ? 2 * shotProbability(CLOSE_FINISH_BASE_PROBABILITY, o1.attributes.T01, rim.level) : -Infinity;
+  const rimShot = contestedShot("O1", o1.attributes.T01, "close_finish", ATTACKED_HOOP, tRimReady, CLOSE_FINISH_PREP_SECONDS, rim);
+  const rimValue = tRimReady < clock ? shotReadValue(ctx, rimShot, rim.level) : -Infinity;
   const tTripleReady = tDecision + movingShotPrepSeconds(o1.attributes.T06);
   const triple = bestContest(ctx, [d5Up, d1Trail], o1UsePoint, tTripleReady, movingShotPrepSeconds(o1.attributes.T06))!;
-  const tripleValue = isBehindThreePointLine(o1UsePoint) && tTripleReady < clock ? 3 * shotProbability(THREE_POINT_BASE_PROBABILITY, o1.attributes.T04, triple.level) : -Infinity;
+  const tripleShot = contestedShot("O1", o1.attributes.T04, "three_point", o1UsePoint, tTripleReady, movingShotPrepSeconds(o1.attributes.T06), triple);
+  const tripleValue = isBehindThreePointLine(o1UsePoint) && tTripleReady < clock ? shotReadValue(ctx, tripleShot, triple.level) : -Infinity;
   // El pase al roll tiene que superar a D5 arriba: desvío por D5 (T17).
   const tPassArrival = Math.max(tRollReady, tDecision + PASS_RELEASE_SECONDS + distanceSeconds(o1UsePoint, ctx.set.shortRoll));
   const envAt = () => envFor(d3Helps);
@@ -3644,7 +3872,7 @@ function runShowPhase(ctx: CoreContext, scenario: ScenarioDefinition, depth: Big
       values: { contesterId: realId(ctx, rim.id), opposition: rim.level, readySeconds: tRimReady, halted: o1Halted, driveStartSeconds: tDriveStart },
       execute: (record) => {
         record();
-        return resolveShotAttempt(ctx, { shooterId: "O1", shooterSkill: o1.attributes.T01, shotType: "close_finish", shooterPos: ATTACKED_HOOP, tReady: tRimReady, prepSeconds: CLOSE_FINISH_PREP_SECONDS, contesterId: rim.id, contesterArrival: rim.arrival, contesterGeometry: rim.geometry });
+        return resolveShotAttempt(ctx, rimShot);
       },
     },
     {
@@ -3655,7 +3883,7 @@ function runShowPhase(ctx: CoreContext, scenario: ScenarioDefinition, depth: Big
       values: { contesterId: realId(ctx, triple.id), opposition: triple.level, behindLine: isBehindThreePointLine(o1UsePoint) },
       execute: (record) => {
         record();
-        return resolveShotAttempt(ctx, { shooterId: "O1", shooterSkill: o1.attributes.T04, shotType: "three_point", shooterPos: o1UsePoint, tReady: tTripleReady, prepSeconds: movingShotPrepSeconds(o1.attributes.T06), contesterId: triple.id, contesterArrival: triple.arrival, contesterGeometry: triple.geometry });
+        return resolveShotAttempt(ctx, tripleShot);
       },
     },
     {
@@ -3837,11 +4065,13 @@ function runSpainPhase(ctx: CoreContext, d1Route: ScreenRoute, timing: SpainTimi
     // Atacar el aro desde el punto de uso.
     const tRimReady = tDecision + timeToReach(o1UsePoint, ATTACKED_HOOP, attackerMoveSpeedMps(o1.attributes.F01)) + CLOSE_FINISH_PREP_SECONDS;
     const rim = bestContest(ctx, [...env.rimProtectors, d1Trail], ATTACKED_HOOP, tRimReady, CLOSE_FINISH_PREP_SECONDS)!;
-    const rimValue = tRimReady < clock ? 2 * shotProbability(CLOSE_FINISH_BASE_PROBABILITY, o1.attributes.T01, rim.level) : -Infinity;
+    const rimShot = contestedShot("O1", o1.attributes.T01, "close_finish", ATTACKED_HOOP, tRimReady, CLOSE_FINISH_PREP_SECONDS, rim);
+    const rimValue = tRimReady < clock ? shotReadValue(ctx, rimShot, rim.level) : -Infinity;
     // Triple tras la pantalla: le cierra D1 desde su navegación.
     const tTripleReady = tDecision + movingShotPrepSeconds(o1.attributes.T06);
     const triple = bestContest(ctx, [d1Trail], o1UsePoint, tTripleReady, movingShotPrepSeconds(o1.attributes.T06))!;
-    const tripleValue = isBehindThreePointLine(o1UsePoint) && tTripleReady < clock ? 3 * shotProbability(THREE_POINT_BASE_PROBABILITY, o1.attributes.T04, triple.level) : -Infinity;
+    const tripleShot = contestedShot("O1", o1.attributes.T04, "three_point", o1UsePoint, tTripleReady, movingShotPrepSeconds(o1.attributes.T06), triple);
+    const tripleValue = isBehindThreePointLine(o1UsePoint) && tTripleReady < clock ? shotReadValue(ctx, tripleShot, triple.level) : -Infinity;
     // Pase al roll profundo y lectura del receptor (aro, floater o pase al pop).
     const tPassArrivalRoll = Math.max(tRollReady, tDecision + PASS_RELEASE_SECONDS + distanceSeconds(o1UsePoint, SPAIN_ROLL_SPOT));
     const popGeometry = env.popCloserArrival(SPAIN_POP_SPOT);
@@ -3861,7 +4091,10 @@ function runSpainPhase(ctx: CoreContext, d1Route: ScreenRoute, timing: SpainTimi
     const tPassArrivalPop = Math.max(tPopReady, tDecision + PASS_RELEASE_SECONDS + distanceSeconds(o1UsePoint, SPAIN_POP_SPOT));
     const tPopShotReady = tPassArrivalPop + CATCH_AND_SHOOT_PREP_SECONDS;
     const popLevel = estimateContestLevel(ctx, env.popCloser.id, popGeometry.geometry, popGeometry.arrivalSeconds, SPAIN_POP_SPOT, tPopShotReady, CATCH_AND_SHOOT_PREP_SECONDS);
-    const popValue = tPopShotReady < clock ? helpLeftShotValue(ctx, popLevel) : -Infinity;
+    const popValue =
+      tPopShotReady < clock
+        ? helpLeftShotValue(ctx, popLevel, { tReady: tPopShotReady, spot: SPAIN_POP_SPOT, contesterId: env.popCloser.id, contesterArrival: popGeometry.arrivalSeconds, contesterGeometry: popGeometry.geometry })
+        : -Infinity;
     const popCompletion = 1 - deflectionProbability(player(ctx, env.popCloser.id).attributes.T17, o1.attributes.T09);
     return [
       {
@@ -3872,7 +4105,7 @@ function runSpainPhase(ctx: CoreContext, d1Route: ScreenRoute, timing: SpainTimi
         values: { contesterId: realId(ctx, rim.id), opposition: rim.level, readySeconds: tRimReady, d5RimArrivalSeconds: tD5AtRim, response },
         execute: (record) => {
           record();
-          return { ...resolveShotAttempt(ctx, { shooterId: "O1", shooterSkill: o1.attributes.T01, shotType: "close_finish", shooterPos: ATTACKED_HOOP, tReady: tRimReady, prepSeconds: CLOSE_FINISH_PREP_SECONDS, contesterId: rim.id, contesterArrival: rim.arrival, contesterGeometry: rim.geometry }), ...swap };
+          return { ...resolveShotAttempt(ctx, rimShot), ...swap };
         },
       },
       {
@@ -3920,7 +4153,7 @@ function runSpainPhase(ctx: CoreContext, d1Route: ScreenRoute, timing: SpainTimi
         values: { contesterId: realId(ctx, triple.id), opposition: triple.level, behindLine: isBehindThreePointLine(o1UsePoint) },
         execute: (record) => {
           record();
-          return { ...resolveShotAttempt(ctx, { shooterId: "O1", shooterSkill: o1.attributes.T04, shotType: "three_point", shooterPos: o1UsePoint, tReady: tTripleReady, prepSeconds: movingShotPrepSeconds(o1.attributes.T06), contesterId: triple.id, contesterArrival: triple.arrival, contesterGeometry: triple.geometry }), ...swap };
+          return { ...resolveShotAttempt(ctx, tripleShot), ...swap };
         },
       },
       { id: "salida_segura", value: 0, completion: 1, kind: "salida", values: {}, execute: (record) => executeSafeOutlet(ctx, tDecision, record, swap) },
@@ -4130,23 +4363,27 @@ function postReadOptions(ctx: CoreContext, tCatch: number, tRelease: number, swa
     // El giro al aro rodea a D4, que defiende por detrás entre el poste y el aro (dos cuerpos no se cruzan).
     const tRim = tTurn + dropStep.length / attackerMoveSpeedMps(o4.attributes.F01) + CLOSE_FINISH_PREP_SECONDS;
     const rim = bestContest(ctx, helpers, ATTACKED_HOOP, tRim, CLOSE_FINISH_PREP_SECONDS)!;
-    const rimValue = tRim < clock ? 2 * shotProbability(CLOSE_FINISH_BASE_PROBABILITY, o4.attributes.T01, rim.level) : -Infinity;
+    const rimShot = contestedShot("O4", o4.attributes.T01, "close_finish", ATTACKED_HOOP, tRim, CLOSE_FINISH_PREP_SECONDS, rim);
+    const rimValue = tRim < clock ? shotReadValue(ctx, rimShot, rim.level) : -Infinity;
     const hookType: ShotType = isFloaterZone(post) ? "floater" : isMidRangeZone(post) ? "mid_range" : "close_finish";
     // Gancho/tiro de giro desde el poste: D4 ya está a contacto (no tiene que desplazarse).
     const tHook = tRead + CATCH_AND_SHOOT_PREP_SECONDS;
     const d4AtContact: ContestCandidate = { id: "D4", geometryTo: () => ({ geometry: { originPos: ctx.positions.D4!, destinationPos: ctx.positions.D4!, speedMps: defenderLateralSpeedMps(player(ctx, "D4").attributes.F04), brakingExtraSeconds: 0 }, arrivalSeconds: 0 }) };
     const hook = bestContest(ctx, dig ? [d4AtContact, d2Dig] : [d4AtContact], post, tHook, CATCH_AND_SHOOT_PREP_SECONDS)!;
-    const hookValue = tHook < clock ? 2 * shotProbability(shotBaseProbability(hookType), shotSkill(o4, hookType), hook.level) : -Infinity;
+    const hookShot = contestedShot("O4", shotSkill(o4, hookType), hookType, post, tHook, CATCH_AND_SHOOT_PREP_SECONDS, hook);
+    const hookValue = tHook < clock ? shotReadValue(ctx, hookShot, hook.level) : -Infinity;
     const tKickArrival = tRead + PASS_RELEASE_SECONDS + distanceSeconds(post, corner);
     const tKickReady = tKickArrival + CATCH_AND_SHOOT_PREP_SECONDS;
     const kick = bestContest(ctx, [dig ? d2Recover : d2Home], corner, tKickReady, CATCH_AND_SHOOT_PREP_SECONDS)!;
-    const kickValue = dig && isBehindThreePointLine(corner) && tKickReady < clock ? 3 * shotProbability(THREE_POINT_BASE_PROBABILITY, o2.attributes.T04, kick.level) : -Infinity;
+    const kickShot = contestedShot("O2", o2.attributes.T04, "three_point", corner, tKickReady, CATCH_AND_SHOOT_PREP_SECONDS, kick);
+    const kickValue = dig && isBehindThreePointLine(corner) && tKickReady < clock ? shotReadValue(ctx, kickShot, kick.level) : -Infinity;
     const tCutArrival = Math.max(tO3AtCut, tRead + PASS_RELEASE_SECONDS + distanceSeconds(post, DELAY_WEAK_CUT_SPOT));
     const tCutReady = tCutArrival + CLOSE_FINISH_PREP_SECONDS;
     // D4, a la espalda del poste que pasa, se gira al cortador en cuanto sale el pase (está junto al aro).
     const d4ToCutter = chaser(ctx, "D4", ctx.positions.D4!, tRead + PASS_RELEASE_SECONDS + recognitionLatencySeconds(player(ctx, "D4").attributes.M01, player(ctx, "D4").attributes.M05), (p) => interiorArrivalAdjustmentSeconds(p.attributes.T23));
     const cut = bestContest(ctx, [d3Chase, d5Sag, d4ToCutter], DELAY_WEAK_CUT_SPOT, tCutReady, CLOSE_FINISH_PREP_SECONDS)!;
-    const cutValue = tCutReady < clock ? 2 * shotProbability(CLOSE_FINISH_BASE_PROBABILITY, o3.attributes.T01, cut.level) : -Infinity;
+    const cutShot = contestedShot("O3", o3.attributes.T01, "close_finish", DELAY_WEAK_CUT_SPOT, tCutReady, CLOSE_FINISH_PREP_SECONDS, cut);
+    const cutValue = tCutReady < clock ? shotReadValue(ctx, cutShot, cut.level) : -Infinity;
     const shoot = (args: ShotAttemptArgs) => (record: (factLinkKind?: string) => void) => {
       record();
       if (doubled && resolvesTurnoverUnderPressure(o4.attributes.T07, Math.min(d2.attributes.T15, player(ctx, "D4").attributes.T15), ctx.rng)) {
@@ -4176,7 +4413,7 @@ function postReadOptions(ctx: CoreContext, tCatch: number, tRelease: number, swa
         completion: moveCompletion,
         kind: "tiro",
         values: { contesterId: realId(ctx, rim.id), opposition: rim.level, readySeconds: tRim, dig, doubled, stealProbability: doubled ? pressureSteal : 0 },
-        execute: shoot({ shooterId: "O4", shooterSkill: o4.attributes.T01, shotType: "close_finish", shooterPos: ATTACKED_HOOP, tReady: tRim, prepSeconds: CLOSE_FINISH_PREP_SECONDS, contesterId: rim.id, contesterArrival: rim.arrival, contesterGeometry: rim.geometry }),
+        execute: shoot(rimShot),
       },
       {
         id: "gancho_poste",
@@ -4184,7 +4421,7 @@ function postReadOptions(ctx: CoreContext, tCatch: number, tRelease: number, swa
         completion: moveCompletion,
         kind: "tiro",
         values: { contesterId: realId(ctx, hook.id), opposition: hook.level, shotType: hookType, dig, doubled },
-        execute: shoot({ shooterId: "O4", shooterSkill: shotSkill(o4, hookType), shotType: hookType, shooterPos: post, tReady: tHook, prepSeconds: CATCH_AND_SHOOT_PREP_SECONDS, contesterId: hook.id, contesterArrival: hook.arrival, contesterGeometry: hook.geometry }),
+        execute: shoot(hookShot),
       },
       {
         id: "salida_esquina_o2",
@@ -4192,7 +4429,7 @@ function postReadOptions(ctx: CoreContext, tCatch: number, tRelease: number, swa
         completion: 1 - deflectionProbability(d2.attributes.T17, o4.attributes.T09),
         kind: "pase",
         values: { contesterId: realId(ctx, kick.id), opposition: kick.level, dig, marginSeconds: kick.arrival - tKickReady },
-        execute: passTo("O2", corner, tKickArrival, "D2", { shooterId: "O2", shooterSkill: o2.attributes.T04, shotType: "three_point", shooterPos: corner, tReady: tKickReady, prepSeconds: CATCH_AND_SHOOT_PREP_SECONDS, contesterId: kick.id, contesterArrival: kick.arrival, contesterGeometry: kick.geometry }, "O4 saca el balón del poste hacia la esquina que deja la ayuda de D2."),
+        execute: passTo("O2", corner, tKickArrival, "D2", kickShot, "O4 saca el balón del poste hacia la esquina que deja la ayuda de D2."),
       },
       {
         id: "corte_o3",
@@ -4200,7 +4437,7 @@ function postReadOptions(ctx: CoreContext, tCatch: number, tRelease: number, swa
         completion: 1 - deflectionProbability(d3.attributes.T17, o4.attributes.T09),
         kind: "pase",
         values: { contesterId: realId(ctx, cut.id), opposition: cut.level, cutterAtSpotSeconds: tO3AtCut },
-        execute: passTo("O3", DELAY_WEAK_CUT_SPOT, tCutArrival, "D3", { shooterId: "O3", shooterSkill: o3.attributes.T01, shotType: "close_finish", shooterPos: DELAY_WEAK_CUT_SPOT, tReady: tCutReady, prepSeconds: CLOSE_FINISH_PREP_SECONDS, contesterId: cut.id, contesterArrival: cut.arrival, contesterGeometry: cut.geometry }, "O4 encuentra el corte de O3 desde el ala débil."),
+        execute: passTo("O3", DELAY_WEAK_CUT_SPOT, tCutArrival, "D3", cutShot, "O4 encuentra el corte de O3 desde el ala débil."),
       },
       {
         id: "repostear",
@@ -4336,11 +4573,13 @@ function runDelayPhase(ctx: CoreContext, response: DelayResponse): PossessionCor
       const d4Help = chaser(ctx, "D4", ctx.positions.D4!, tDecision + recognitionLatencySeconds(player(ctx, "D4").attributes.M01, player(ctx, "D4").attributes.M05), (p) => interiorArrivalAdjustmentSeconds(p.attributes.T23));
       const tRim = tDecision + timeToReach(handoffPoint, ATTACKED_HOOP, attackerMoveSpeedMps(o1.attributes.F01)) + CLOSE_FINISH_PREP_SECONDS;
       const rim = bestContest(ctx, [d5Help, d1Trail, d4Help], ATTACKED_HOOP, tRim, CLOSE_FINISH_PREP_SECONDS)!;
-      const rimValue = tRim < clock ? 2 * shotProbability(CLOSE_FINISH_BASE_PROBABILITY, o1.attributes.T01, rim.level) : -Infinity;
+      const rimShot = contestedShot("O1", o1.attributes.T01, "close_finish", ATTACKED_HOOP, tRim, CLOSE_FINISH_PREP_SECONDS, rim);
+      const rimValue = tRim < clock ? shotReadValue(ctx, rimShot, rim.level) : -Infinity;
       const tTriple = tDecision + movingShotPrepSeconds(o1.attributes.T06);
       const d5AtBall: ContestCandidate = { id: "D5", geometryTo: () => ({ geometry: { originPos: ctx.positions.D5!, destinationPos: jumpPoint, speedMps: d5Speed, brakingExtraSeconds: closeoutBrakingExtraSeconds(d5.attributes.F03) }, arrivalSeconds: tD5AtJump }) };
       const triple = bestContest(ctx, response === "hundirse" ? [d1Trail] : [d1Trail, d5AtBall], handoffPoint, tTriple, movingShotPrepSeconds(o1.attributes.T06))!;
-      const tripleValue = isBehindThreePointLine(handoffPoint) && tTriple < clock ? 3 * shotProbability(THREE_POINT_BASE_PROBABILITY, o1.attributes.T04, triple.level) : -Infinity;
+      const tripleShot = contestedShot("O1", o1.attributes.T04, "three_point", handoffPoint, tTriple, movingShotPrepSeconds(o1.attributes.T06), triple);
+      const tripleValue = isBehindThreePointLine(handoffPoint) && tTriple < clock ? shotReadValue(ctx, tripleShot, triple.level) : -Infinity;
       const pullUp = response === "hundirse" ? planPullUp(ctx, { shooterId: "O1", from: handoffPoint, tStart: tDecision, protectorPos: ctx.positions.D5!, standoffMeters: contestReachMeters(d5.measures.wingspanCm) + 0.05, contesters: [d1Trail, d5Help] }) : null;
       const pullUpValue = pullUp && pullUp.tReady < clock ? pullUp.value : -Infinity;
       const options: HandlerReadOption[] = [
@@ -4352,7 +4591,7 @@ function runDelayPhase(ctx: CoreContext, response: DelayResponse): PossessionCor
           values: { contesterId: realId(ctx, rim.id), opposition: rim.level, readySeconds: tRim, response },
           execute: (record) => {
             record();
-            return { ...resolveShotAttempt(ctx, { shooterId: "O1", shooterSkill: o1.attributes.T01, shotType: "close_finish", shooterPos: ATTACKED_HOOP, tReady: tRim, prepSeconds: CLOSE_FINISH_PREP_SECONDS, contesterId: rim.id, contesterArrival: rim.arrival, contesterGeometry: rim.geometry }), ...swap };
+            return { ...resolveShotAttempt(ctx, rimShot), ...swap };
           },
         },
         {
@@ -4363,7 +4602,7 @@ function runDelayPhase(ctx: CoreContext, response: DelayResponse): PossessionCor
           values: { contesterId: realId(ctx, triple.id), opposition: triple.level, d1BackSeconds: tD1Back, response },
           execute: (record) => {
             record();
-            return { ...resolveShotAttempt(ctx, { shooterId: "O1", shooterSkill: o1.attributes.T04, shotType: "three_point", shooterPos: handoffPoint, tReady: tTriple, prepSeconds: movingShotPrepSeconds(o1.attributes.T06), contesterId: triple.id, contesterArrival: triple.arrival, contesterGeometry: triple.geometry }), ...swap };
+            return { ...resolveShotAttempt(ctx, tripleShot), ...swap };
           },
         },
         {
@@ -4399,7 +4638,8 @@ function runDelayPhase(ctx: CoreContext, response: DelayResponse): PossessionCor
     const keeperPath = detourAround(hub, ATTACKED_HOOP, jumpPoint, COMBINED_CONTACT_RADIUS_METERS);
     const tRim = tKeep + keeperPath.length / attackerMoveSpeedMps(o5.attributes.F01) + CLOSE_FINISH_PREP_SECONDS;
     const rim = bestContest(ctx, [d5Recover, d4Help], ATTACKED_HOOP, tRim, CLOSE_FINISH_PREP_SECONDS)!;
-    const rimValue = tRim < clock ? 2 * shotProbability(CLOSE_FINISH_BASE_PROBABILITY, o5.attributes.T01, rim.level) : -Infinity;
+    const rimShot = contestedShot("O5", o5.attributes.T01, "close_finish", ATTACKED_HOOP, tRim, CLOSE_FINISH_PREP_SECONDS, rim);
+    const rimValue = tRim < clock ? shotReadValue(ctx, rimShot, rim.level) : -Infinity;
     // Puerta de atrás: O1, con D5 en su camino arriba, corta al aro por detrás; D1 le persigue tarde.
     const backdoorPath = detourAround(handoffPoint, ATTACKED_HOOP, jumpPoint, COMBINED_CONTACT_RADIUS_METERS);
     const tO1AtRim = tKeep + backdoorPath.length / attackerMoveSpeedMps(o1.attributes.F01);
@@ -4407,7 +4647,8 @@ function runDelayPhase(ctx: CoreContext, response: DelayResponse): PossessionCor
     const tBackdoorReady = tBackdoorArrival + CLOSE_FINISH_PREP_SECONDS;
     const d1Chase = chaser(ctx, "D1", ctx.positions.D1!, tKeep + recognitionLatencySeconds(d1.attributes.M01, d1.attributes.M05));
     const backdoor = bestContest(ctx, [d1Chase, d4Help], ATTACKED_HOOP, tBackdoorReady, CLOSE_FINISH_PREP_SECONDS)!;
-    const backdoorValue = tBackdoorReady < clock ? 2 * shotProbability(CLOSE_FINISH_BASE_PROBABILITY, o1.attributes.T01, backdoor.level) : -Infinity;
+    const backdoorShot = contestedShot("O1", o1.attributes.T01, "close_finish", ATTACKED_HOOP, tBackdoorReady, CLOSE_FINISH_PREP_SECONDS, backdoor);
+    const backdoorValue = tBackdoorReady < clock ? shotReadValue(ctx, backdoorShot, backdoor.level) : -Infinity;
     const options: HandlerReadOption[] = [
       {
         id: "finalizar_o5",
@@ -4417,7 +4658,7 @@ function runDelayPhase(ctx: CoreContext, response: DelayResponse): PossessionCor
         values: { contesterId: realId(ctx, rim.id), opposition: rim.level, readySeconds: tRim },
         execute: (record) => {
           record();
-          return { ...resolveShotAttempt(ctx, { shooterId: "O5", shooterSkill: o5.attributes.T01, shotType: "close_finish", shooterPos: ATTACKED_HOOP, tReady: tRim, prepSeconds: CLOSE_FINISH_PREP_SECONDS, contesterId: rim.id, contesterArrival: rim.arrival, contesterGeometry: rim.geometry }), ...swap };
+          return { ...resolveShotAttempt(ctx, rimShot), ...swap };
         },
       },
       {
@@ -4435,7 +4676,7 @@ function runDelayPhase(ctx: CoreContext, response: DelayResponse): PossessionCor
           if (outcome.kind === "deflected_loose_ball") return { ...resolveLooseBallAfterPass(ctx, tBackdoorArrival, "O5", "D5"), ...swap };
           const delay = outcome.kind === "awkward_control" ? outcome.extraDelaySeconds : 0;
           event(ctx, tBackdoorArrival, "concedido", "pass_received", ["O1"], "O1 recibe junto al aro.");
-          return { ...resolveShotAttempt(ctx, { shooterId: "O1", shooterSkill: o1.attributes.T01, shotType: "close_finish", shooterPos: ATTACKED_HOOP, tReady: tBackdoorReady + delay, prepSeconds: CLOSE_FINISH_PREP_SECONDS + delay, contesterId: backdoor.id, contesterArrival: backdoor.arrival, contesterGeometry: backdoor.geometry }), ...swap };
+          return { ...resolveShotAttempt(ctx, delayedShot(backdoorShot, delay)), ...swap };
         },
       },
       { ...postEntryOption(ctx, "O5", hub, tKeep, swap), completion: entryCompletion * (1 - deflectionProbability(player(ctx, "D4").attributes.T17, o5.attributes.T09)) },
@@ -4768,7 +5009,6 @@ function runHandoffPhase(ctx: CoreContext, response: HandoffResponse): Possessio
 
   /** Tipo de tiro de recepción en un punto del indirecto: lo decide la zona real (LAB-0.5). */
   const spotShotType = (spot: Point2D): ShotType => (isBehindThreePointLine(spot) ? "three_point" : isMidRangeZone(spot) ? "mid_range" : isFloaterZone(spot) ? "floater" : "close_finish");
-  const spotPoints = (type: ShotType) => (type === "three_point" ? 3 : 2);
 
   /** Vías del indirecto (O3 tras el corte, O4 si D4 ayuda) y la salida, desde quien tenga el balón. */
   function pindownOptions(call: OffBallDefensiveCall, holderSlot: "O2" | "O5", holderPos: Point2D, tDecision: number, completionBase: number): HandlerReadOption[] {
@@ -4783,14 +5023,16 @@ function runHandoffPhase(ctx: CoreContext, response: HandoffResponse): Possessio
     const o3Type = spotShotType(WEAK_SIDE_CUT_SPOT);
     const tO3Ready = tPassArrivalO3 + CATCH_AND_SHOOT_PREP_SECONDS;
     const o3Opposition = estimateContestLevel(ctx, o3Contester, o3ContestGeometry, p.tD3AtCut, WEAK_SIDE_CUT_SPOT, tO3Ready, CATCH_AND_SHOOT_PREP_SECONDS);
-    const o3Value = p.cutWindowOpen && tO3Ready < clock ? spotPoints(o3Type) * shotProbability(shotBaseProbability(o3Type), shotSkill(o3, o3Type), o3Opposition) : -Infinity;
+    const o3Shot: ShotAttemptArgs = { shooterId: "O3", shooterSkill: shotSkill(o3, o3Type), shotType: o3Type, shooterPos: WEAK_SIDE_CUT_SPOT, tReady: tO3Ready, prepSeconds: CATCH_AND_SHOOT_PREP_SECONDS, contesterId: o3Contester, contesterArrival: p.tD3AtCut, contesterGeometry: o3ContestGeometry };
+    const o3Value = p.cutWindowOpen && tO3Ready < clock ? shotReadValue(ctx, o3Shot, o3Opposition) : -Infinity;
     const d4CornerGeometry: ContestGeometry = { originPos: ctx.positions.D4!, destinationPos: WEAK_SIDE_SCREEN_SPOT, speedMps: defenderLateralSpeedMps(d4.attributes.F04), brakingExtraSeconds: closeoutBrakingExtraSeconds(d4.attributes.F03) };
     const tPassArrivalO4 = Math.max(tO4ScreenSet, tDecision + PASS_RELEASE_SECONDS + distanceSeconds(holderPos, WEAK_SIDE_SCREEN_SPOT));
     const o4Type = spotShotType(WEAK_SIDE_SCREEN_SPOT);
     const tO4Ready = tPassArrivalO4 + CATCH_AND_SHOOT_PREP_SECONDS;
     // D4 sale a cerrar a O4 cuando deja la ayuda sobre O3 (su llegada al corte).
     const o4Opposition = estimateContestLevel(ctx, "D4", d4CornerGeometry, p.tD3AtCut, WEAK_SIDE_SCREEN_SPOT, tO4Ready, CATCH_AND_SHOOT_PREP_SECONDS);
-    const o4Value = p.d4Helps && tO4Ready < clock ? spotPoints(o4Type) * shotProbability(shotBaseProbability(o4Type), shotSkill(o4, o4Type), o4Opposition) : -Infinity;
+    const o4Shot: ShotAttemptArgs = { shooterId: "O4", shooterSkill: shotSkill(o4, o4Type), shotType: o4Type, shooterPos: WEAK_SIDE_SCREEN_SPOT, tReady: tO4Ready, prepSeconds: CATCH_AND_SHOOT_PREP_SECONDS, contesterId: "D4", contesterArrival: p.tD3AtCut, contesterGeometry: d4CornerGeometry };
+    const o4Value = p.d4Helps && tO4Ready < clock ? shotReadValue(ctx, o4Shot, o4Opposition) : -Infinity;
     const passTo = (receiver: "O3" | "O4", spot: Point2D, tArrival: number, deflectorId: string, shot: ShotAttemptArgs, text: string, receivedText: string) => (record: (factLinkKind?: string) => void) => {
       const outcome = resolvePass(holder.attributes.T09, player(ctx, receiver).attributes.T11, true, player(ctx, deflectorId).attributes.T17, 1, ctx.rng);
       event(ctx, tArrival, "ejecutado", "pass_released", [holderSlot, receiver], text);
@@ -4807,7 +5049,7 @@ function runHandoffPhase(ctx: CoreContext, response: HandoffResponse): Possessio
         completion: completionBase * (1 - deflectionProbability(d3.attributes.T17, holder.attributes.T09)),
         kind: "pase",
         values: { cutWindowOpen: p.cutWindowOpen, tD3AtCut: p.tD3AtCut, tO3Cut, opposition: o3Opposition, contesterId: realId(ctx, o3Contester), shotType: o3Type },
-        execute: passTo("O3", WEAK_SIDE_CUT_SPOT, tPassArrivalO3, "D3", { shooterId: "O3", shooterSkill: shotSkill(o3, o3Type), shotType: o3Type, shooterPos: WEAK_SIDE_CUT_SPOT, tReady: tO3Ready, prepSeconds: CATCH_AND_SHOOT_PREP_SECONDS, contesterId: o3Contester, contesterArrival: p.tD3AtCut, contesterGeometry: o3ContestGeometry }, `${holderSlot} pasa a O3, que sale del bloqueo indirecto.`, "O3 recibe tras el bloqueo indirecto."),
+        execute: passTo("O3", WEAK_SIDE_CUT_SPOT, tPassArrivalO3, "D3", o3Shot, `${holderSlot} pasa a O3, que sale del bloqueo indirecto.`, "O3 recibe tras el bloqueo indirecto."),
       },
       {
         id: "continuar_o4",
@@ -4815,7 +5057,7 @@ function runHandoffPhase(ctx: CoreContext, response: HandoffResponse): Possessio
         completion: completionBase * (1 - deflectionProbability(d4.attributes.T17, holder.attributes.T09)),
         kind: "pase",
         values: { o4Open: p.d4Helps, d4HelpMargin: p.d4HelpMargin, opposition: o4Opposition, shotType: o4Type },
-        execute: passTo("O4", WEAK_SIDE_SCREEN_SPOT, tPassArrivalO4, "D4", { shooterId: "O4", shooterSkill: shotSkill(o4, o4Type), shotType: o4Type, shooterPos: WEAK_SIDE_SCREEN_SPOT, tReady: tO4Ready, prepSeconds: CATCH_AND_SHOOT_PREP_SECONDS, contesterId: "D4", contesterArrival: p.tD3AtCut, contesterGeometry: d4CornerGeometry }, `${holderSlot} continúa hacia O4, abierto tras la ayuda de D4.`, "O4 recibe en su propio punto de bloqueo."),
+        execute: passTo("O4", WEAK_SIDE_SCREEN_SPOT, tPassArrivalO4, "D4", o4Shot, `${holderSlot} continúa hacia O4, abierto tras la ayuda de D4.`, "O4 recibe en su propio punto de bloqueo."),
       },
       {
         id: "pase_o1",
@@ -4878,7 +5120,8 @@ function runHandoffPhase(ctx: CoreContext, response: HandoffResponse): Possessio
 
       const tRim = tAtExit + timeToReach(exitPoint, ATTACKED_HOOP, o2Speed) + CLOSE_FINISH_PREP_SECONDS;
       const rim = bestContest(ctx, [o2Guard, rollGuard, d4Help(tDecision)], ATTACKED_HOOP, tRim, CLOSE_FINISH_PREP_SECONDS)!;
-      const rimValue = tRim < clock ? 2 * shotProbability(CLOSE_FINISH_BASE_PROBABILITY, o2.attributes.T01, rim.level) : -Infinity;
+      const rimShot = contestedShot("O2", o2.attributes.T01, "close_finish", ATTACKED_HOOP, tRim, CLOSE_FINISH_PREP_SECONDS, rim);
+      const rimValue = tRim < clock ? shotReadValue(ctx, rimShot, rim.level) : -Infinity;
       const protectorAtExit = response === "cambiar_entrega" ? jumpPoint : positionAtInstant(rollGuardGeometry, rollGuardArrival, tAtExit);
       const pullUp = planPullUp(ctx, {
         shooterId: "O2",
@@ -4892,11 +5135,13 @@ function runHandoffPhase(ctx: CoreContext, response: HandoffResponse): Possessio
       // Triple al recibir: solo si el hombro de entrega está detrás del arco.
       const tTriple = tDecision + movingShotPrepSeconds(o2.attributes.T06);
       const triple = bestContest(ctx, [o2Guard, rollGuard], exchange, tTriple, movingShotPrepSeconds(o2.attributes.T06))!;
-      const tripleValue = isBehindThreePointLine(exchange) && tTriple < clock ? 3 * shotProbability(THREE_POINT_BASE_PROBABILITY, o2.attributes.T04, triple.level) : -Infinity;
+      const tripleShot = contestedShot("O2", o2.attributes.T04, "three_point", exchange, tTriple, movingShotPrepSeconds(o2.attributes.T06), triple);
+      const tripleValue = isBehindThreePointLine(exchange) && tTriple < clock ? shotReadValue(ctx, tripleShot, triple.level) : -Infinity;
       const tRollArrival = Math.max(tO5AtRim, tDecision + PASS_RELEASE_SECONDS + distanceSeconds(exchange, ATTACKED_HOOP));
       const tRollReady = tRollArrival + CLOSE_FINISH_PREP_SECONDS;
       const roll = bestContest(ctx, [rollGuard, d4Help(tHandoffReady)], ATTACKED_HOOP, tRollReady, CLOSE_FINISH_PREP_SECONDS)!;
-      const rollValue = tRollReady < clock ? 2 * shotProbability(CLOSE_FINISH_BASE_PROBABILITY, o5.attributes.T01, roll.level) : -Infinity;
+      const rollShot = contestedShot("O5", o5.attributes.T01, "close_finish", ATTACKED_HOOP, tRollReady, CLOSE_FINISH_PREP_SECONDS, roll);
+      const rollValue = tRollReady < clock ? shotReadValue(ctx, rollShot, roll.level) : -Infinity;
       const options: HandlerReadOption[] = [
         {
           id: "finalizar_portador",
@@ -4906,7 +5151,7 @@ function runHandoffPhase(ctx: CoreContext, response: HandoffResponse): Possessio
           values: { contesterId: realId(ctx, rim.id), opposition: rim.level, readySeconds: tRim, d2ReleaseSeconds: d2ReleaseFor(call), response },
           execute: withContinuation((record) => {
             setArrival(ctx, "O2", tAtExit, exitPoint, tDecision);
-            return shoot({ shooterId: "O2", shooterSkill: o2.attributes.T01, shotType: "close_finish", shooterPos: ATTACKED_HOOP, tReady: tRim, prepSeconds: CLOSE_FINISH_PREP_SECONDS, contesterId: rim.id, contesterArrival: rim.arrival, contesterGeometry: rim.geometry })(record);
+            return shoot(rimShot)(record);
           }),
         },
         {
@@ -4928,7 +5173,7 @@ function runHandoffPhase(ctx: CoreContext, response: HandoffResponse): Possessio
           completion: entryCompletion,
           kind: "tiro",
           values: { behindArc: isBehindThreePointLine(exchange), contesterId: realId(ctx, triple.id), opposition: triple.level, d2ReleaseSeconds: d2ReleaseFor(call) },
-          execute: withContinuation(shoot({ shooterId: "O2", shooterSkill: o2.attributes.T04, shotType: "three_point", shooterPos: exchange, tReady: tTriple, prepSeconds: movingShotPrepSeconds(o2.attributes.T06), contesterId: triple.id, contesterArrival: triple.arrival, contesterGeometry: triple.geometry })),
+          execute: withContinuation(shoot(tripleShot)),
         },
         {
           id: "continuacion_o5",
@@ -4943,7 +5188,7 @@ function runHandoffPhase(ctx: CoreContext, response: HandoffResponse): Possessio
             if (outcome.kind === "deflected_loose_ball") return { ...resolveLooseBallAfterPass(ctx, tRollArrival, "O2", rollGuardId), ...swap };
             const delay = outcome.kind === "awkward_control" ? outcome.extraDelaySeconds : 0;
             event(ctx, tRollArrival, "concedido", "pass_received", ["O5"], "O5 recibe junto al aro.");
-            return { ...resolveShotAttempt(ctx, { shooterId: "O5", shooterSkill: o5.attributes.T01, shotType: "close_finish", shooterPos: ATTACKED_HOOP, tReady: tRollReady + delay, prepSeconds: CLOSE_FINISH_PREP_SECONDS + delay, contesterId: roll.id, contesterArrival: roll.arrival, contesterGeometry: roll.geometry }), ...swap };
+            return { ...resolveShotAttempt(ctx, delayedShot(rollShot, delay)), ...swap };
           }),
         },
         ...pindownOptions(call, "O2", exchange, tDecision, entryCompletion).map((o) => ({ ...o, execute: withContinuation(o.execute) })),
@@ -4958,7 +5203,8 @@ function runHandoffPhase(ctx: CoreContext, response: HandoffResponse): Possessio
     const keeperPath = detourAround(hub, ATTACKED_HOOP, d5Jumps ? jumpPoint : ctx.positions.D5!, r);
     const tRim = tKeep + keeperPath.length / attackerMoveSpeedMps(o5.attributes.F01) + CLOSE_FINISH_PREP_SECONDS;
     const rim = bestContest(ctx, [d5Home, d4Help(tKeep)], ATTACKED_HOOP, tRim, CLOSE_FINISH_PREP_SECONDS)!;
-    const rimValue = tRim < clock ? 2 * shotProbability(CLOSE_FINISH_BASE_PROBABILITY, o5.attributes.T01, rim.level) : -Infinity;
+    const rimShot = contestedShot("O5", o5.attributes.T01, "close_finish", ATTACKED_HOOP, tRim, CLOSE_FINISH_PREP_SECONDS, rim);
+    const rimValue = tRim < clock ? shotReadValue(ctx, rimShot, rim.level) : -Infinity;
     // Puerta de atrás: O2, con su defensor delante (o con D5 en su salida), corta al aro por el lado por el que vino.
     const o2At = d2Denies ? moveToward(exchange, ctx.positions.O2!, 1, r) : exchange;
     const blocker = d2Denies ? exchange : jumpPoint;
@@ -4968,7 +5214,8 @@ function runHandoffPhase(ctx: CoreContext, response: HandoffResponse): Possessio
     const tBackdoorReady = tBackdoorArrival + CLOSE_FINISH_PREP_SECONDS;
     const d2Chase = chaser(ctx, "D2", d2Denies ? exchange : ctx.positions.D2!, tKeep + recognitionLatencySeconds(d2.attributes.M01, d2.attributes.M05));
     const backdoor = bestContest(ctx, [d2Chase, d5Home, d4Help(tKeep)], ATTACKED_HOOP, tBackdoorReady, CLOSE_FINISH_PREP_SECONDS)!;
-    const backdoorValue = tBackdoorReady < clock ? 2 * shotProbability(CLOSE_FINISH_BASE_PROBABILITY, o2.attributes.T01, backdoor.level) : -Infinity;
+    const backdoorShot = contestedShot("O2", o2.attributes.T01, "close_finish", ATTACKED_HOOP, tBackdoorReady, CLOSE_FINISH_PREP_SECONDS, backdoor);
+    const backdoorValue = tBackdoorReady < clock ? shotReadValue(ctx, backdoorShot, backdoor.level) : -Infinity;
     const options: HandlerReadOption[] = [
       {
         id: "finalizar_o5",
@@ -4976,7 +5223,7 @@ function runHandoffPhase(ctx: CoreContext, response: HandoffResponse): Possessio
         completion: entryCompletion,
         kind: "tiro",
         values: { contesterId: realId(ctx, rim.id), opposition: rim.level, readySeconds: tRim, d2Denies, d5Jumps },
-        execute: shoot({ shooterId: "O5", shooterSkill: o5.attributes.T01, shotType: "close_finish", shooterPos: ATTACKED_HOOP, tReady: tRim, prepSeconds: CLOSE_FINISH_PREP_SECONDS, contesterId: rim.id, contesterArrival: rim.arrival, contesterGeometry: rim.geometry }),
+        execute: shoot(rimShot),
       },
       {
         id: "puerta_atras_o2",
@@ -4994,7 +5241,7 @@ function runHandoffPhase(ctx: CoreContext, response: HandoffResponse): Possessio
           if (outcome.kind === "deflected_loose_ball") return { ...resolveLooseBallAfterPass(ctx, tBackdoorArrival, "O5", deflector), ...swap };
           const delay = outcome.kind === "awkward_control" ? outcome.extraDelaySeconds : 0;
           event(ctx, tBackdoorArrival, "concedido", "pass_received", ["O2"], "O2 recibe junto al aro.");
-          return { ...resolveShotAttempt(ctx, { shooterId: "O2", shooterSkill: o2.attributes.T01, shotType: "close_finish", shooterPos: ATTACKED_HOOP, tReady: tBackdoorReady + delay, prepSeconds: CLOSE_FINISH_PREP_SECONDS + delay, contesterId: backdoor.id, contesterArrival: backdoor.arrival, contesterGeometry: backdoor.geometry }), ...swap };
+          return { ...resolveShotAttempt(ctx, delayedShot(backdoorShot, delay)), ...swap };
         },
       },
       ...pindownOptions(call, "O5", hub, tKeep, entryCompletion),
@@ -5256,7 +5503,11 @@ function planPullUp(
   const tReady = args.tStart + travelSeconds + prepSeconds;
   const best = bestContest(ctx, args.contesters, spot, tReady, prepSeconds);
   if (!best) return null;
-  const value = 2 * shotProbability(shotBaseProbability(shotType), shotSkill(shooter, shotType), best.level);
+  const value = shotReadValue(
+    ctx,
+    { shooterId: args.shooterId, shooterSkill: shotSkill(shooter, shotType), shotType, shooterPos: spot, tReady, prepSeconds, contesterId: best.id, contesterArrival: best.arrival, contesterGeometry: best.geometry },
+    best.level,
+  );
   return {
     shotType,
     spot,
@@ -5327,6 +5578,287 @@ interface ShotAttemptArgs {
   readonly contesterGeometry: ContestGeometry;
 }
 
+/**
+ * Valor esperado de un tiro para quien decide (ME-07B v2 §2.1/§2.2, sesión
+ * v2-9), sin sortear nada:
+ *
+ * 1. **Primer tiro**: puntos × acierto LAB-0.1, la regla de lectura de
+ *    siempre (`value` sin rebote). La falta de tiro y el tapón **no** entran
+ *    en él (pendiente medido, ver `analysis/ME-07B-v2-rebote-proyectado-v2-9.md`):
+ *    valorarlos por separado desató la caza del contacto tardío, que hoy es
+ *    falta segura.
+ * 2. **Lo que sigue a un fallo vivo** (`putbackValueAfterMiss`): solo existe
+ *    si el tiro no es falta ni tapón y falla, así que se pondera con
+ *    `(1 − falta) · (1 − tapón) · (1 − acierto)` con las mismas reglas que
+ *    `resolveShotAttempt` aplicará (contacto tardío o cierre legal con solape
+ *    y M07; tapón con oposición, sin contacto ilegal y altura T18). Solo la
+ *    parte que sucede dentro del mismo uso (palmeada o finalización tras el
+ *    rebote); un rebote que se reorganiza abre otra decisión organizada que
+ *    se valora entonces.
+ *
+ * Solo en el partido enlazado: el laboratorio ME-01–03 sin enlazar conserva
+ * su valoración (puntos × acierto) y su huella. Unidad: puntos esperados.
+ */
+export interface ShotValueBreakdown {
+  /** Primer tiro + lo que sigue a un fallo vivo (sin rebote si no se pide). */
+  readonly value: number;
+  readonly makeProbability: number;
+  readonly blockProbability: number;
+  readonly foulProbability: number;
+  /** Puntos esperados dentro del mismo uso si el tiro falla vivo (condicionado al fallo vivo). */
+  readonly putbackValue: number;
+  /** `(1 − falta)(1 − tapón)(1 − acierto) · putbackValue`: la parte de `value` que es rebote. */
+  readonly followUpValue: number;
+}
+
+function shotValueBreakdown(ctx: CoreContext, args: ShotAttemptArgs, opposition: EffectiveOpposition, withRebound = true): ShotValueBreakdown {
+  const pts = args.shotType === "three_point" ? 3 : 2;
+  const p = shotProbability(shotBaseProbability(args.shotType), args.shooterSkill, opposition);
+  if (!ctx.linked || !withRebound || ctx.withoutReboundFollowUp) return { value: pts * p, makeProbability: p, blockProbability: 0, foulProbability: 0, putbackValue: 0, followUpValue: 0 };
+  const shooter = player(ctx, args.shooterId);
+  const hasContester = args.contesterId !== "" && Number.isFinite(args.contesterArrival);
+  let foulP = 0;
+  let blockP = 0;
+  if (hasContester) {
+    const contester = player(ctx, args.contesterId);
+    const atReady = positionAtInstant(args.contesterGeometry, args.contesterArrival, args.tReady);
+    const bodyOverlap = distance(atReady, args.shooterPos) <= COMBINED_CONTACT_RADIUS_METERS;
+    const legality = bodyOverlap ? evaluateCloseoutLegality(args.contesterArrival - args.tReady, args.contesterGeometry.brakingExtraSeconds) : "no_contest";
+    if (legality === "late_illegal_contact") foulP = 1;
+    else if (legality === "legal_contest" && ctx.linked.rules?.ordinaryFouls) {
+      foulP = contactFoulProbability(args.shotType === "close_finish" || args.shotType === "floater" ? "finalizacion" : "tiro_exterior", contester.attributes.M07);
+    }
+    const releaseHeight = shotReleaseHeightMeters(shooter.measures.heightCm, shooter.measures.standingReachCm, jumpCeilingMeters(shooter.attributes.F06));
+    const touchable = maxTouchHeightMeters(contester.measures.standingReachCm, jumpCeilingMeters(contester.attributes.F06)) >= releaseHeight;
+    if (opposition > 0 && legality !== "late_illegal_contact" && touchable) blockP = blockDeflectionProbability(contester.attributes.T18);
+  }
+  const liveMiss = (1 - foulP) * (1 - blockP) * (1 - p);
+  const putbackValue = liveMiss > 0 ? putbackValueAfterMiss(ctx, args) : 0;
+  const followUpValue = liveMiss * putbackValue;
+  return { value: pts * p + followUpValue, makeProbability: p, blockProbability: blockP, foulProbability: foulP, putbackValue, followUpValue };
+}
+
+/** Argumentos de un tiro cerrado por el mejor cierre real (`bestContest`). */
+function contestedShot(
+  shooterId: string,
+  shooterSkill: number,
+  shotType: ShotType,
+  shooterPos: Point2D,
+  tReady: number,
+  prepSeconds: number,
+  contest: { readonly id: string; readonly arrival: number; readonly geometry: ContestGeometry },
+): ShotAttemptArgs {
+  return { shooterId, shooterSkill, shotType, shooterPos, tReady, prepSeconds, contesterId: contest.id, contesterArrival: contest.arrival, contesterGeometry: contest.geometry };
+}
+
+/** El mismo tiro tras una recepción con control incómodo (`delay` s más de preparación). */
+function delayedShot(shot: ShotAttemptArgs, delay: number): ShotAttemptArgs {
+  return delay > 0 ? { ...shot, tReady: shot.tReady + delay, prepSeconds: shot.prepSeconds + delay } : shot;
+}
+
+/**
+ * Valor de una vía de tiro en una lectura: puntos × acierto (LAB-0.1). Quien
+ * lee elige por el tiro; lo que sigue a un fallo lo añade la proyección a la
+ * vía elegida (`FollowUpReached`, sesión v2-9).
+ */
+function shotReadValue(ctx: CoreContext, args: ShotAttemptArgs, opposition: EffectiveOpposition): number {
+  return shotValueBreakdown(ctx, args, opposition, false).value;
+}
+
+/** Valor de un tiro con lo que sigue a su fallo vivo (proyecciones de una sola vía, como la trampa). */
+function shotFullValue(ctx: CoreContext, args: ShotAttemptArgs, opposition: EffectiveOpposition): number {
+  return shotValueBreakdown(ctx, args, opposition, true).value;
+}
+
+/** Solo la parte de rebote ofensivo y palmeada (probabilidad del fallo vivo incluida). */
+function reboundFollowUpValue(ctx: CoreContext, args: ShotAttemptArgs, opposition: EffectiveOpposition): number {
+  return shotValueBreakdown(ctx, args, opposition, true).followUpValue;
+}
+
+/**
+ * Puntos esperados dentro del mismo uso si el tiro falla y toca aro (sesión
+ * v2-9), con la mecánica real del rebote enlazado y sin sortear: se aplican
+ * los movimientos del gesto como los deja `planLinkedShotMovement` (tirador
+ * en su punto y en el aire, carrera del que cierra, quién carga —los más
+ * rápidos al aro, como `assignReboundDuties`— y quién vuelve); para cada
+ * punto de caída de la cuadratura de `seedReboundLanding` se construyen los
+ * candidatos como `buildReboundCandidates` (posiciones reales en el fallo,
+ * sin los que vuelven), la disputa
+ * determinista (`contestRebound`: cierres T19/F05, ventana de vuelo,
+ * captura T20 y palmeo por T20) y, con reglas de partido, la falta sobre la
+ * espalda (M07) que impide el rebote. Si el balón lo controla un atacante,
+ * la lectura de segunda oportunidad de `linked-run` (`readSecondChance`, con
+ * los defensores donde están al controlar) decide si hay palmeada; su valor
+ * es el de esa finalización (falta, tapón y acierto, sin otro rebote).
+ */
+function putbackValueAfterMiss(ctx: CoreContext, args: ShotAttemptArgs): number {
+  return reboundFollowUpAfterMiss(ctx, args).value;
+}
+
+/** Lo que sigue a un fallo vivo, condicionado a ese fallo: puntos de palmeada y probabilidades de rebote ofensivo y de palmeada. */
+interface ReboundFollowUp {
+  readonly value: number;
+  readonly offensiveReboundProbability: number;
+  readonly putbackProbability: number;
+}
+
+function reboundFollowUpAfterMiss(ctx: CoreContext, args: ShotAttemptArgs): ReboundFollowUp {
+  if (!ctx.linked || !ctx.positionHistory) return { value: 0, offensiveReboundProbability: 0, putbackProbability: 0 };
+  const tGesture = Math.max(0, args.tReady - args.prepSeconds);
+  const tMiss = args.tReady + 0.05;
+  // Los movimientos del gesto (tirador en su punto, carrera real del que
+  // cierra, encargos de carga y balance) se aplican sobre una copia con la
+  // misma función que la ejecución (`planLinkedShotMovement`); después todas
+  // las posiciones salen del historial, como en `buildReboundCandidates`.
+  const sim = dryContext(ctx);
+  planLinkedShotMovement(sim, args, tGesture);
+  const balancers = sim.linked!.balancers;
+  const ranked = ATTACKING_SLOTS.filter((slot) => slot !== args.shooterId).map((slot) => ({ slot, position: historyPositionAt(ctx, slot, tGesture) }));
+  const positionAt = (id: string, t: number): Point2D => historyPositionAt(sim, id, t);
+  const ids = Object.keys(ctx.positions).filter((id) => !balancers.has(id));
+  const atMiss = ids.map((id) => ({ id, position: positionAt(id, tMiss) }));
+  const contests = reboundContestsAfterMiss(ctx, args, ranked, atMiss);
+  const defendersAt = new Map<number, Point2D[]>();
+  let total = 0;
+  let offensiveRebound = 0;
+  let putback = 0;
+  for (const c of contests) {
+    let value = 0;
+    for (const w of c.winners) {
+      offensiveRebound += c.weight * w.probability;
+      let defenders = defendersAt.get(w.tControl);
+      if (!defenders) {
+        defenders = DEFENDING_SLOTS.map((d) => positionAt(d, w.tControl));
+        defendersAt.set(w.tControl, defenders);
+      }
+      const pv = putbackShotValue(ctx, w.slot, c.landing, defenders);
+      if (pv > 0) putback += c.weight * w.probability;
+      value += w.probability * pv;
+    }
+    total += c.weight * value;
+  }
+  return { value: total, offensiveReboundProbability: offensiveRebound, putbackProbability: putback };
+}
+
+/** Desenlace determinista de la disputa en un punto de caída: peso (sin falta sobre la espalda) y atacantes que controlan. */
+interface ProjectedReboundContest {
+  readonly landing: Point2D;
+  readonly weight: number;
+  readonly winners: readonly { readonly slot: string; readonly probability: number; readonly tControl: number }[];
+}
+
+/**
+ * La disputa del rebote para cada punto de la cuadratura (cierres T19/F05,
+ * ventana de vuelo, captura y palmeo T20 y falta sobre la espalda M07). Solo
+ * depende de quién llega y desde dónde en el fallo (y de quién carga, por
+ * las posiciones en el gesto), así que se memoriza con esa clave exacta:
+ * muchas proyecciones de una misma organización llegan al mismo tiro con
+ * los diez en el mismo sitio.
+ */
+function reboundContestsAfterMiss(
+  ctx: CoreContext,
+  args: ShotAttemptArgs,
+  ranked: readonly { readonly slot: string; readonly position: Point2D }[],
+  atMiss: readonly { readonly id: string; readonly position: Point2D }[],
+): readonly ProjectedReboundContest[] {
+  const linked = ctx.linked!;
+  const fouls = linked.rules?.ordinaryFouls ?? false;
+  const byDefense = REBOUND_CONTEST_MEMO.get(ctx.input.offensePlayers) ?? new WeakMap<readonly PlayerProfile[], Map<string, readonly ProjectedReboundContest[]>>();
+  REBOUND_CONTEST_MEMO.set(ctx.input.offensePlayers, byDefense);
+  let memo = byDefense.get(ctx.input.defensePlayers);
+  if (!memo || memo.size > 20_000) {
+    memo = new Map();
+    byDefense.set(ctx.input.defensePlayers, memo);
+  }
+  const key = JSON.stringify([args, linked.binding, linked.priority, fouls, ranked.map((r) => [r.slot, r.position]), atMiss]);
+  const cached = memo.get(key);
+  if (cached) return cached;
+
+  const shooter = args.shooterId;
+  const tMiss = args.tReady + 0.05;
+  const airborne = Math.max(0, shooterLandingSeconds(player(ctx, shooter).attributes.F06) - 0.05);
+  const people = atMiss.map((c) => {
+    const a = player(ctx, c.id).attributes;
+    return { id: c.id, position: c.position, t19: a.T19, f05: a.F05, t20: a.T20 };
+  });
+  const out: ProjectedReboundContest[] = [];
+  for (const { seed, weight } of reboundLandingQuadrature(ATTACKED_HOOP, args.shooterPos, args.shotType)) {
+    const candidates: ReboundCandidate[] = people.map((c) => ({
+      playerId: c.id,
+      teamId: isOffensivePlayer(c.id) ? "ataque" : "defensa",
+      position: c.position,
+      arrivalTimeSeconds: timeToReach(c.position, seed.landingPoint, REBOUND_CANDIDATE_SPEED_MPS) + (c.id === shooter ? airborne : 0),
+      t19: c.t19,
+      f05: c.f05,
+      t20: c.t20,
+      canBoxOut: c.id !== shooter,
+    }));
+    const contest = contestRebound(seed, candidates, REBOUND_BOX_OUT_GEOMETRY);
+    if (!contest) continue;
+    let noFoul = 1;
+    if (fouls) {
+      const inPool = new Set(contest.pool.map((c) => c.playerId));
+      for (const b of contest.trace.boxOuts) {
+        if (isOffensivePlayer(b.closerId) && !isOffensivePlayer(b.rivalId) && inPool.has(b.rivalId)) {
+          noFoul *= 1 - contactFoulProbability("rebote_sobre_espalda", player(ctx, b.rivalId).attributes.M07);
+        }
+      }
+    }
+    const first = contest.pool[0]!.playerId;
+    const tipWinner = pickTipWinnerByT20(
+      { kind: "loose_ball_tip", nearestPlayerId: first, contestPoolPlayerIds: contest.pool.map((c) => c.playerId), trace: contest.trace },
+      (id) => player(ctx, id).attributes.T20,
+    );
+    const winners: { slot: string; probability: number; tControl: number }[] = [];
+    for (const [winner, probability] of [
+      [first, contest.captureProbability],
+      [tipWinner, 1 - contest.captureProbability],
+    ] as const) {
+      if (probability <= 0 || !isOffensivePlayer(winner)) continue;
+      winners.push({ slot: winner, probability, tControl: tMiss + Math.max(1, effectiveReboundArrival(contest.trace, winner) ?? 0) });
+    }
+    if (winners.length > 0) out.push({ landing: seed.landingPoint, weight: weight * noFoul, winners });
+  }
+  memo.set(key, out);
+  return out;
+}
+
+const REBOUND_CONTEST_MEMO = new WeakMap<readonly PlayerProfile[], WeakMap<readonly PlayerProfile[], Map<string, readonly ProjectedReboundContest[]>>>();
+
+const DEFENDING_SLOTS = ["D1", "D2", "D3", "D4", "D5"] as const;
+
+/** Palmeada tras rebote ofensivo con la lectura y el cierre de `linked-run.secondChance`. */
+function putbackShotValue(dry: CoreContext, rebounderSlot: string, landing: Point2D, defenderPositions: readonly Point2D[]): number {
+  const participant = (slot: string, position: Point2D): RaceParticipant => {
+    const p = player(dry, slot);
+    return { slot, id: realId(dry, slot), position, runSpeedMps: attackerMoveSpeedMps(p.attributes.F01), lateralSpeedMps: defenderLateralSpeedMps(p.attributes.F04), t23: p.attributes.T23 };
+  };
+  const defenders = DEFENDING_SLOTS.map((d, i) => participant(d, defenderPositions[i]!));
+  const read = readSecondChance(participant(rebounderSlot, landing), defenders);
+  if (!read.putback) return 0;
+  const contester = defenders.find((d) => d.slot === read.firstDefender.slot)!;
+  const geometry: ContestGeometry = {
+    originPos: contester.position,
+    destinationPos: ATTACKED_HOOP,
+    speedMps: contester.lateralSpeedMps,
+    brakingExtraSeconds: closeoutBrakingExtraSeconds(player(dry, contester.slot).attributes.F03),
+  };
+  const tReady = read.rebounderArrivalSeconds + CLOSE_FINISH_PREP_SECONDS;
+  const args: ShotAttemptArgs = {
+    shooterId: rebounderSlot,
+    shooterSkill: player(dry, rebounderSlot).attributes.T01,
+    shotType: "close_finish",
+    shooterPos: ATTACKED_HOOP,
+    tReady,
+    prepSeconds: CLOSE_FINISH_PREP_SECONDS,
+    contesterId: contester.slot,
+    contesterArrival: read.firstDefender.arrivalSeconds,
+    contesterGeometry: geometry,
+  };
+  const opposition = estimateContestLevel(dry, contester.slot, geometry, read.firstDefender.arrivalSeconds, ATTACKED_HOOP, tReady, CLOSE_FINISH_PREP_SECONDS);
+  return shotValueBreakdown(dry, args, opposition, false).value;
+}
+
 function emitFieldGoalAttempt(
   ctx: CoreContext,
   atSeconds: number,
@@ -5368,6 +5900,11 @@ function resolveShotAttempt(ctx: CoreContext, args: ShotAttemptArgs): Possession
   if (ctx.linked) {
     const violation = prepareLinkedShot(ctx, args);
     if (violation) return violation;
+  }
+  if (ctx.followUp) {
+    // Sesión v2-9: la vía seguida en seco llega a su tiro; se valora lo que seguiría a un fallo vivo.
+    const opposition = estimateContestLevel(ctx, args.contesterId, args.contesterGeometry, args.contesterArrival, args.shooterPos, args.tReady, args.prepSeconds);
+    throw new FollowUpReached(reboundFollowUpValue(ctx, args, opposition));
   }
   const shooter = player(ctx, args.shooterId);
   const contester = player(ctx, args.contesterId);
@@ -5447,6 +5984,12 @@ function resolveShotAttempt(ctx: CoreContext, args: ShotAttemptArgs): Possession
   if (ctx.audit.enabled) {
     const shotProb = shotProbability(shotBaseProbability(args.shotType), args.shooterSkill, opposition);
     const blockProb = blockEligible ? blockDeflectionProbability(contester.attributes.T18) : null;
+    // Sesión v2-9: lo que la proyección del comparador espera tras un fallo vivo de este mismo tiro
+    // (calculado en seco, sin sorteo), para contrastarlo con lo que de verdad ocurre.
+    const followUp = ctx.linked ? reboundFollowUpAfterMiss(ctx, args) : null;
+    const projected: Record<string, number> = followUp
+      ? { projectedOffensiveReboundProbability: followUp.offensiveReboundProbability, projectedPutbackProbability: followUp.putbackProbability, projectedPutbackValue: followUp.value }
+      : {};
     auditDecision(ctx, args.tReady, {
       point: "resolucion_tiro",
       holderId: args.shooterId,
@@ -5458,7 +6001,7 @@ function resolveShotAttempt(ctx: CoreContext, args: ShotAttemptArgs): Possession
           id: "no_contest",
           status: legality === "no_contest" ? "elegida" : "descartada_por_condicion",
           reasonCode: "shot_contact_no_overlap",
-          values: { bodyOverlap, arrivalMarginSeconds: arrivalMargin },
+          values: { bodyOverlap, arrivalMarginSeconds: arrivalMargin, ...(legality === "no_contest" ? projected : {}) },
         },
         {
           id: "legal_contest",
@@ -5470,13 +6013,14 @@ function resolveShotAttempt(ctx: CoreContext, args: ShotAttemptArgs): Possession
             contactFoulProbability: contactFoulProb,
             contactFoul,
             contesterM07: contester.attributes.M07,
+            ...(legality === "legal_contest" ? projected : {}),
           },
         },
         {
           id: "late_illegal_contact",
           status: legality === "late_illegal_contact" ? "elegida" : "descartada_por_condicion",
           reasonCode: "shot_contact_late_illegal",
-          values: { arrivalMarginSeconds: arrivalMargin },
+          values: { arrivalMarginSeconds: arrivalMargin, ...(legality === "late_illegal_contact" ? projected : {}) },
         },
       ],
       note: `R_contest=${contestReach.toFixed(2)} m; oposición geométrica=${contestLevel} (dentro de alcance al soltar: ${withinReachAtRelease}; colocado antes del gesto: ${settledBeforeGesture}). Probabilidad de conversión usada: ${shotProb.toFixed(3)}. Tapón elegible: ${blockEligible ? `sí (probabilidad ${blockProb!.toFixed(3)})` : "no (" + (contestLevel === 0 ? "sin oposición geométrica (fuera de R_contest al soltar)" : legality === "late_illegal_contact" ? "contacto tardío ilegal" : "no llega a la altura de liberación") + ")"}.`,
@@ -5570,6 +6114,18 @@ function prepareLinkedShot(ctx: CoreContext, args: ShotAttemptArgs): PossessionC
   }
   const tGesture = Math.max(0, args.tReady - args.prepSeconds);
   ctx.linked!.firstGestureSeconds = Math.min(ctx.linked!.firstGestureSeconds, tGesture);
+  planLinkedShotMovement(ctx, args, tGesture);
+  return null;
+}
+
+/**
+ * Movimientos que el tiro enlazado deja en el historial al empezar el gesto
+ * (llegada del tirador, carrera real del que cierra, encargos de carga y
+ * balance). Lo usa la ejecución (`prepareLinkedShot`) y, sobre una copia en
+ * seco, la proyección del rebote ofensivo (sesión v2-9), para que ambas
+ * partan de las mismas posiciones.
+ */
+function planLinkedShotMovement(ctx: CoreContext, args: ShotAttemptArgs, tGesture: number): void {
   const shooterAtGesture = historyPositionAt(ctx, args.shooterId, tGesture);
   if (distance(shooterAtGesture, args.shooterPos) > 1e-6) {
     const travel = timeToReach(shooterAtGesture, args.shooterPos, runSpeed(ctx, args.shooterId));
@@ -5588,7 +6144,6 @@ function prepareLinkedShot(ctx: CoreContext, args: ShotAttemptArgs): PossessionC
     }
   }
   assignReboundDuties(ctx, args.shooterId, tGesture);
-  return null;
 }
 
 const ATTACKING_SLOTS = ["O1", "O2", "O3", "O4", "O5"] as const;

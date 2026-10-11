@@ -20,7 +20,7 @@
  * - resultado: puntos del primer tiro, libres, otros puntos de la ventana
  *   (rebote ofensivo, segunda acción), pérdidas, reorganizaciones y reloj.
  *
- * Uso: `npx tsx scripts/me07b-v2-handoff-delay-gap.ts [--photos] [--directed] [--seeds 1-40] [--json filas.json]`
+ * Uso: `npx tsx scripts/me07b-v2-handoff-delay-gap.ts [--photos] [--directed] [--orders mano_a_mano,delay,bloqueo_central,horns,spain] [--seeds 1-40] [--json filas.json]`
  */
 import { writeFileSync } from "node:fs";
 import { playFullGame } from "../modules/match/domain/game/play-full-game";
@@ -68,6 +68,14 @@ export interface UseRow {
   ptsFirstFg: number;
   ptsFt: number;
   ptsOther: number;
+  /** Rebotes ofensivos (tiro de campo o libre) dentro de la ventana. */
+  orebs: number;
+  /** Fallos de campo que tocan aro (balón vivo) dentro de la ventana. */
+  liveMisses: number;
+  /** Puntos de la ventana anotados después del primer rebote ofensivo (parte del «resto»). */
+  ptsAfterOreb: number;
+  /** De `ptsAfterOreb`, los libres (el resto son tiros de campo, ya en `ptsOther`). */
+  ftAfterOreb: number;
   realized: number;
   tov: string | null;
   /** Pases desviados que quedan sueltos (`pass_control_lost`) y quién recupera el balón. */
@@ -155,17 +163,40 @@ export function analyzeGame(source: string, seed: number, r: GameResult): UseRow
     let looseKept = 0;
     let pendingLoose = false;
     let blocked = false;
+    let orebs = 0;
+    let liveMisses = 0;
+    let ptsAfterOreb = 0;
+    let ftAfterOreb = 0;
+    // El rebote ofensivo que abre una reorganización cae en el mismo instante
+    // que la siguiente `colocacion_bloqueo`: se cuenta aquí (cierra este uso),
+    // aunque sus puntos posteriores sean ya del uso siguiente.
+    const reboundEndMs = nextOrg ? nextOrg.atMs : endMs;
+    const firstOrebMs = (evByPoss.get(pi) ?? []).find(
+      (e) => (e.kind === "rebound_secured" || e.kind === "rebound_contested") && e.detail.offensive === true && e.atMs >= f.atMs && e.atMs <= reboundEndMs,
+    )?.atMs;
+    orebs = (evByPoss.get(pi) ?? []).filter(
+      (e) => (e.kind === "rebound_secured" || e.kind === "rebound_contested") && e.detail.offensive === true && e.atMs >= f.atMs && e.atMs <= reboundEndMs,
+    ).length;
     for (const e of evs) {
       if (e.kind === "field_goal_attempt") {
         shots++;
         const pts = e.detail.made === true ? Number(e.detail.points ?? (e.detail.shotType === "three_point" ? 3 : 2)) : 0;
         if (!seenFirst) ptsFirstFg += pts;
         else ptsOther += pts;
+        if (firstOrebMs !== undefined && e.atMs > firstOrebMs) ptsAfterOreb += pts;
         seenFirst = true;
+      } else if (e.kind === "rebound_seeded") {
+        liveMisses++;
       } else if (e.kind === "shooting_foul") {
         seenFirst = true;
       } else if (e.kind === "free_throws_result") {
-        if (e.detail.made === true) ptsFt += 1;
+        if (e.detail.made === true) {
+          ptsFt += 1;
+          if (firstOrebMs !== undefined && e.atMs > firstOrebMs) {
+            ptsAfterOreb += 1;
+            ftAfterOreb += 1;
+          }
+        }
       } else if (TOV_KINDS.has(e.kind) && !tov) {
         tov = e.kind === "turnover" ? (/desvía el pase/.test(e.text) ? "robo_de_pase" : /poste/.test(e.text) ? "robo_en_poste" : "robo_otro") : e.kind;
       } else if (e.kind === "pass_control_lost") {
@@ -210,6 +241,10 @@ export function analyzeGame(source: string, seed: number, r: GameResult): UseRow
       ptsFirstFg,
       ptsFt,
       ptsOther,
+      orebs,
+      liveMisses,
+      ptsAfterOreb,
+      ftAfterOreb,
       realized,
       tov,
       looseToDefense,
@@ -242,6 +277,9 @@ export function summarize(label: string, rows: readonly UseRow[]): void {
   );
   console.log(
     `  anotado ${f3(mean(rows.map((r) => r.realized)))} = 1.er tiro de campo ${f3(mean(rows.map((r) => r.ptsFirstFg)))} + libres ${f3(mean(rows.map((r) => r.ptsFt)))} + resto ${f3(mean(rows.map((r) => r.ptsOther)))}`,
+  );
+  console.log(
+    `  rebote: fallos vivos ${rows.reduce((a, r) => a + r.liveMisses, 0)} · rebotes ofensivos ${rows.reduce((a, r) => a + r.orebs, 0)} · puntos tras rebote ofensivo por uso ${f3(mean(rows.map((r) => r.ptsAfterOreb)))} (libres ${f3(mean(rows.map((r) => r.ftAfterOreb)))}) · resto sin rebote ofensivo ${f3(mean(rows.map((r) => r.ptsOther - (r.ptsAfterOreb - r.ftAfterOreb))))}`,
   );
   const tovs = rows.filter((r) => r.tov);
   const lost = rows.filter((r) => r.tov || r.looseToDefense > 0).length;
@@ -297,8 +335,14 @@ function main() {
       { id: "dirigido:mano_a_mano", order: { offensivePlan: "mano_a_mano_sin_balon" as const, screenPlacement: "central" as const } },
       { id: "dirigido:delay", order: { screenPlacement: "delay" as const } },
       { id: "dirigido:bloqueo_central", order: { offensivePlan: "bloqueo_directo" as const, screenPlacement: "central" as const } },
+      // Sesión v2-9: también Horns y Horns→Spain, para medir el rebote proyectado en todas las fichas.
+      { id: "dirigido:horns", order: { offensivePlan: "bloqueo_directo" as const, screenPlacement: "horns" as const, chainedVariant: "ninguna" as const } },
+      { id: "dirigido:spain", order: { offensivePlan: "bloqueo_directo" as const, screenPlacement: "horns" as const, chainedVariant: "spain" as const } },
     ];
+    const only = args.indexOf("--orders");
+    const wanted = only > 0 ? new Set(args[only + 1]!.split(",")) : null;
     for (const o of orders) {
+      if (wanted && !wanted.has(o.id.replace("dirigido:", ""))) continue;
       for (const seed of seeds) {
         // El equipo dirigido alterna: Sierra en semillas impares, Puerto en pares (mismo número de usos por equipo).
         const sierraDirected = seed % 2 === 1;
