@@ -132,6 +132,21 @@ decisiones duraderas viven en `docs/decisions/`, no aquí.
   las posiciones de cálculo. Rebote ofensivo tras fallo vivo en la foto seed:
   36 % → 30–33 %; familia bloqueo en la foto de las 20: 54,0 %. Huella del tramo
   de ME-03 y semillas de escenario recalculadas con causa.
+- **El comparador proyecta el rebote ofensivo (sesión v2-9).** La proyección
+  de cada ficha sigue en seco la vía elegida hasta su tiro y suma la palmeada
+  tras un fallo vivo con la mecánica real del rebote (movimientos del gesto,
+  disputa determinista `contestRebound` sobre una cuadratura de la caída,
+  `readSecondChance`), ponderada por la probabilidad de fallo vivo (sin falta
+  ni tapón). `resolucion_tiro` audita lo esperado en cada tiro real
+  (`scripts/me07b-v2-rebound-calibration.ts`: 180 rebotes ofensivos
+  proyectados frente a 165 reales en 8 partidos). Anotado − proyectado en
+  partidos dirigidos: bloqueo central −0,005 → +0,001, Spain +0,037 → +0,001,
+  Horns +0,005 → −0,020, Delay +0,010 → −0,033, mano a mano −0,140 → −0,059.
+  Familia bloqueo en la foto de las 20: 54,0 % → 65,1 % (sin ajuste hacia
+  ningún reparto). Del trabajo heredado se retiraron la falta y el tapón en el
+  valor de las lecturas y el rebote del triple de transición, con causa medida
+  en `docs/match/analysis/ME-07B-v2-rebote-proyectado-v2-9.md`. Semillas de
+  escenario recalculadas con causa; `testTimeout` global de 60 s.
 - **Rediseño de la mano a mano central (sesión v2-8, decisión de Dennis).**
   O5 recibe en el codo alto real del lado fuerte y O2 recibe en su hombro
   alto rodeándolo; el cuerpo de O5 es pantalla real sobre D2 (T13/F05 frente a

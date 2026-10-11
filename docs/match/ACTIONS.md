@@ -434,6 +434,18 @@ riesgo de entrada). Brecha mediana PnR−DHO +0,336 (p10 +0,244, p90
 +0,369; 39/2.452 negativas). Es la defensa (§2.3) la que concede esa
 ventana, no un sesgo del comparador.
 
+**Sesión v2-9 — rebote ofensivo en el comparador.** Tras fijar la primera
+lectura, la proyección sigue en seco la vía elegida por su camino modal
+hasta su tiro y le suma lo que seguiría a un fallo vivo:
+`(1 − falta)(1 − tapón)(1 − acierto) × palmeada`, con los movimientos del
+gesto de `planLinkedShotMovement`, la disputa determinista del resolvedor
+(`contestRebound`, cuadratura de la caída) y `readSecondChance`; solo lo que
+pasa dentro del mismo uso. Igual en todas las fichas y en las concesiones de
+la trampa. La lectura de transición sigue comparando organizar y el triple
+del portador **sin** rebote en los dos lados (los defensores aún no
+reaccionan al tiro). Las lecturas siguen valorando cada vía por puntos ×
+acierto. Medición en `analysis/ME-07B-v2-rebote-proyectado-v2-9.md`.
+
 No autoriza mover D5, adelantar la ayuda de D3 del bloqueo directo, ni
 resolver la decisión pendiente de faltas sin tiro/segunda entrada
 (sigue abierta). Sin fórmulas LAB-0.1 nuevas: dos puntos de cancha

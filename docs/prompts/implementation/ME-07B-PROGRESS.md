@@ -1121,3 +1121,82 @@ Posesiones 101–120 consecutivas de la 92 (`me07b-v2-possession-slice.ts`):
 defensa trampa/drop/cambio con su concesión, pero la mano a mano se repite
 posesión tras posesión con la misma lectura por equipo (Sierra: triple de
 SC07 ante hundirse; Puerto: aro de PA07 ante el cambio).
+
+### Sesión v2-9 — 2026-10-10 / 2026-10-11
+
+**Base:** `ab50cf1`; rama `claude/me-07b-v2-capitulo-tactico`, PR #11 Draft.
+La sesión anterior quedó cortada con un trabajo sin commit (proyección del
+rebote ofensivo en el comparador). Estado al retomarlo y decisiones:
+
+- El trabajo era coherente (seguimiento en seco de la vía elegida por su
+  camino modal hasta el tiro, `contestRebound` determinista compartido con
+  el resolvedor, cuadratura de la caída, palmeada con `readSecondChance`),
+  pero ampliaba el alcance: también metía **falta y tapón en el valor de
+  todas las lecturas** y el **rebote en el triple de transición**. Con el
+  árbol tal cual: 65 pruebas rojas, partido 2,2× más lento, rebote ofensivo
+  23 % → 41 % de los fallos vivos, 228 triples de transición en 4 partidos
+  (antes 4) con 60 % de rebote ofensivo tras fallarlos, y un partido con
+  cambio por orden que acaba en guardián (D5 de Puerto excluido: 46
+  contactos tardíos buscados a propósito).
+- **Se conserva** la proyección del rebote en el comparador (todas las
+  familias, por la misma vía que ejecutarían). **Se retira** la falta y el
+  tapón del valor de las lecturas (vuelven a puntos × acierto) y el rebote
+  del triple de transición (organizar se compara sin rebote, misma base).
+  Causas medidas en el análisis v2-9. Borrados `scripts/_tmp_oreb*.ts`
+  (depuración).
+- **Defecto propio del heredado, corregido:** la palmeada proyectada
+  situaba al que cierra con su geometría de cierre aunque la ejecución lo
+  dejara en su retirada al aro (D5 tras ir por debajo: 9,3 palmeadas
+  proyectadas en 16 fallos de triple de O1 con 1 real). Ahora los
+  movimientos del gesto se aplican con `planLinkedShotMovement` sobre una
+  copia y todas las posiciones salen del historial, como en la ejecución.
+- `resolucion_tiro` audita lo que la proyección espera tras un fallo vivo de
+  cada tiro real; `scripts/me07b-v2-rebound-calibration.ts` lo contrasta
+  (8 partidos `auto`: rebote ofensivo 180 proyectado / 165 real, palmeadas
+  25,8 / 23). Memo exacto de la disputa por punto de caída.
+- Cifras completas en `docs/match/analysis/ME-07B-v2-rebote-proyectado-v2-9.md`:
+  anotado − proyectado (dirigidos, 20 semillas) bloqueo central +0,001,
+  Spain +0,001, Horns −0,020, Delay −0,033, mano a mano −0,059 (antes
+  −0,005 / +0,037 / +0,005 / +0,010 / −0,140); familia bloqueo en las 20:
+  54,0 % → 65,1 % (seed 51/49 %; el salto es de las fotos +3/+5).
+
+#### DECISIÓN REQUERIDA (Dennis)
+1. **Cierre tardío con contacto.** Hoy un defensor que llega tarde con
+   solape corporal comete siempre falta (`late_illegal_contact`). Si las
+   lecturas valoran la falta, el ataque busca ese contacto a propósito (42
+   faltas en dos cuartos con cambio por orden). ¿Qué hace un defensor que
+   va a llegar tarde: (a) comete la falta igualmente, (b) frena y contesta a
+   distancia sin contacto, o (c) decide entre ambas según algún atributo
+   (¿cuál?)? Hasta decidirlo, las lecturas no valoran ni falta ni tapón.
+2. **Reacción defensiva al tiro para el rebote.** Los atacantes que cargan
+   salen hacia el aro desde el gesto; los defensores no reaccionan (siguen
+   su trayectoria). En transición esto da 60 % de rebote ofensivo tras un
+   triple fallado. ¿Deben los defensores, al ver el tiro (latencia M01/M05),
+   (a) ir a cerrar a su marca entre ella y el aro, (b) ir al aro, o (c)
+   otra regla? Hasta decidirlo, la transición compara sin rebote.
+
+#### Verificación al cerrar (2026-10-11)
+El árbol quedó dos veces sin commit por cortes. Al aterrizarlo, `npm run
+check` dio 3 rojas: la semilla de «tiro soltado antes de la bocina final»
+(`me04.test.ts`) se había fijado en la 62, cuya primera bocina con tiro en
+el aire es de C2; recalculada a la 1350 (ninguna en 1–1349). Dos pruebas
+con 3 y 8 partidos completos (`me07b-v2-transition`, `me07b-v2-fouls`)
+tardan 74–109 s y superaban el `testTimeout` global de 60 s: plazo propio
+de 300 s, sin tocar sus aserciones.
+
+`scripts/me07b-v2-stop-sweep.ts 1 60` en el árbol final: **180/180
+`final`**, 0 actas sin conciliar, ningún `menos_de_cinco` ni guardián;
+relevos de emergencia ROT-3 3 → 16 (seed 6, +3 0, +5 10; casi todos de
+Puerto), coherente con más faltas de tiro (66 → 85 en el análisis v2-9).
+
+#### Reanudar
+```bash
+cd BeManager && git fetch origin && git checkout claude/me-07b-v2-capitulo-tactico && git pull
+npm ci && npm run check
+npx tsx scripts/me07b-v2-stop-sweep.ts 1 60
+npx tsx scripts/me07b-v2-rebound-calibration.ts
+npx tsx scripts/me07b-v2-handoff-delay-gap.ts --directed --seeds 1-20
+```
+Siguiente paso: las dos `DECISIÓN REQUERIDA` de v2-9 (cierre tardío con
+contacto; reacción defensiva al tiro para el rebote). Sin ellas, seguir con
+el resto de §4–§7 sin valorar falta, tapón ni el rebote de la transición.

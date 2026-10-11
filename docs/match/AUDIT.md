@@ -302,7 +302,12 @@ aplica) de tapón que la regla **realmente usó**, recalculadas de forma pura
 con las mismas fórmulas LAB-0.1/LAB-0.3 sin consumir un sorteo nuevo (el
 sorteo real lo sigue consumiendo `resolveShot`, con su propio generador), y
 el alcance `R_contest` y el nivel de oposición geométrica (0/0,5/1) que se
-usaron (ver `RULES.md`).
+usaron (ver `RULES.md`). Desde la sesión v2-9, en el partido enlazado, la
+opción elegida de `resolucion_tiro` añade lo que la proyección del
+comparador espera tras un fallo vivo de ese mismo tiro, calculado en seco y
+sin sorteo: `projectedOffensiveReboundProbability`,
+`projectedPutbackProbability` y `projectedPutbackValue` (condicionados al
+fallo vivo; contraste en `scripts/me07b-v2-rebound-calibration.ts`).
 
 ## Cobertura declarada como faltante
 

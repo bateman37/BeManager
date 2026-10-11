@@ -39,3 +39,8 @@ documento o sección fechada.
   sobre D2, respuesta de D5 a la entrega): pruebas de un solo cambio,
   proyección frente a ejecución, mismas 20 semillas, partidos dirigidos y la
   siguiente causa medida (el comparador no proyecta el rebote ofensivo).
+- [`ME-07B-v2-rebote-proyectado-v2-9.md`](./ME-07B-v2-rebote-proyectado-v2-9.md)
+  — el comparador proyecta el rebote ofensivo y la palmeada: calibración en
+  los tiros reales, cinco fichas dirigidas, mismas 20 semillas y lo que se
+  retiró del trabajo heredado (falta/tapón en las lecturas, rebote del
+  triple de transición) con su causa (`scripts/me07b-v2-rebound-calibration.ts`).
