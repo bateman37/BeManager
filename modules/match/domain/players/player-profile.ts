@@ -52,6 +52,8 @@ export interface PlayerProfile {
 export const TEMPLATE_BASE_RATINGS: Record<PlayerTemplate, Partial<AttributeRatings>> = {
   G: {
     T01: 8,
+    T02: 8,
+    T03: 8,
     T04: 9,
     T05: 10,
     T06: 10,
@@ -72,6 +74,7 @@ export const TEMPLATE_BASE_RATINGS: Record<PlayerTemplate, Partial<AttributeRati
     M03: 10,
     M04: 10,
     M05: 9,
+    M07: 8,
     F01: 11,
     F03: 10,
     F04: 10,
@@ -81,6 +84,8 @@ export const TEMPLATE_BASE_RATINGS: Record<PlayerTemplate, Partial<AttributeRati
   },
   W: {
     T01: 9,
+    T02: 8,
+    T03: 8,
     T04: 10,
     T05: 9,
     T06: 9,
@@ -101,6 +106,7 @@ export const TEMPLATE_BASE_RATINGS: Record<PlayerTemplate, Partial<AttributeRati
     M03: 9,
     M04: 9,
     M05: 10,
+    M07: 8,
     F01: 10,
     F03: 9,
     F04: 8,
@@ -110,6 +116,8 @@ export const TEMPLATE_BASE_RATINGS: Record<PlayerTemplate, Partial<AttributeRati
   },
   B: {
     T01: 11,
+    T02: 8,
+    T03: 8,
     T04: 5,
     T05: 8,
     T06: 6,
@@ -130,6 +138,7 @@ export const TEMPLATE_BASE_RATINGS: Record<PlayerTemplate, Partial<AttributeRati
     M03: 8,
     M04: 10,
     M05: 9,
+    M07: 8,
     F01: 7,
     F03: 7,
     F04: 6,
@@ -147,6 +156,20 @@ export const TEMPLATE_BASE_RATINGS: Record<PlayerTemplate, Partial<AttributeRati
  * valor de M09.
  */
 export const M09_BACKFILL_NEUTRAL_RATING = 8;
+
+/**
+ * Capacidades activadas después de que existieran perfiles persistidos y su
+ * valor neutro explícito de relleno (ME-02 §3 para M09; ME-07B v2 §6 para
+ * T02/T03). Solo se aplica cuando el perfil guardado no tiene la capacidad;
+ * nunca borra ni recalcula ediciones existentes, y deja de aplicarse en
+ * cuanto el usuario guarda su propio valor.
+ */
+export const NEUTRAL_BACKFILL_RATINGS: Readonly<Partial<Record<ActiveAttributeId, Rating>>> = {
+  M09: M09_BACKFILL_NEUTRAL_RATING,
+  T02: 8,
+  T03: 8,
+  M07: 8,
+};
 
 /**
  * Valor explícito para un perfil ya persistido antes de ME-07A que todavía
@@ -181,8 +204,9 @@ export function buildAttributeRatings(
   for (const id of ACTIVE_ATTRIBUTE_IDS) {
     const value = result[id];
     if (value === undefined || !isValidRating(value)) {
-      if (id === "M09") {
-        result[id] = M09_BACKFILL_NEUTRAL_RATING;
+      const neutral = NEUTRAL_BACKFILL_RATINGS[id];
+      if (neutral !== undefined) {
+        result[id] = neutral;
         continue;
       }
       throw new RangeError(

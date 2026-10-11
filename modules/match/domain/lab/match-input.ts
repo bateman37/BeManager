@@ -3,6 +3,7 @@ import type { ScenarioId } from "./scenario";
 import { LAB_PARAMETERS_VERSION } from "./lab-0-1-parameters";
 import { LAB_0_2_PARAMETERS_VERSION } from "./lab-0-2-parameters";
 import { LAB_0_3_PARAMETERS_VERSION } from "./lab-0-3-parameters";
+import type { ScreenPlacement } from "./lab-0-7-parameters";
 
 /**
  * Cobertura defensiva ante el bloqueo directo (ME-02 §3): `drop` conserva el
@@ -12,8 +13,22 @@ import { LAB_0_3_PARAMETERS_VERSION } from "./lab-0-3-parameters";
  * parámetro de la corrida, no del escenario: la misma entrada de media
  * pista, quintetos y bloqueo central puede resolverse con cualquiera de
  * las dos.
+ *
+ * ME-07B v2 §5: `cambio` (switch) — D5 sale a tomar al manejador a la altura
+ * de la pantalla y D1 se queda con el bloqueador; el emparejamiento cambiado
+ * (posible desajuste) persiste el resto de la posesión. `show` (hedge) — D5
+ * sale a frenar al manejador delante de la pantalla y vuelve a su marca
+ * cuando D1 ha superado el bloqueo. `por_debajo` (under) — drop con D1
+ * pasando por detrás del bloqueador: concede la preparación exterior de O1.
+ * `ice` — solo aplicable en un bloqueo lateral (impedir el centro: D1 se
+ * pone del lado de la pantalla y D5 espera abajo); ante el bloqueo central no
+ * es elegible y la defensa juega drop, con el motivo registrado.
+ * `a_la_altura` (at the level) — D5 sube a la altura del bloqueador, a su
+ * lado, sin meterse en la salida del manejador: le deja doblar la esquina,
+ * le contiene desde cerca y vuelve con el continuador en cuanto D1 se
+ * recupera; el show sale más arriba, a la línea del manejador, y le frena.
  */
-export type DefensiveCoverage = "drop" | "trampa";
+export type DefensiveCoverage = "drop" | "trampa" | "cambio" | "show" | "a_la_altura" | "por_debajo" | "ice";
 
 /**
  * Cobertura elegida desde `/lab` (ME-07A §4): `auto` deja que la defensa
@@ -75,6 +90,38 @@ export type OffBallDefensiveCallChoice = "auto" | OffBallDefensiveCall;
 export type OffensiveCreationPriority = "equilibrado" | "buscar_aro" | "buscar_triple";
 
 /**
+ * Ayuda al continuador del bloqueo directo en drop («tag», ME-07B v2 §2.4 y
+ * §5): `siempre` obliga al defensor de la esquina débil a ayudar; `auto`
+ * deja que lo lea comparando lo que concede ayudando y sin ayudar («no
+ * dejar tirador de esquina»). En la posesión de laboratorio el escenario ya
+ * es una orden explícita (`drop_con_ayuda`/`drop_sin_ayuda`) y equivale a
+ * `siempre`; en el partido enlazado el valor por defecto es `auto`.
+ */
+export type RollHelpCall = "auto" | "siempre";
+
+/**
+ * Variante encadenada que el ataque puede llamar sobre la ficha en vigor
+ * (ME-07B v2 §4, «variantes encadenadas»; LAB-0.9): `spain` añade, desde
+ * Horns, el bloqueo ciego del segundo cuerno sobre el defensor que protege
+ * el roll; `ninguna` juega la ficha base; `auto` (por defecto) compara la
+ * ficha base y cada variante aplicable con la misma proyección en seco
+ * frente a la defensa observada. Sin efecto fuera de una colocación que la
+ * admita (Spain solo desde Horns).
+ */
+export type ChainedVariantChoice = "auto" | "ninguna" | "spain";
+
+/**
+ * Respuesta de la defensa al bloqueo ciego de Spain (ME-07B v2 §4–§5,
+ * LAB-0.9): `seguir` — el defensor del bloqueador ciego (D3) va con él y
+ * decide si ayuda al roll o sigue al pop; `cambiar` — D3 y D5 cambian en el
+ * bloqueo ciego (D3 toma al continuador, D5 sale al pop), solo si D3 lo
+ * reconoce (M01/M05) y lo canta (M09) antes de que el bloqueo llegue; `auto`
+ * (por defecto) compara la concesión de ambas desde la misma geometría.
+ */
+export type BackScreenCall = "seguir" | "cambiar";
+export type BackScreenCallChoice = "auto" | BackScreenCall;
+
+/**
  * Entrada compartida por el motor detallado y el motor rápido (estudio de
  * referencia §13.2): una copia estable de perfiles y versiones. Modificar un
  * jugador en otra pantalla no altera una corrida ya iniciada, porque cada
@@ -115,6 +162,19 @@ export interface MatchInput {
    * prueba existente que no la declare.
    */
   readonly creationPriority?: OffensiveCreationPriority;
+  /** Ayuda al continuador del equipo que defiende (ME-07B v2 §2.4). Ver `RollHelpCall`. */
+  readonly rollHelpCall?: RollHelpCall;
+  /**
+   * Colocación del bloqueo directo de esta acción (ME-07B v2 §4, LAB-0.7):
+   * `central` (por defecto, la de ME-01) o `lateral`. Las posiciones de
+   * partida deben ser las de esa disposición; la colocación lateral es del
+   * bloqueo directo (la mano a mano se juega desde la central).
+   */
+  readonly screenPlacement?: ScreenPlacement;
+  /** Variante encadenada pedida por el ataque (ME-07B v2 §4, LAB-0.9). Por defecto `ninguna` en el núcleo. */
+  readonly chainedVariant?: ChainedVariantChoice;
+  /** Respuesta del equipo que defiende al bloqueo ciego de Spain (LAB-0.9). Por defecto `auto`. */
+  readonly backScreenCall?: BackScreenCallChoice;
 }
 
 export function findPlayerInInput(input: MatchInput, playerId: string): PlayerProfile {

@@ -6,6 +6,8 @@
  */
 export const OFFENSIVE_ATTRIBUTE_IDS = [
   "T01",
+  "T02",
+  "T03",
   "T04",
   "T05",
   "T06",
@@ -35,7 +37,19 @@ export const DEFENSIVE_ATTRIBUTE_IDS = [
  * guarde (ver `buildAttributeRatings`); no se borran ni se restauran las
  * otras 26 capacidades por su ausencia.
  */
-export const MENTAL_ATTRIBUTE_IDS = ["M01", "M03", "M04", "M05", "M09"] as const;
+/**
+ * ME-07B v2 §6/§2.4: T02 (floater) y T03 (tiro medio) pasan de candidatas a
+ * activas con tarea propia y localizada: el toque intermedio por encima de la
+ * primera contención y el tiro de dos fuera del aro, ambos 2FGA con zona,
+ * preparación y oposición propias (`lab-0-5-parameters.ts`). Un perfil
+ * persistido sin ellas recibe el valor neutro 8 (mismo patrón que M09).
+ *
+ * ME-07B v2 §2.5/§6: M07 (Disciplina) pasa a activa con una tarea
+ * localizada: el riesgo de que un contacto defensivo real (cierre legal con
+ * solape corporal, trampa cerrada, rebote por encima de la espalda) sea
+ * falta (`lab-0-6-parameters.ts`). Relleno neutro 8.
+ */
+export const MENTAL_ATTRIBUTE_IDS = ["M01", "M03", "M04", "M05", "M07", "M09"] as const;
 
 export const PHYSICAL_ATTRIBUTE_IDS = ["F01", "F03", "F04", "F05", "F06"] as const;
 
@@ -50,6 +64,8 @@ export type ActiveAttributeId = (typeof ACTIVE_ATTRIBUTE_IDS)[number];
 
 export const ATTRIBUTE_LABELS: Record<ActiveAttributeId, string> = {
   T01: "Finalización",
+  T02: "Floater",
+  T03: "Tiro medio",
   T04: "Triple",
   T05: "Tiro libre",
   T06: "Tiro móvil",
@@ -70,6 +86,7 @@ export const ATTRIBUTE_LABELS: Record<ActiveAttributeId, string> = {
   M03: "Decisiones",
   M04: "Temporización",
   M05: "Espacios",
+  M07: "Disciplina",
   M09: "Comunicación",
   F01: "Aceleración",
   F03: "Frenada",

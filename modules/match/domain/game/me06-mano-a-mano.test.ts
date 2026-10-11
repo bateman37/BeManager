@@ -72,11 +72,14 @@ function run(args: {
 }
 
 describe("ME-06 (a): bloqueo directo mejor y elegido en auto", () => {
-  it("caso construido: handicapar la mano a mano (O2/O3/O4 débiles) hace que auto elija bloqueo_directo", () => {
+  it("caso construido: handicapar la mano a mano (O2/O3/O4 y la finalización de O5 débiles) hace que auto elija bloqueo_directo", () => {
+    // Sesión v2-8: tras el rediseño de la entrega, su valor ante el drop viene sobre todo de la
+    // continuación de O5 al aro (T01) y de O2 (aro, parada, triple); debilitarlos es lo discriminante.
     let offense = SIERRA_CLARA.players;
-    offense = withAttribute(offense, "O2", { T01: 1, F01: 1 });
-    offense = withAttribute(offense, "O3", { T04: 1 });
-    offense = withAttribute(offense, "O4", { T04: 1, T13: 1, F05: 1 });
+    offense = withAttribute(offense, "O2", { T01: 1, F01: 1, T02: 1, T03: 1, T04: 1 });
+    offense = withAttribute(offense, "O3", { T03: 1, T04: 1 });
+    offense = withAttribute(offense, "O4", { T03: 1, T04: 1 });
+    offense = withAttribute(offense, "O5", { T01: 1 });
     const { audit } = run({ seed: 1, start: baseStart(), offense, offensivePlan: "auto" });
     const sel = audit.snapshot().decisions.find((d) => d.point === "seleccion_familia")!;
     expect(sel.chosenOptionId).toBe("bloqueo_directo");
@@ -87,13 +90,10 @@ describe("ME-06 (a): bloqueo directo mejor y elegido en auto", () => {
 });
 
 describe("ME-06 (b): mano a mano mejor y elegida en auto", () => {
-  it("caso construido: handicapar el bloqueo directo (O5/O1 débiles) y reforzar O2/O3/O4 hace que auto elija mano_a_mano_sin_balon", () => {
+  it("caso construido: handicapar el bloqueo directo (O1 sin tiro, O5 sin pantalla ni pase) hace que auto elija mano_a_mano_sin_balon", () => {
     let offense = SIERRA_CLARA.players;
-    offense = withAttribute(offense, "O5", { T01: 1, T09: 1, T13: 1, F05: 1 });
-    offense = withAttribute(offense, "O1", { T04: 1, F01: 1 });
-    offense = withAttribute(offense, "O2", { T01: 15, F01: 15 });
-    offense = withAttribute(offense, "O3", { T04: 15 });
-    offense = withAttribute(offense, "O4", { T13: 15, F05: 15, F01: 15 });
+    offense = withAttribute(offense, "O5", { T09: 1, T13: 1, F05: 1 });
+    offense = withAttribute(offense, "O1", { T01: 1, T02: 1, T03: 1, T04: 1, F01: 1 });
     const { audit } = run({ seed: 1, start: baseStart(), offense, offensivePlan: "auto" });
     const sel = audit.snapshot().decisions.find((d) => d.point === "seleccion_familia")!;
     expect(sel.chosenOptionId).toBe("mano_a_mano_sin_balon");
@@ -104,34 +104,37 @@ describe("ME-06 (b): mano a mano mejor y elegida en auto", () => {
 });
 
 describe("ME-06 (c): la negación de D2 no teletransporta el balón — O5 conserva el control y sigue leyendo de verdad", () => {
-  it("caso construido: D2 ya está sobre el punto de entrega cuando O2 llegaría — la entrega se niega y O5 retiene el balón", () => {
+  it("caso construido: D2 llega antes que O2 al hombro de la entrega — la entrega se niega y O5 retiene el balón", () => {
     const start = baseStart();
-    // D2 arranca ya casi encima del punto real de entrega (cerca del codo
-    // alto), muy por delante de su marca habitual en la esquina fuerte.
-    start.D2 = { x: 21.2, y: 6.9 };
+    // Sesión v2-8: la entrega es en el hombro alto de O5 en el codo del lado fuerte; D2 arranca por
+    // delante de O2, entre la esquina y el codo.
+    start.D2 = { x: 21.0, y: 5.6 };
     const { core, audit } = run({ seed: 1, start, offensivePlan: "mano_a_mano_sin_balon" });
     const transfer = audit.snapshot().decisions.find((d) => d.point === "transferencia_mano_a_mano")!;
     expect(transfer.chosenOptionId).toBe("entrega_negada");
+    expect(transfer.options[0]!.values?.d2Denies).toBe(true);
     const read = audit.snapshot().decisions.find((d) => d.point === "lectura_mano_a_mano")!;
     expect(read.holderId).toBe("O5");
     // El balón sigue de verdad en manos de O5 en el hecho real que decide la
     // vía (pase, tiro o control conservado), nunca desapareciendo del todo.
-    expect(["pase_o3", "continuar_o4", "pase_o1", "finalizar_portador"]).toContain(read.chosenOptionId);
+    expect(["finalizar_o5", "puerta_atras_o2", "pase_o3", "continuar_o4", "pase_o1"]).toContain(read.chosenOptionId);
     expect(core.terminal.kind).not.toBe("shot_clock_violation");
   });
 });
 
 describe("ME-06 (d): D4 ayuda a cerrar a O3 y se abre una recepción legal para O4", () => {
-  it("con guardar_espacio, D4 ayuda cuando D3 no deniega con margen: O4 recibe libre en su propio punto de bloqueo", () => {
+  it("con guardar_espacio, D4 ayuda cuando D3 no deniega con margen: O4 queda como vía viable en su propio punto de bloqueo", () => {
     const { audit } = run({ seed: 1, start: baseStart(), offensivePlan: "mano_a_mano_sin_balon", offBallDefensiveCall: "guardar_espacio" });
     const cut = audit.snapshot().decisions.find((d) => d.point === "bloqueo_indirecto_o3")!;
     const help = cut.options.find((o) => o.id === "ayuda_d4_abre_o4")!;
     expect(help.status).toBe("elegida");
     expect(help.reasonCode).toBe("help_rotation_opened_o4");
     const read = audit.snapshot().decisions.find((d) => d.point === "lectura_mano_a_mano")!;
-    expect(read.chosenOptionId).toBe("continuar_o4");
     const o4Option = read.options.find((o) => o.id === "continuar_o4")!;
     expect(o4Option.values?.o4Open).toBe(true);
+    expect(Number.isFinite(o4Option.values?.situationalValue as number)).toBe(true);
+    // Sesión v2-8: el punto del bloqueo de O4 (ME-06) está a 5,8 m del aro, dentro del arco: es un tiro de dos.
+    expect(o4Option.values?.shotType).toBe("mid_range");
   });
 
   it("con negar_primera_salida, D4 nunca ayuda: O4 no se abre por esta vía", () => {
@@ -143,20 +146,21 @@ describe("ME-06 (d): D4 ayuda a cerrar a O3 y se abre una recepción legal para 
   });
 });
 
-describe("ME-06 (e): drop y trampa responden de modo distinto a la misma acción cuando llegan a tiempo", () => {
-  it("en trampa, D5 puede saltar a presionar la recepción del mano a mano y deja constancia del coste interior", () => {
-    const { core } = run({ seed: 1, start: baseStart(), offensivePlan: "mano_a_mano_sin_balon", coverage: "trampa" });
-    // Bajo trampa, o bien D5 comprometió su ayuda al mano a mano (deja el
-    // hecho help_left_assignment sobre D5/O5), o bien no llegó a tiempo;
-    // nunca se inventa un coste sin una posición real detrás.
-    const help = core.timeline.filter((e) => e.kind === "help_left_assignment");
-    for (const h of help) expect(h.actors).toBeDefined();
+describe("ME-06 (e): la respuesta de D5 a la entrega cambia la acción (sesión v2-8)", () => {
+  it("en trampa (saltar la entrega), D5 sale a tapar la salida de la entrega y deja la pintura, con hecho y posición reales", () => {
+    const { core, audit } = run({ seed: 1, start: baseStart(), offensivePlan: "mano_a_mano_sin_balon", coverage: "trampa" });
+    const transfer = audit.snapshot().decisions.find((d) => d.point === "transferencia_mano_a_mano")!;
+    expect(transfer.options[0]!.values?.response).toBe("saltar_entrega");
+    const jump = core.timeline.find((e) => e.kind === "show_committed")!;
+    expect(jump.actors).toEqual(["D5"]);
+    expect(jump.detail.denied).toBe(transfer.chosenOptionId === "entrega_negada");
   });
 
-  it("en drop, D5 nunca se suma a negar la entrega del mano a mano (protege siempre el interior)", () => {
+  it("en drop, D5 se hunde: nunca se suma a negar la entrega del mano a mano (protege el interior)", () => {
     const { audit } = run({ seed: 1, start: baseStart(), offensivePlan: "mano_a_mano_sin_balon", coverage: "drop" });
     const transfer = audit.snapshot().decisions.find((d) => d.point === "transferencia_mano_a_mano")!;
-    expect(transfer.options[0]!.values?.d5CommittedToHandoffTrap).toBe(false);
+    expect(transfer.options[0]!.values?.response).toBe("hundirse");
+    expect(transfer.options[0]!.values?.d5Jumps).toBe(false);
   });
 });
 

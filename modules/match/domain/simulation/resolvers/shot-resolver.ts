@@ -7,8 +7,30 @@ import {
   THREE_POINT_BASE_PROBABILITY,
   type EffectiveOpposition,
 } from "../../lab/lab-0-1-parameters";
+import { FLOATER_BASE_PROBABILITY, MID_RANGE_BASE_PROBABILITY } from "../../lab/lab-0-5-parameters";
 
-export type ShotType = "close_finish" | "three_point";
+/**
+ * Tipos de tiro de campo (ME-07B v2 §2.4/§6): finalización pegada al aro
+ * (T01), floater (T02), tiro medio de dos (T03) y triple (T04).
+ */
+export type ShotType = "close_finish" | "floater" | "mid_range" | "three_point";
+
+export function shotBaseProbability(type: ShotType): number {
+  switch (type) {
+    case "close_finish":
+      return CLOSE_FINISH_BASE_PROBABILITY;
+    case "floater":
+      return FLOATER_BASE_PROBABILITY;
+    case "mid_range":
+      return MID_RANGE_BASE_PROBABILITY;
+    case "three_point":
+      return THREE_POINT_BASE_PROBABILITY;
+  }
+}
+
+export function shotPoints(type: ShotType): 2 | 3 {
+  return type === "three_point" ? 3 : 2;
+}
 
 export interface ShotAttempt {
   readonly type: ShotType;
@@ -37,12 +59,10 @@ export function resolveShot(attempt: ShotAttempt, rng: SeededRandom): ShotOutcom
     }
   }
 
-  const base =
-    attempt.type === "close_finish" ? CLOSE_FINISH_BASE_PROBABILITY : THREE_POINT_BASE_PROBABILITY;
-  const probability = shotProbability(base, attempt.shooterSkillRating, attempt.opposition);
+  const probability = shotProbability(shotBaseProbability(attempt.type), attempt.shooterSkillRating, attempt.opposition);
 
   if (rng.next() < probability) {
-    return { kind: "made", points: attempt.type === "close_finish" ? 2 : 3 };
+    return { kind: "made", points: shotPoints(attempt.type) };
   }
   return { kind: "missed" };
 }

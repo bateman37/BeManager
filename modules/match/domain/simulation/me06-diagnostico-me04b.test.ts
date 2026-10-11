@@ -173,12 +173,18 @@ describe("ME-06 (2b): «pase_o5» ya no puntúa una inversión futura a O3 cuand
     const firstRead = audit.snapshot().decisions.find((d) => d.point === "lectura_bloqueo_o1")!;
     const pase_o5 = firstRead.options.find((o) => o.id === "pase_o5")!;
     expect(pase_o5.values?.estimatedD3TrulyContaining).toBe(true);
-    const o5T01 = LAB_ROSTER_FIXTURE[0]!.players.find((p) => p.id === "O5")!.attributes.T01;
-    if (pase_o5.status === "elegida") {
-      expect(pase_o5.values?.situationalValue).toBeCloseTo(
-        2 * shotProbability(CLOSE_FINISH_BASE_PROBABILITY, o5T01, 1),
-        6,
+    // ME-07B v2 §2.4 sustituye la regla de ME-06 (2b) («contenido ⇒ valor
+    // del tiro contenido»): O1 proyecta la **misma lectura del receptor**
+    // que O5 hará al recibir (aro, floater o inversión, cada una frente a su
+    // mejor cierre real y con el riesgo del pase de inversión), así que el
+    // valor de la vía es exactamente el máximo de esa lectura en la misma
+    // frontera, no un triple futuro asumido sin riesgo.
+    const secondRead = audit.snapshot().decisions.find((d) => d.point === "lectura_segunda_o5");
+    if (pase_o5.status === "elegida" && secondRead) {
+      const best = Math.max(
+        ...secondRead.options.map((o) => (typeof o.values?.situationalValue === "number" ? (o.values.situationalValue as number) : -Infinity)),
       );
+      expect(pase_o5.values?.situationalValue).toBeCloseTo(best, 6);
     }
     // La opción ya no puede llevar el campo retirado de la proyección de una
     // segunda inversión a O3 (ME-06 §2): esa cadena de dos pases ya no forma

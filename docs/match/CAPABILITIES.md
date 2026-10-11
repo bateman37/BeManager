@@ -5,7 +5,7 @@
 **Debe leerse cuando:** vayas a activar una nueva capacidad o a calibrar un coeficiente existente.
 **No cubre:** las 45 capacidades candidatas completas del catálogo (ver `docs/match/reference/BeManager-capitulo-atributos-y-motor-v2.md` §2.2–2.4).
 **Documentos relacionados:** `ACTIONS.md`, `docs/decisions/ADR-0004-detailed-engine-analytic-timing.md`.
-**Última actualización:** 2026-09-30 (ME-07A).
+**Última actualización:** 2026-09-30 (ME-07B v2, §2.4–§2.5).
 
 ## 27 capacidades activas (de 45 candidatas)
 
@@ -202,6 +202,86 @@ El tramo enlazado no activa capacidades nuevas ni coeficientes nuevos:
   compromiso menos estricta, o posiciones defensivas iniciales más
   agresivas, si Dennis quiere que la trampa `auto` sea alcanzable desde el
   arranque de la posesión.
+
+## ME-07B v2 §2.1: T19/F05 llegan de verdad al rebote; LAB-0.4
+
+- **Defecto corregido:** `closeoutReboundDelaySeconds(T19, F05)` (LAB-0.1)
+  no llegaba nunca al resolvedor (retraso siempre cero). Ahora lo aplica un
+  **cerrador** a su **rival**: cerrador más cerca del aro que el rival en el
+  instante del fallo, contacto (distancia − 2 × 0,35 m, a la velocidad de
+  llegada al rebote) alcanzable durante el vuelo y antes de que el rival
+  llegue; uno a uno, rivales por orden de llegada
+  (`computeReboundBoxOuts`, `rebound-resolver.ts`). Subir T19/F05 del
+  cerrador alarga el retraso del rival; los del rival cerrado no cuentan.
+  Sin cierre (balón suelto en el suelo, sin vuelo) no hay efecto. Quien
+  lanza no puede iniciar un cierre mientras completa su gesto.
+- **LAB-0.4** (`lab-0-4-parameters.ts`): `shooterLandingSeconds(F06) =
+  √(2·jumpCeiling(F06)/g)`, [0,235; 0,335] s, neutro ≈ 0,289 s. El motor ya
+  suelta el tiro en el vértice del salto ejecutado; el tirador no sale hacia
+  el rebote hasta tocar el suelo. F06 no se suma a captura ni cierre.
+
+- **LAB-0.4** `OBSERVATION_PRIOR_WEIGHT_USES = 6` y
+  `blendProjectionWithObservation`: valor efectivo de una familia (ataque)
+  o cobertura (defensa) ya usada `n` veces con `p` puntos
+  `= (p + 6 · proyección)/(n + 6)`; intervalo [2, 20] usos, neutro sin
+  muestras = proyección; `K → ∞` reproduce el comportamiento sin
+  aprendizaje. Solo resultados visibles del propio partido.
+- **ME-07B v2 §2.3:** el hallazgo de ME-07A («D5 nunca llega a comprometer
+  una trampa desde drop») queda superado: D5 sale al empezar a prepararse
+  la pantalla; con un D5 lento (F04/M01/M05/T22 mínimos) la trampa sigue
+  siendo no elegible (`me07a.test.ts`).
+- **ME-07B v2 §5 (coberturas):** cambio, show y por debajo no añaden
+  parámetros; consultan capacidades ya activas en su tarea: M01/M05
+  (reconocer la pantalla al prepararse), M09 (aviso entre D1 y D5 en cambio
+  y show), T22/T23 (llegada al perímetro y al aro), F04/F03 (desplazamiento
+  lateral y frenada del cierre de D1 que rodea al bloqueador en el under).
+- **ME-07B v2 §4–§5 (v2-3, LAB-0.7):** el bloqueo lateral, el ICE y «a la
+  altura» solo añaden **geometría** (puntos en metros, LAB-0.7), ningún
+  coeficiente. ICE: M01/M05 + F04 de D1 deciden si se pone del lado de la
+  pantalla antes del uso (un D1 con los tres a 1 llega tarde en casi todas,
+  `me07b-v2-lateral-ice.test.ts`); M01/M05 + T23 de D5 su llegada a la ayuda
+  baja; T17 de D1 el desvío del pase al bloqueador; T03/T06 del manejador el
+  tiro medio tras rechazar; T22 de D2 el cierre de la esquina. Show y «a la
+  altura»: M01/M05/T22 hasta su punto, M09 el aviso de vuelta, T23 la vuelta
+  (al aro o con el continuador), F01 del manejador la carrera hasta el punto
+  del show (decide si le frena). El relevo de emergencia `ME-04-ROT-3` lee
+  atributos solo para ordenar candidatos (no cambia ninguno).
+
+## ME-07B v2 §2.4–§2.5: T02, T03 y M07 activas; LAB-0.5 y LAB-0.6
+
+Catálogo activo: 30 capacidades (27 + T02, T03, M07). Perfiles persistidos
+sin ellas reciben el valor neutro 8 (`NEUTRAL_BACKFILL_RATINGS`, mismo
+patrón que M09); el fixture las declara 8 en las tres plantillas y el
+incremento +1/+3/+5 también las alcanza.
+
+- **T02 Floater:** acierto del tiro `floater` (zona 2–4,5 m, preparación de
+  finalización cercana), base LAB-0.5 0,48. Solo cuando el jugador suelta
+  antes del protector de aro; T01 sigue siendo la finalización pegada al aro.
+- **T03 Tiro medio:** acierto del tiro `mid_range` (4,5 m–arco), base 0,42;
+  preparación tras bote por T06 sin segundo premio de acierto.
+- **M07 Disciplina:** riesgo de que un contacto defensivo real sea falta
+  (LAB-0.6: finalización 0,12, tiro exterior 0,03, trampa 0,07, rebote
+  0,06; −0,008 por punto; [0,01; 0,35]). No cambia llegadas, alcance ni
+  acierto. Prueba discriminante en `me07b-v2-fouls.test.ts`.
+
+## ME-07B v2 §4 (sesión v2-5): nuevas tareas de capacidades ya activas en Spain y Delay
+
+Ninguna capacidad nueva ni coeficiente nuevo de acierto; LAB-0.9 y LAB-0.10
+solo añaden puntos de la disposición. Tareas nuevas, localizadas:
+
+- **T13/F05 del bloqueador ciego (O3) frente a T16 de D5, y peso:** retraso del
+  bloqueo ciego de Spain (misma `screenInterceptDelaySeconds`); **F01 de O3** su
+  llegada y su pop; **M04 de O5** la sincronización (cuánto espera el manejador).
+- **M01/M05 y M09 de D3:** reconocer el corte del bloqueador ciego y cantar el
+  cambio a D5 (con el fixture siempre llega antes del roll: la puerta existe
+  pero no se cierra); **F04/T23 de D3** su llegada al roll profundo.
+- **T13/F05 del pívot de Delay frente a T16 de D1:** retraso de la entrega en
+  mano (el cuerpo del pívot como pantalla); **F04/M01/M05/T22 de D5** si salta
+  la entrega a tiempo.
+- **M01/M05 del poste:** cuándo lee y gira; **M01/M05/F04 del defensor de la
+  esquina:** si su ayuda llega antes del giro; **T07 del poste frente al peor
+  T15** de los dos que le doblan: robo (misma regla que la trampa); **T02** el
+  gancho desde el poste; **T21** la salida del corte del ala débil.
 
 ## Editor de equilibrio
 

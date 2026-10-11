@@ -6,7 +6,7 @@ import type {
 } from "../../application/ports/lab-team-repository.port";
 import type { PlayerProfile, PlayerTemplate, PnrTendency, ShotTendency } from "../../domain/players/player-profile";
 import { ACTIVE_ATTRIBUTE_IDS, type ActiveAttributeId, type Rating } from "../../domain/players/attribute";
-import { M09_BACKFILL_NEUTRAL_RATING, SHOT_TENDENCY_BACKFILL_DEFAULT } from "../../domain/players/player-profile";
+import { NEUTRAL_BACKFILL_RATINGS, SHOT_TENDENCY_BACKFILL_DEFAULT } from "../../domain/players/player-profile";
 
 function toDomainPlayer(row: {
   id: string;
@@ -31,8 +31,10 @@ function toDomainPlayer(row: {
       // de esa entrega no lo tiene guardado. Se backfillea con el valor
       // neutro explícito 8 hasta que el usuario lo edite y guarde
       // (ME-02 §3), en vez de romper la carga de perfiles ya existentes.
-      if (id === "M09") {
-        attributes[id] = M09_BACKFILL_NEUTRAL_RATING;
+      // T02/T03 se activaron en ME-07B v2 §6: mismo relleno neutro explícito.
+      const neutral = NEUTRAL_BACKFILL_RATINGS[id];
+      if (neutral !== undefined) {
+        attributes[id] = neutral;
         continue;
       }
       throw new Error(`Falta la capacidad ${id} en el registro persistido de ${row.id}`);

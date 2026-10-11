@@ -345,6 +345,55 @@ export function evaluateTransitionThreeOpportunity(
   return { eligible, windowMarginSeconds, depthBehindLineMeters, closeoutArrivalSeconds, nearestDefender };
 }
 
+/**
+ * Triple del portador en transición planificado hasta su punto real de
+ * lanzamiento (ME-07B v2 §2.5). La ventana ya no se lee en el cruce del
+ * medio campo (a más de 5 m del arco, donde la regla de profundidad nunca
+ * podía cumplirse y la vía no llegaba a existir): el portador sigue botando
+ * en línea recta hacia el aro hasta un punto detrás del arco, a una de las
+ * profundidades candidatas (acotadas por `TRANSITION_THREE_DEPTH_BUFFER_METERS`),
+ * y cada defensor puede salir a cerrarle desde su posición real en el cruce,
+ * a su velocidad lateral. La oposición es la que resulta de esa geometría
+ * (el nivel lo calcula quien llama con la regla R_contest de LAB-0.3).
+ */
+export const TRANSITION_PULL_UP_DEPTHS_METERS: readonly number[] = [TRANSITION_THREE_DEPTH_BUFFER_METERS, 1.25, 0.5];
+
+export interface TransitionPullUpCandidate {
+  readonly spot: Point2D;
+  readonly depthBehindLineMeters: number;
+  /** Carrera con balón desde la posición actual hasta el punto, s. */
+  readonly travelSeconds: number;
+  readonly closer: RaceParticipant;
+  /** Llegada del defensor que antes cierra, s desde ahora. */
+  readonly closeoutArrivalSeconds: number;
+}
+
+export function planTransitionPullUps(carrier: RaceParticipant, defenders: readonly RaceParticipant[]): TransitionPullUpCandidate[] {
+  const total = distance(carrier.position, ATTACKED_HOOP);
+  if (total <= 0) return [];
+  const out: TransitionPullUpCandidate[] = [];
+  for (const depth of TRANSITION_PULL_UP_DEPTHS_METERS) {
+    const toHoop = FIBA_THREE_POINT_RADIUS_METERS + depth;
+    if (toHoop > total) continue; // ya está más cerca que ese punto: no retrocede para tirar
+    const along = total - toHoop;
+    const spot = {
+      x: carrier.position.x + ((ATTACKED_HOOP.x - carrier.position.x) * along) / total,
+      y: carrier.position.y + ((ATTACKED_HOOP.y - carrier.position.y) * along) / total,
+    };
+    const closer = [...defenders].sort(
+      (a, b) => timeToReach(a.position, spot, a.lateralSpeedMps) - timeToReach(b.position, spot, b.lateralSpeedMps) || (a.id < b.id ? -1 : 1),
+    )[0]!;
+    out.push({
+      spot,
+      depthBehindLineMeters: depth,
+      travelSeconds: along / carrier.runSpeedMps,
+      closer,
+      closeoutArrivalSeconds: timeToReach(closer.position, spot, closer.lateralSpeedMps),
+    });
+  }
+  return out;
+}
+
 export interface SecondChanceRead {
   readonly putback: boolean;
   readonly rebounderArrivalSeconds: number;

@@ -11,12 +11,15 @@ import type {
   OffensivePlanChoice,
   OffBallDefensiveCallChoice,
   OffensiveCreationPriority,
+  ChainedVariantChoice,
+  BackScreenCallChoice,
 } from "@match/domain/lab/match-input";
 import type { PhaseEntry, ReboundPriority, TramoEvent } from "@match/domain/sequence/tramo-model";
 import { LAB_DECLARED_ROLES, FUNCTIONAL_ROLE_LABELS, type FunctionalRole } from "@match/domain/players/functional-roles";
 import { LAB_STARTER_IDS } from "@match/domain/players/lab-roster-fixture";
 import { buildAuditExport } from "@match/domain/audit/build-audit-export";
 import { TramoCourt } from "./tramo-panel";
+import type { ScreenPlacementChoice } from "@match/domain/lab/lab-0-7-parameters";
 
 /**
  * Sección «Partido completo» de ME-04: controles de la foto (semilla,
@@ -37,6 +40,12 @@ export interface GameTeamSettings {
   readonly offBallDefensiveCall: OffBallDefensiveCallChoice;
   /** ME-07A §3.1: prioridad de creación de este equipo para todo el partido. */
   readonly creationPriority: OffensiveCreationPriority;
+  /** ME-07B v2 §4 (LAB-0.7): colocación del bloqueo directo (auto, central o lateral). */
+  readonly screenPlacement?: ScreenPlacementChoice;
+  /** ME-07B v2 §4 (LAB-0.9): variante encadenada al atacar (auto, ninguna o Spain). */
+  readonly chainedVariant?: ChainedVariantChoice;
+  /** ME-07B v2 §4 (LAB-0.9): respuesta al bloqueo ciego de Spain al defender. */
+  readonly backScreenCall?: BackScreenCallChoice;
 }
 
 export interface GameSettings {
@@ -59,6 +68,9 @@ const DEFAULT_TEAM_SETTINGS: GameTeamSettings = {
   offensivePlan: "auto",
   offBallDefensiveCall: "auto",
   creationPriority: "equilibrado",
+  screenPlacement: "auto",
+  chainedVariant: "auto",
+  backScreenCall: "auto",
 };
 
 export function teamSettings(settings: GameSettings, teamId: string): GameTeamSettings {
@@ -76,6 +88,9 @@ export function toGameTeam(team: LabTeamRecord, s: GameTeamSettings): BuildGameT
     offensivePlan: s.offensivePlan,
     offBallDefensiveCall: s.offBallDefensiveCall,
     creationPriority: s.creationPriority,
+    screenPlacement: s.screenPlacement ?? "auto",
+    chainedVariant: s.chainedVariant ?? "auto",
+    backScreenCall: s.backScreenCall ?? "auto",
   };
 }
 
@@ -83,6 +98,11 @@ const COVERAGE_LABELS: Record<DefensiveCoverageChoice, string> = {
   auto: "Auto (elige la defensa)",
   drop: "Drop",
   trampa: "Trampa",
+  cambio: "Cambio (switch)",
+  show: "Show (hedge)",
+  a_la_altura: "A la altura (at the level)",
+  por_debajo: "Por debajo (under)",
+  ice: "ICE lateral",
 };
 const PRIORITY_LABELS: Record<ReboundPriority, string> = {
   proteger_balance: "Proteger balance",
@@ -92,6 +112,23 @@ const OFFENSIVE_PLAN_LABELS: Record<OffensivePlanChoice, string> = {
   auto: "Auto (elige el motor)",
   bloqueo_directo: "Bloqueo directo",
   mano_a_mano_sin_balon: "Mano a mano sin balón",
+};
+const SCREEN_PLACEMENT_LABELS: Record<ScreenPlacementChoice, string> = {
+  auto: "Auto (elige el creador)",
+  central: "Central",
+  lateral: "Lateral",
+  horns: "Horns (dos interiores en los codos)",
+  delay: "Delay (pívot arriba: entrega en mano y poste)",
+};
+const CHAINED_VARIANT_LABELS: Record<ChainedVariantChoice, string> = {
+  auto: "Auto (compara la ficha base y sus variantes)",
+  ninguna: "Ninguna (ficha base)",
+  spain: "Spain (desde Horns: bloqueo ciego al protector del roll)",
+};
+const BACK_SCREEN_CALL_LABELS: Record<BackScreenCallChoice, string> = {
+  auto: "Auto (elige la defensa)",
+  seguir: "Seguir al bloqueador (y leer la ayuda)",
+  cambiar: "Cambiar en el bloqueo ciego",
 };
 const OFF_BALL_CALL_LABELS: Record<OffBallDefensiveCallChoice, string> = {
   auto: "Auto (elige la defensa)",
@@ -196,8 +233,8 @@ function Scoreboard({ game }: { readonly game: LabGameView }) {
         {game.possessions.length} posesiones · {game.events.length} hechos
       </p>
       <p className="text-xs text-slate-500 dark:text-slate-400">
-        Plan ofensivo (ME-06): {home.name} ataca con {OFFENSIVE_PLAN_LABELS[home.offensivePlan]}, prioridad {CREATION_PRIORITY_LABELS[home.creationPriority]},
-        defiende la mano a mano con {OFF_BALL_CALL_LABELS[home.offBallDefensiveCall]} · {away.name} ataca con {OFFENSIVE_PLAN_LABELS[away.offensivePlan]},
+        Plan ofensivo (ME-06): {home.name} ataca con {OFFENSIVE_PLAN_LABELS[home.offensivePlan]} (bloqueo {SCREEN_PLACEMENT_LABELS[home.screenPlacement ?? "auto"]}, variante {CHAINED_VARIANT_LABELS[home.chainedVariant ?? "auto"]}), prioridad {CREATION_PRIORITY_LABELS[home.creationPriority]},
+        defiende la mano a mano con {OFF_BALL_CALL_LABELS[home.offBallDefensiveCall]} · {away.name} ataca con {OFFENSIVE_PLAN_LABELS[away.offensivePlan]} (bloqueo {SCREEN_PLACEMENT_LABELS[away.screenPlacement ?? "auto"]}, variante {CHAINED_VARIANT_LABELS[away.chainedVariant ?? "auto"]}),
         prioridad {CREATION_PRIORITY_LABELS[away.creationPriority]}, defiende la mano a mano con {OFF_BALL_CALL_LABELS[away.offBallDefensiveCall]}.
       </p>
       <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -280,6 +317,7 @@ function SubstitutionsList({ game }: { readonly game: LabGameView }) {
             {periodLabel(s.period)} {clock(s.gameClockMs)} · {teamName(s.teamId)}: entra <span className="font-mono">{s.inId}</span> por{" "}
             <span className="font-mono">{s.outId}</span> (rol {s.role}, {FUNCTIONAL_ROLE_LABELS[s.role]}) ·{" "}
             {s.reason === "exclusion" ? "obligatoria por exclusión" : `voluntaria, ${minutes(s.outContinuousMs)} seguidos`} · oportunidad: {WINDOW_LABELS[s.window] ?? s.window}
+            {s.emergency ? <> · relevo de emergencia ME-04-ROT-3: {s.emergency.summary}</> : null}
           </li>
         ))}
       </ul>
@@ -804,6 +842,48 @@ export function GameSection(props: GameSectionProps) {
                       {(Object.keys(OFFENSIVE_PLAN_LABELS) as OffensivePlanChoice[]).map((p) => (
                         <option key={p} value={p}>
                           {OFFENSIVE_PLAN_LABELS[p]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex items-center gap-1">
+                    Colocación del bloqueo
+                    <select
+                      className="rounded border border-slate-300 bg-transparent px-1 py-0.5 dark:border-slate-700"
+                      value={teamSettings(props.settings, team.id).screenPlacement ?? "auto"}
+                      onChange={(e) => setTeam(team.id, { screenPlacement: e.target.value as ScreenPlacementChoice })}
+                    >
+                      {(Object.keys(SCREEN_PLACEMENT_LABELS) as ScreenPlacementChoice[]).map((p) => (
+                        <option key={p} value={p}>
+                          {SCREEN_PLACEMENT_LABELS[p]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex items-center gap-1">
+                    Variante encadenada
+                    <select
+                      className="rounded border border-slate-300 bg-transparent px-1 py-0.5 dark:border-slate-700"
+                      value={teamSettings(props.settings, team.id).chainedVariant ?? "auto"}
+                      onChange={(e) => setTeam(team.id, { chainedVariant: e.target.value as ChainedVariantChoice })}
+                    >
+                      {(Object.keys(CHAINED_VARIANT_LABELS) as ChainedVariantChoice[]).map((v) => (
+                        <option key={v} value={v}>
+                          {CHAINED_VARIANT_LABELS[v]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex items-center gap-1">
+                    Bloqueo ciego (Spain)
+                    <select
+                      className="rounded border border-slate-300 bg-transparent px-1 py-0.5 dark:border-slate-700"
+                      value={teamSettings(props.settings, team.id).backScreenCall ?? "auto"}
+                      onChange={(e) => setTeam(team.id, { backScreenCall: e.target.value as BackScreenCallChoice })}
+                    >
+                      {(Object.keys(BACK_SCREEN_CALL_LABELS) as BackScreenCallChoice[]).map((v) => (
+                        <option key={v} value={v}>
+                          {BACK_SCREEN_CALL_LABELS[v]}
                         </option>
                       ))}
                     </select>

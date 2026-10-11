@@ -17,6 +17,27 @@ export type FactKind =
   | "help_left_assignment"
   | "help_repair_attempt"
   | "trap_committed"
+  // ME-07B v2 §5: cambio (switch) y show.
+  | "switch_committed"
+  | "show_committed"
+  | "show_recovery"
+  | "coverage_not_applicable"
+  // ME-07B v2 §5 (LAB-0.7): ICE ante el bloqueo lateral y «a la altura».
+  | "ice_committed"
+  | "ice_late"
+  | "at_level_committed"
+  | "at_level_recovery"
+  // ME-07B v2 §4 (LAB-0.9): Horns→Spain (bloqueo ciego, cambio en él y pop).
+  | "back_screen_set"
+  | "back_screen_switch"
+  | "back_screen_pop"
+  // ME-07B v2 §4 (LAB-0.10): Delay (retraso, entrega en mano, puerta de atrás, ayuda al poste, corte).
+  | "delay_hold"
+  | "dho_completed"
+  | "dho_denied"
+  | "backdoor_cut"
+  | "post_dig"
+  | "weak_side_cut"
   | "trap_broken_advantage"
   | "trap_recovered"
   | "read_option"

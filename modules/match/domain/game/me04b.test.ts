@@ -35,6 +35,9 @@ function run(seed: number, start: Record<string, { x: number; y: number }>) {
       labParametersVersion: "LAB-0.3" as MatchInputLabVersion,
       offensePlayers: SIERRA_CLARA.players,
       defensePlayers: PUERTO_AMBAR.players,
+      // ME-07B v2 §2.4: estos casos construidos exigen la ayuda de D3 como
+      // orden explícita (en el partido enlazado, por defecto, D3 la lee).
+      rollHelpCall: "siempre",
     },
     {
       audit,
@@ -94,7 +97,10 @@ describe("ME-04B (5): negar la salida y la segunda entrada desemboca en reloj/sa
         expect(o.reasonCode).not.toBe("not_evaluated_short_circuit");
       }
       const secondRead = audit.snapshot().decisions.find((d) => d.point === "lectura_segunda_o5")!;
-      expect(secondRead.chosenOptionId).toBe("finalizar_bajo_contencion");
+      // ME-07B v2 §2.4: contenido y sin salida, O5 elige el mejor tiro
+      // contestado disponible (aro o floater), con la contención anotada.
+      expect(["finalizar_aro", "flotadora"]).toContain(secondRead.chosenOptionId);
+      expect(secondRead.note).toMatch(/contiene a O5/);
       const shot = audit.snapshot().decisions.find((d) => d.point === "resolucion_tiro")!;
       // El tiro forzado se resuelve con la geometría real de contacto de
       // siempre (puede ser "no_contest" si D3 aún no llegó del todo al

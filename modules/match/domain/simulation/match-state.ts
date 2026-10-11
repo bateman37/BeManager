@@ -49,7 +49,7 @@ export type TerminalOutcome =
       readonly kind: "shooting_foul_free_throws_pending";
       readonly shooterId: string;
       readonly foulerId: string;
-      readonly shotType: "close_finish" | "three_point";
+      readonly shotType: "close_finish" | "floater" | "mid_range" | "three_point";
       readonly basketCounted: boolean;
       readonly freeThrowsAwarded: number;
     }

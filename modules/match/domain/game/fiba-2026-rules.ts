@@ -165,7 +165,7 @@ export type DefensiveFoulType = "tiro" | "sin_tiro";
 export interface DefensiveFoulFacts {
   readonly type: DefensiveFoulType;
   /** Solo en falta de tiro. */
-  readonly shotType?: "close_finish" | "three_point";
+  readonly shotType?: "close_finish" | "floater" | "mid_range" | "three_point";
   readonly madeShot?: boolean;
   readonly teamFoulsInPeriodBefore: number;
   readonly foulerPersonalFoulsBefore: number;
